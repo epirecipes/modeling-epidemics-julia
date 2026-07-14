@@ -1,0 +1,371 @@
+## Observation and inference solutions
+
+These solutions run in the shared course environment. Because the frequentist
+profile-likelihood examples of Chapter 8 use the isolated `environments/ch08`
+project, the solutions below reconstruct the maximum-likelihood estimate and its
+profile-likelihood interval directly from likelihood grids, so they execute in
+the root environment used to render the book.
+
+```{julia}
+#| label: sol-inference-setup
+#| output: false
+using EpiModelingCourse
+using OrdinaryDiffEq
+using Distributions
+using StableRNGs
+using Statistics
+using CairoMakie
+
+CairoMakie.activate!(type = "png")
+
+# Shared deterministic SIR kernel with cumulative incidence (S, I, R, C).
+function sol_sir!(du, u, p, t)
+    S, I, R, C = u
+    β, c, γ = p
+    N = S + I + R
+    infection = β * c * I / N * S
+    du[1] = -infection
+    du[2] = infection - γ * I
+    du[3] = γ * I
+    du[4] = infection
+    return nothing
+end
+
+sol_u0 = [990.0, 10.0, 0.0, 0.0]
+sol_tspan = (0.0, 40.0)
+sol_obstimes = 1.0:1.0:40.0
+sol_prob = ODEProblem(sol_sir!, sol_u0, sol_tspan, [0.05, 10.0, 0.25])
+
+# Latent daily incidence at the baseline (truth i₀ = 0.01, β = 0.05).
+sol_base = solve(sol_prob, Tsit5(); saveat = 1.0)
+sol_incidence = Array(sol_base)[4, 2:end] .- Array(sol_base)[4, 1:(end - 1)]
+```
+
+### Observation models and simulated data
+
+#### Solution to Exercise 1 {#solution-ch07-ex1}
+
+We reuse the latent incidence and apply a Poisson observation model with a
+partial reporting fraction $\rho = 0.4$.
+
+```{julia}
+#| label: sol-ch07-ex1
+ρ = 0.4
+expected_reported = ρ .* sol_incidence
+reported = rand.(StableRNG(20240607), Poisson.(expected_reported))
+
+(total_latent = round(sum(sol_incidence); digits = 1),
+ total_reported = sum(reported),
+ ratio = round(sum(reported) / sum(sol_incidence); digits = 3))
+```
+
+```{julia}
+#| label: fig-sol-ch07-ex1
+#| fig-cap: "Latent daily incidence (red) and Poisson case reports at ρ = 0.4 (bars). The reported series looks like a smaller epidemic with the same shape."
+fig = Figure(size = (760, 420))
+ax = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "new cases per day")
+barplot!(ax, collect(sol_obstimes), reported; color = (:darkorange, 0.55),
+    label = "reported (ρ = 0.4)")
+lines!(ax, collect(sol_obstimes), sol_incidence; color = :firebrick,
+    linewidth = 3, label = "latent incidence")
+axislegend(ax; position = :rt)
+fig
+```
+
+The reported total is about $40\%$ of the latent total, matching $\rho$. The
+reported curve has the *same temporal shape* as the latent one but a smaller
+amplitude, so it looks like a smaller epidemic. Crucially, the expected report on
+day $t$ is $\rho\, x_t(\beta)$: the reporting fraction and the transmission
+probability both act as multiplicative scalings of the observed counts. A change
+in $\rho$ can be compensated by a change in $\beta$ that rescales incidence, so
+the two cannot be separated from the reported series alone — a practical
+identifiability problem taken up in Chapter 10.
+
+#### Solution to Exercise 2 {#solution-ch07-ex2}
+
+We fix the negative-binomial mean to the latent incidence at the epidemic peak
+and vary the dispersion $r \in \{1, 5, 50\}$, drawing 1000 replicate counts for
+each and estimating the variance-to-mean ratio.
+
+```{julia}
+#| label: sol-ch07-ex2
+peak_index = argmax(sol_incidence)
+μ_peak = sol_incidence[peak_index]
+
+nb(μ, r) = NegativeBinomial(r, r / (r + μ))
+function ratio_at(r)
+    rng = StableRNG(1000 + Int(r))
+    draws = [rand(rng, nb(μ_peak, r)) for _ in 1:1000]
+    (r = r, var_over_mean = round(var(draws) / mean(draws); digits = 3),
+     predicted = round(1 + μ_peak / r; digits = 3))
+end
+
+[ratio_at(r) for r in (1.0, 5.0, 50.0)]
+```
+
+The variance formula $\operatorname{Var}[Y_t] = \rho x_t + (\rho x_t)^2/r$ (with
+$\rho = 1$ here) predicts a variance-to-mean ratio of $1 + \mu_{\text{peak}}/r$.
+The simulated ratios track this prediction closely and fall towards $1$ as $r$
+grows: at $r = 50$ the counts are almost equidispersed, recovering the Poisson
+limit $r \to \infty$, while at $r = 1$ the peak counts are strongly
+overdispersed.
+
+### Frequentist parameter estimation
+
+The next two solutions reconstruct maximum-likelihood estimation and profile
+intervals on likelihood *grids*, which is transparent and avoids any dependency
+outside the shared environment. Each grid point solves the ODE once, so the grids
+are kept deliberately small for continuous-integration speed.
+
+```{julia}
+#| label: sol-ch08-helpers
+#| output: false
+# Model incidence for parameters (i₀, β, γ) with c = 10 fixed.
+function incidence_for(i₀, β, γ)
+    I = i₀ * 1000.0
+    solf = solve(remake(sol_prob; u0 = [1000.0 - I, I, 0.0, 0.0],
+        p = [β, 10.0, γ]), Tsit5(); saveat = 1.0)
+    C = Array(solf)[4, :]
+    return C[2:end] .- C[1:(end - 1)]
+end
+
+# Poisson log-likelihood of `data` given model incidence.
+function poisson_loglik(i₀, β, γ, data)
+    X = incidence_for(i₀, β, γ)
+    any(X .<= 0) && return -Inf
+    return sum(logpdf.(Poisson.(X), data))
+end
+
+# Wilks 95% threshold for a one-parameter profile (≈ 1.92).
+wilks_threshold = 0.5 * quantile(Chisq(1), 0.95)
+
+# Endpoints where a 1-D profile crosses `ℓ_max - wilks_threshold`.
+function profile_interval(grid, profile, ℓ_max)
+    cutoff = ℓ_max - wilks_threshold
+    inside = findall(profile .>= cutoff)
+    isempty(inside) && return (grid[argmax(profile)], grid[argmax(profile)])
+    return (grid[first(inside)], grid[last(inside)])
+end
+```
+
+#### Solution to Exercise 1 {#solution-ch08-ex1}
+
+For each of 50 seeds we resimulate the data, find the MLE of $\beta$ on an
+$(i_0, \beta)$ grid, and read off the profile-likelihood interval for $\beta$.
+
+```{julia}
+#| label: sol-ch08-ex1
+i0_grid = range(0.003, 0.030; length = 28)
+β_grid = range(0.035, 0.070; length = 36)
+
+function fit_seed(seed)
+    data = rand.(StableRNG(seed), Poisson.(sol_incidence))
+    # Log-likelihood surface over the (i₀, β) grid.
+    ll = [poisson_loglik(i0, β, 0.25, data) for i0 in i0_grid, β in β_grid]
+    ℓ_max, idx = findmax(ll)
+    β_hat = β_grid[idx[2]]
+    # Profile over β: maximise across i₀ (rows) for each β (column).
+    β_profile = vec(maximum(ll; dims = 1))
+    lo, hi = profile_interval(collect(β_grid), β_profile, ℓ_max)
+    return (β_hat = β_hat, lo = lo, hi = hi)
+end
+
+fits = [fit_seed(seed) for seed in 1:50]
+β_hats = [f.β_hat for f in fits]
+covered = count(f -> f.lo ≤ 0.05 ≤ f.hi, fits)
+
+(mean_β_hat = round(mean(β_hats); digits = 4),
+ sd_β_hat = round(std(β_hats); digits = 4),
+ coverage = covered / 50)
+```
+
+```{julia}
+#| label: fig-sol-ch08-ex1
+#| fig-cap: "Distribution of the maximum-likelihood estimate of β across 50 simulated datasets. The estimates cluster around the true value 0.05 (red line)."
+fig = Figure(size = (720, 400))
+ax = Axis(fig[1, 1]; xlabel = "MLE of β", ylabel = "count")
+hist!(ax, β_hats; bins = 12, color = (:steelblue, 0.6))
+vlines!(ax, [0.05]; color = :firebrick, linewidth = 3)
+fig
+```
+
+The MLEs are centred on the true value with modest spread, illustrating the
+(approximate) unbiasedness of maximum likelihood here. The empirical coverage of
+the profile intervals is close to the nominal $95\%$; small departures are
+expected because the $\chi^2$ calibration is asymptotic, the grid has finite
+resolution, and 50 replicates is a small Monte Carlo sample. With more data or
+more replicates the coverage would tighten around $0.95$.
+
+#### Solution to Exercise 2 {#solution-ch08-ex2}
+
+We now also estimate the recovery rate $\gamma$, profiling all three parameters
+on a coarse three-dimensional grid and comparing interval widths.
+
+```{julia}
+#| label: sol-ch08-ex2
+data = rand.(StableRNG(20240607), Poisson.(sol_incidence))
+
+i0_g = range(0.004, 0.025; length = 22)
+β_g = range(0.035, 0.075; length = 26)
+γ_g = range(0.15, 0.42; length = 26)
+
+ll3 = [poisson_loglik(i0, β, γ, data) for i0 in i0_g, β in β_g, γ in γ_g]
+ℓ_max = maximum(ll3)
+
+i0_prof = vec(maximum(ll3; dims = (2, 3)))
+β_prof = vec(maximum(ll3; dims = (1, 3)))
+γ_prof = vec(maximum(ll3; dims = (1, 2)))
+
+ci_i0 = profile_interval(collect(i0_g), i0_prof, ℓ_max)
+ci_β = profile_interval(collect(β_g), β_prof, ℓ_max)
+ci_γ = profile_interval(collect(γ_g), γ_prof, ℓ_max)
+
+(width_i0 = round(ci_i0[2] - ci_i0[1]; sigdigits = 2),
+ width_β = round(ci_β[2] - ci_β[1]; sigdigits = 2),
+ width_γ = round(ci_γ[2] - ci_γ[1]; sigdigits = 2),
+ ci_γ = round.(ci_γ; digits = 3))
+```
+
+```{julia}
+#| label: fig-sol-ch08-ex2
+#| fig-cap: "Profile log-likelihood for γ (blue) with the 95% Wilks threshold (dashed) and the true value γ = 0.25 (red). The interval is comparatively wide."
+cutoff = ℓ_max - wilks_threshold
+fig = Figure(size = (720, 400))
+ax = Axis(fig[1, 1]; xlabel = "γ", ylabel = "profile log-likelihood")
+lines!(ax, collect(γ_g), γ_prof; color = :steelblue, linewidth = 3)
+hlines!(ax, [cutoff]; color = :black, linestyle = :dash)
+vlines!(ax, [0.25]; color = :firebrick, linewidth = 2)
+ylims!(ax, cutoff - 3, ℓ_max + 1)
+fig
+```
+
+All three intervals contain their true values, but the profile for $\gamma$ is
+noticeably wider (flatter) than those for $i_0$ and $\beta$. Following
+$\ell_p(\gamma) = \max_{i_0,\beta}\ell(i_0,\beta,\gamma)$, a flat profile means
+that many values of $\gamma$ can be compensated by adjusting the other
+parameters while keeping the fit to the incidence almost unchanged. The
+incidence data therefore carry relatively little information about the recovery
+rate on their own: prevalence or duration data would be needed to pin $\gamma$
+down more tightly.
+
+### Bayesian inference
+
+```{julia}
+#| label: sol-ch09-setup
+#| output: false
+using Turing
+using MCMCChains
+using SciMLSensitivity
+
+bayes_data = rand.(StableRNG(20240607), Poisson.(sol_incidence))
+```
+
+#### Solution to Exercise 1 {#solution-ch09-ex1}
+
+We replace the Beta priors with uniform priors on $[0, 1]$ and re-run NUTS with
+the same lightweight settings, then compare with the Beta-prior fit.
+
+```{julia}
+#| label: sol-ch09-ex1
+#| warning: false
+@model function sir_uniform(y, prob)
+    l = length(y)
+    i₀ ~ Uniform(0.0, 1.0)
+    β ~ Uniform(0.0, 1.0)
+    I = i₀ * 1000.0
+    prob = remake(prob; u0 = [1000.0 - I, I, 0.0, 0.0], p = [β, 10.0, 0.25],
+        tspan = (0.0, float(l)))
+    sol = solve(prob, Tsit5(); saveat = 1.0)
+    if !SciMLBase.successful_retcode(sol)
+        Turing.@addlogprob! -Inf
+        return nothing
+    end
+    C = Array(sol)[4, :]
+    X = C[2:end] .- C[1:(end - 1)]
+    for i in 1:l
+        y[i] ~ Poisson(max(X[i], 0.0) + 1e-6)
+    end
+    return nothing
+end
+
+chain_uniform = sample(StableRNG(2), sir_uniform(bayes_data, sol_prob),
+    NUTS(0.8), MCMCSerial(), 300, 2; chain_type = MCMCChains.Chains,
+    progress = false)
+
+(posterior_mean = (i₀ = round(mean(vec(Array(chain_uniform[:, :i₀, :]))); digits = 4),
+                   β = round(mean(vec(Array(chain_uniform[:, :β, :]))); digits = 4)),
+ max_rhat = round(maximum(rhat(chain_uniform).nt.rhat); digits = 3),
+ truth = (i₀ = 0.01, β = 0.05))
+```
+
+The uniform-prior posterior means and $\hat R$ values are essentially
+indistinguishable from the Beta-prior results in Chapter 9: both concentrate near
+$(i_0, \beta) = (0.01, 0.05)$ with $\hat R \approx 1$. With 40 informative daily
+counts the likelihood dominates the prior over the plausible range, so the choice
+between a weakly informative Beta prior and a flat prior barely moves the
+posterior. The Beta priors remain preferable in practice because they exclude
+implausible values and keep the sampler away from regions where the ODE
+misbehaves.
+
+#### Solution to Exercise 2 {#solution-ch09-ex2}
+
+We add the recovery rate $\gamma$ as a third parameter with prior
+$\gamma \sim \operatorname{Beta}(2, 8)$ and inspect the posterior correlation
+between $\beta$ and $\gamma$.
+
+```{julia}
+#| label: sol-ch09-ex2
+#| warning: false
+@model function sir_gamma(y, prob)
+    l = length(y)
+    i₀ ~ Beta(1.0, 20.0)
+    β ~ Beta(1.0, 10.0)
+    γ ~ Beta(2.0, 8.0)
+    I = i₀ * 1000.0
+    prob = remake(prob; u0 = [1000.0 - I, I, 0.0, 0.0], p = [β, 10.0, γ],
+        tspan = (0.0, float(l)))
+    sol = solve(prob, Tsit5(); saveat = 1.0)
+    if !SciMLBase.successful_retcode(sol)
+        Turing.@addlogprob! -Inf
+        return nothing
+    end
+    C = Array(sol)[4, :]
+    X = C[2:end] .- C[1:(end - 1)]
+    for i in 1:l
+        y[i] ~ Poisson(max(X[i], 0.0) + 1e-6)
+    end
+    return nothing
+end
+
+chain_gamma = sample(StableRNG(2), sir_gamma(bayes_data, sol_prob),
+    NUTS(0.8), MCMCSerial(), 400, 2; chain_type = MCMCChains.Chains,
+    progress = false)
+
+βs = vec(Array(chain_gamma[:, :β, :]))
+γs = vec(Array(chain_gamma[:, :γ, :]))
+
+(posterior_mean = (i₀ = round(mean(vec(Array(chain_gamma[:, :i₀, :]))); digits = 4),
+                   β = round(mean(βs); digits = 4),
+                   γ = round(mean(γs); digits = 4)),
+ cor_β_γ = round(cor(βs, γs); digits = 3))
+```
+
+```{julia}
+#| label: fig-sol-ch09-ex2
+#| fig-cap: "Joint posterior draws of β and γ. The positive correlation reflects the ridge in the likelihood: faster recovery can be offset by higher transmission."
+fig = Figure(size = (620, 480))
+ax = Axis(fig[1, 1]; xlabel = "β", ylabel = "γ")
+scatter!(ax, βs, γs; color = (:steelblue, 0.35), markersize = 6)
+scatter!(ax, [0.05], [0.25]; color = :firebrick, markersize = 14, marker = :star5)
+fig
+```
+
+The posterior for $\gamma$ is much wider than the tight posterior of Chapter 9's
+two-parameter model, and $\beta$ and $\gamma$ are positively correlated. Both
+parameters influence the epidemic through the balance of transmission and
+recovery, so a larger $\gamma$ (faster recovery) can be partly compensated by a
+larger $\beta$ (faster transmission) while leaving the incidence curve — and
+hence the likelihood — almost unchanged. This ridge is the Bayesian expression of
+the weak practical identifiability of $\gamma$ seen in the frequentist profile of
+`ch08-ex2`, and of the structural $\beta$–$c$ confounding discussed in Chapters 8
+and 9.

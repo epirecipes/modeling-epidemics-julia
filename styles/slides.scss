@@ -1,0 +1,21 @@
+/*-- scss:defaults --*/
+$body-bg: #fbfcfd;
+$body-color: #17242b;
+$link-color: #176b87;
+$presentation-heading-color: #1f5f78;
+$font-family-sans-serif: "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+$font-family-monospace: "JuliaMono", "SFMono-Regular", Consolas, monospace;
+
+/*-- scss:rules --*/
+.reveal .slides {
+  text-align: left;
+}
+
+.reveal h1,
+.reveal h2 {
+  letter-spacing: -0.02em;
+}
+
+.reveal .cell-output-display {
+  margin-top: 0.6rem;
+}

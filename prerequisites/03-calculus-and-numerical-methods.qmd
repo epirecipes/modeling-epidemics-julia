@@ -1,0 +1,201 @@
+---
+course-unit: p03-calculus-and-numerical-methods
+status: complete
+---
+
+# Calculus and numerical methods {#sec-calculus-and-numerical-methods}
+
+Differential equations describe how a system changes instant to instant, but a
+computer can only take finite steps. This unit bridges that gap. We review the
+derivative as a rate of change, introduce the forward Euler method as the
+simplest numerical integrator, and analyse its error — distinguishing the local
+error of one step from the global error accumulated over a whole simulation.
+These ideas justify the adaptive solvers we adopt from @sec-ordinary-differential-equations
+onward.
+
+## Learning goals
+
+By the end of this unit you should be able to:
+
+- interpret a derivative as an instantaneous rate and a first-order Taylor
+  expansion;
+- derive and implement the forward Euler update for a system of ODEs;
+- distinguish local truncation error $O(\delta t^2)$ from global error
+  $O(\delta t)$;
+- estimate a method's empirical order of convergence from a refinement study;
+- produce a log–log error plot with `CairoMakie` and read its slope.
+
+## Model assumptions and classification
+
+We integrate the deterministic SIR system of @eq-p01-sir. Forward Euler assumes
+the derivative is approximately constant across each step of width $\delta t$ —
+exact only in the limit $\delta t \to 0$. It is an *explicit, fixed-step,
+first-order* method.
+
+| Property | Classification |
+|---|---|
+| Determinism | Deterministic |
+| Time | Continuous problem, discretised in fixed steps |
+| State | Continuous |
+| Method order | 1 (global error $\propto \delta t$) |
+
+## Equations
+
+A first-order Taylor expansion of the state $u$ about time $t$ gives
+
+$$
+u(t + \delta t) = u(t) + \delta t\, u'(t) + \tfrac{1}{2}\delta t^{2} u''(\xi),
+\qquad \xi \in (t, t+\delta t).
+$$ {#eq-p03-taylor}
+
+Dropping the quadratic remainder yields the forward Euler update. For the SIR
+system with right-hand side $f$ we obtain the recursion
+
+$$
+u_{n+1} = u_n + \delta t\, f(u_n), \qquad u_0 = \bigl(S(0), I(0), R(0)\bigr).
+$$ {#eq-p03-euler}
+
+The discarded term makes the **local truncation error** per step $O(\delta t^2)$.
+Over a fixed horizon $[0, T]$ the number of steps is $T/\delta t$, so the errors
+accumulate to a **global error** that is one order lower:
+
+$$
+\max_{n} \lVert u_n - u(t_n)\rVert = O(\delta t).
+$$ {#eq-p03-global}
+
+Halving $\delta t$ should therefore roughly halve the global error — a slope of
+1 on a log–log plot of error against step size.
+
+## Julia implementation
+
+The integrator reuses the in-place kernel pattern from @sec-julia-essentials.
+The `euler` function marches @eq-p03-euler forward and stores every state.
+
+```{julia}
+#| label: p03-kernel
+function sir_ode!(du, u, p, t)
+    S, I, R = u
+    β, c, γ, N = p
+    λ = β * c * I / N
+    du[1] = -λ * S
+    du[2] = λ * S - γ * I
+    du[3] = γ * I
+    return nothing
+end
+
+function euler(f, u0, p, δt, tmax)
+    ts = 0.0:δt:tmax
+    us = Matrix{Float64}(undef, length(u0), length(ts))
+    us[:, 1] .= u0
+    du = similar(u0)
+    for n in 1:length(ts) - 1
+        u = @view us[:, n]
+        f(du, u, p, ts[n])
+        us[:, n + 1] .= u .+ δt .* du     # u_{n+1} = u_n + δt f(u_n)
+    end
+    return collect(ts), us
+end
+
+u0 = [990.0, 10.0, 0.0]
+p  = (0.05, 10.0, 0.25, 1000.0)
+tmax = 40.0
+
+ts, us = euler(sir_ode!, u0, p, 0.1, tmax)
+(size(us), round.(us[:, end]; digits = 2))
+```
+
+To measure error we need a trustworthy reference. Forward Euler *converges to
+its own exact solution* as $\delta t \to 0$, so a very fine Euler run (step
+$2^{-14}\approx 6\times10^{-5}$) serves as ground truth for comparing coarser
+runs at the final time.
+
+```{julia}
+#| label: p03-convergence
+δt_ref = tmax / 2^19
+_, us_ref = euler(sir_ode!, u0, p, δt_ref, tmax)
+u_ref = us_ref[:, end]
+
+δts = [tmax / 2^k for k in 6:12]
+errors = map(δts) do δt
+    _, us = euler(sir_ode!, u0, p, δt, tmax)
+    maximum(abs.(us[:, end] .- u_ref))     # global error at t = tmax
+end
+[(round(δt; sigdigits = 3), round(err; sigdigits = 3)) for (δt, err) in zip(δts, errors)]
+```
+
+```{julia}
+#| label: fig-p03-convergence
+#| fig-cap: "Global error of forward Euler at $t=40$ versus step size, on log–log axes. The measured errors (points) lie parallel to the reference first-order line (dashed), confirming $O(\\delta t)$ convergence."
+using CairoMakie
+
+fig = Figure(size = (640, 440))
+ax = Axis(fig[1, 1]; xscale = log10, yscale = log10,
+          xlabel = "step size δt", ylabel = "global error at t = 40",
+          title = "Forward Euler convergence")
+scatter!(ax, δts, errors; markersize = 12, color = :firebrick, label = "measured")
+ref_line = errors[1] .* (δts ./ δts[1]).^1     # slope-1 guide
+lines!(ax, δts, ref_line; linestyle = :dash, color = :black, label = "slope 1 (order 1)")
+axislegend(ax; position = :rb)
+fig
+```
+
+## Validation
+
+The empirical order of convergence is the slope of $\log(\text{error})$ against
+$\log(\delta t)$. For a first-order method it should be close to 1. We estimate
+it from successive halvings, $\log_2(e_{k}/e_{k+1})$:
+
+```{julia}
+#| label: p03-check-order
+orders = [log2(errors[k] / errors[k + 1]) for k in 1:length(errors) - 1]
+mean_order = sum(orders) / length(orders)
+(round.(orders; digits = 3), round(mean_order; digits = 3), isapprox(mean_order, 1.0; atol = 0.1))
+```
+
+The estimated orders cluster around 1 and the mean is within $0.1$ of the
+theoretical value, confirming @eq-p03-global. As a second check, Euler must
+preserve the conservation law of @eq-p01-conservation regardless of step size,
+because its update adds the three derivatives that sum to zero:
+
+```{julia}
+#| label: p03-check-conservation
+_, us_coarse = euler(sir_ode!, u0, p, 0.5, tmax)
+totals = vec(sum(us_coarse; dims = 1))
+all(t -> isapprox(t, 1000.0; atol = 1e-9), totals)
+```
+
+## Interpretation and limitations
+
+The refinement study shows the central trade-off of numerical integration:
+accuracy improves only linearly as we shrink the step, so halving the error
+doubles the cost. Forward Euler is also only *conditionally stable* — for stiff
+problems a too-large step produces oscillating or divergent output even though
+the true solution is smooth. Higher-order and adaptive methods obtain far more
+accuracy per unit work by estimating the local error and adjusting $\delta t$
+automatically. That is exactly what `Tsit5` and the rest of the OrdinaryDiffEq
+suite do, and why the course uses them from @sec-ordinary-differential-equations
+onward. See the
+[OrdinaryDiffEq solver documentation](https://docs.sciml.ai/OrdinaryDiffEq/stable/)
+for the available methods and their orders.
+
+## Exercises
+
+### Exercise 1 {#p03-ex1}
+
+Implement the *midpoint* (second-order Runge–Kutta) update
+$u_{n+1} = u_n + \delta t\, f\!\left(u_n + \tfrac{\delta t}{2} f(u_n)\right)$ and
+repeat the refinement study. Estimate its empirical order of convergence and
+confirm that it is close to 2, i.e. one order higher than Euler.
+
+### Exercise 2 {#p03-ex2}
+
+At $\delta t = 0.1$, compare the final-time state from `euler` against the
+reference solution and report the relative error in the infectious compartment.
+Then determine, by experiment, the largest step size for which forward Euler
+keeps every compartment nonnegative over $[0, 40]$.
+
+## Companion materials
+
+- [Slides](../slides/prerequisites/03-calculus-and-numerical-methods.html)
+- [Pluto preview](../notebook-exports/prerequisites/03-calculus-and-numerical-methods.html)
+- [Pluto source](../notebooks/prerequisites/03-calculus-and-numerical-methods.jl)

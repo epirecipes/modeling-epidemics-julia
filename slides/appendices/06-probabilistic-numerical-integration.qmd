@@ -1,0 +1,157 @@
+---
+title: "Probabilistic numerical integration"
+subtitle: "Appendix A06 · error bars on the ODE solve"
+course-unit: a06-probabilistic-numerical-integration
+status: complete
+---
+
+## Why this unit matters
+
+- Every numerical ODE solve is an approximation, yet a classical solver returns
+  a single trajectory with **no statement of its own error**.
+- *Probabilistic numerics* reframes integration as Bayesian inference: the
+  solver returns a **distribution** over trajectories whose spread reflects the
+  discretisation uncertainty [@bosch2021].
+- Here we make that uncertainty **concrete and executable** by measuring the
+  true error of a coarse solve against a near-exact reference.
+
+::: {.notes}
+The deck delivers the concept with a fully runnable deterministic core, and
+documents — but does not execute — the current probabilistic-solver API, because
+of a real package-compatibility gap flagged on the next slide.
+:::
+
+## Reproducibility gate: `ProbNumDiffEq.jl`
+
+> The pinned `ProbNumDiffEq.jl` v0.17 does **not** precompile against the
+> resolved `OrdinaryDiffEq` stack — `OrdinaryDiffEqDifferentiation` no longer
+> exposes the `standardtag` symbol its solvers reference:
+>
+> ```
+> UndefVarError: `standardtag` not defined in `OrdinaryDiffEqDifferentiation`
+> ```
+
+- We therefore **gate** the probabilistic solve (`eval: false`) and run an
+  **executable error-quantification core** with the standard stack.
+- The gated block reflects the *current* v0.17 API, verified against the
+  installed source, so it runs as written once the packages are realigned.
+
+::: {.notes}
+This is the integrity slide: we neither fabricate probabilistic output nor
+monkey-patch a broken import. The deterministic core teaches exactly the
+quantity — time-varying numerical error — that the filter's posterior standard
+deviation is designed to estimate.
+:::
+
+## Model and the quantity of interest
+
+Baseline SIR (unchanged): $S(0)=990,\,I(0)=10,\,R(0)=0,\,N=1000$, $c=10$,
+$\beta=0.05$, $\gamma=0.25$ — **deterministic**, continuous in time and state.
+
+$$
+\frac{dS}{dt} = -\beta c\frac{SI}{N},\quad
+\frac{dI}{dt} = \beta c\frac{SI}{N} - \gamma I,\quad
+\frac{dR}{dt} = \gamma I .
+$$
+
+- Numerical error $e(t) = \hat u(t) - u(t)$ cannot be evaluated exactly, but we
+  approximate $u(t)$ to machine precision with a tight, high-order solve.
+- A probabilistic solver models $e(t)$ **online** as a Gauss–Markov process; its
+  posterior standard deviation $\sigma(t)$ is a calibrated proxy for $|e(t)|$.
+
+::: {.notes}
+Keep the classification line consistent with the rest of the course. The key
+idea is that probabilistic numerics does not change the model — it changes the
+solver's *output type* from a point to a Gaussian.
+:::
+
+## Measuring the error directly
+
+```{julia}
+#| label: fig-a06-slide-error
+#| echo: true
+#| fig-cap: "Absolute error of a coarse-tolerance Tsit5 solve against a machine-precision Vern9 reference. Error peaks through the epidemic maximum, where the vector field changes fastest — exactly what a probabilistic solver would report as a wider posterior."
+using EpiModelingCourse, OrdinaryDiffEq, CairoMakie
+
+p = BASELINE_PARAMETERS; s0 = BASELINE_INITIAL_STATE
+u0 = [s0.S, s0.I, s0.R]; tspan = (0.0, 40.0); δt = 0.5
+prob = ODEProblem(sir_ode!, u0, tspan, p)
+
+ref    = solve(prob, Vern9(); abstol = 1e-12, reltol = 1e-12, saveat = δt)
+coarse = solve(prob, Tsit5(); abstol = 1e-1,  reltol = 1e-1,  saveat = δt)
+err = abs.(reduce(hcat, coarse.u) .- reduce(hcat, ref.u))
+
+fig = Figure(size = (820, 400))
+ax = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "absolute error",
+    yscale = log10, title = "Numerical error vs. reference")
+for (i, (lab, col)) in enumerate(zip(("S", "I", "R"),
+        (:steelblue, :firebrick, :seagreen)))
+    lines!(ax, ref.t, max.(err[i, :], 1e-10); color = col, linewidth = 2, label = lab)
+end
+axislegend(ax; position = :rb)
+fig
+```
+
+::: {.notes}
+The error is not uniform in time — it is largest around the peak. A filtering
+solver would widen its posterior there and narrow it in the slow tails, guiding
+adaptive effort. This time-structure is the whole point.
+:::
+
+## Calibration check & the gated API
+
+```{julia}
+#| label: a06-slide-refine
+#| echo: true
+using Printf
+refm = reduce(hcat, ref.u)
+for tol in (1e-1, 1e-3, 1e-5, 1e-7)
+    s = solve(prob, Tsit5(); abstol = tol, reltol = tol, saveat = δt)
+    e = maximum(abs.(reduce(hcat, s.u)[2, :] .- refm[2, :]))
+    @printf("tol = %.0e  →  max |I error| = %.3e\n", tol, e)
+end
+```
+
+Tightening tolerance monotonically shrinks the error — the deterministic
+analogue of a probabilistic solver reporting smaller uncertainty at smaller
+steps. The **gated** current API (not run here):
+
+```julia
+using ProbNumDiffEq, Statistics
+sol = solve(prob, EK1(order = 3, prior = IWP(3),
+    diffusionmodel = DynamicDiffusion(), smooth = true);
+    dt = 0.5, abstol = 1e-1, reltol = 1e-2)
+std(sol(20.0))                    # calibrated error, no reference needed
+ProbNumDiffEq.sample(sol, 100)    # draws from the solver's posterior
+```
+
+::: {.notes}
+The refinement table is the calibration story in deterministic form: a useful
+probabilistic solver must have its reported standard deviation track this true
+error. Exercise 2 asks students to reason about IWP order, EK0 vs EK1, and the
+diffusion model against this backdrop.
+:::
+
+## Key takeaways & caveats
+
+- **Uncertainty is largest where dynamics are fastest** — around the epidemic
+  peak.
+- **Calibration is the whole point** — the reported $\sigma$ must bracket the
+  true error; the refinement check is that question, deterministically.
+- **Cost** — filters carry a covariance alongside the state; the payoff is an
+  error bar, rarely worth it for routine forward simulation.
+- **Where it matters** — when solver error could be mistaken for model error,
+  e.g. likelihood-based inference with coarse solves.
+- **Environment caveat** — the probabilistic solve is gated by a
+  package-compatibility gap, *not* by the method.
+
+See the [book chapter](../../appendices/06-probabilistic-numerical-integration.html)
+and the
+[ProbNumDiffEq.jl](https://nathanaelbosch.github.io/ProbNumDiffEq.jl/stable/) and
+[SciML ODE](https://docs.sciml.ai/DiffEqDocs/stable/) documentation.
+
+::: {.notes}
+End by pointing to the companion notebook, which lets the audience slide the
+coarse tolerance and the output step and watch the measured error respond — the
+interactive version of the calibration argument.
+:::

@@ -1,0 +1,127 @@
+---
+title: "Ordinary differential equations"
+course-unit: ch03-ordinary-differential-equations
+status: complete
+---
+
+## Why this unit matters
+
+- Foundations solved SIR to establish theory; this chapter is about the
+  **tools** — the `OrdinaryDiffEq` workflow.
+- We cover: building an `ODEProblem`, the `Tsit5` solver, dense interpolation
+  `sol(t)`, and **callbacks** for events.
+- Two events: a time-limited **lockdown** and automatic **peak detection**.
+
+## Equations {.smaller}
+
+Base SIR with a time-dependent, piecewise-constant $\beta(t)$:
+
+$$
+\lambda(t)=\frac{\beta(t)\,c\,I}{N},\qquad
+\beta(t)=\begin{cases}\beta_\text{lock}, & t_1\le t<t_2,\\ \beta, & \text{else.}\end{cases}
+$$ {#eq-s-ch03-lockdown}
+
+The infectious peak is the root of the growth rate
+
+$$
+\frac{\mathrm{d}I}{\mathrm{d}t}=\lambda(t)S-\gamma I=0,
+$$ {#eq-s-ch03-peak}
+
+which a `ContinuousCallback` locates to solver tolerance.
+
+## Julia API: problem, solver, interpolation
+
+```{julia}
+#| label: s-ch03-solve
+#| echo: true
+using OrdinaryDiffEq
+function sir_ode!(du, u, p, t)
+    S, I, R = u; β, c, γ, N = p; λ = β * c * I / N
+    du[1] = -λ * S; du[2] = λ * S - γ * I; du[3] = γ * I; return nothing
+end
+u0 = [990.0, 10.0, 0.0]; p = (0.05, 10.0, 0.25, 1000.0); tspan = (0.0, 80.0)
+sol = solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5(); reltol = 1e-8, abstol = 1e-8)
+(length(sol.t), round(sol(12.5)[2]; digits = 3))   # adaptive steps; dense interpolant
+```
+
+## Julia API: a lockdown & peak detection
+
+```{julia}
+#| label: s-ch03-callbacks
+#| echo: true
+using DiffEqCallbacks
+t1, t2 = 10.0, 30.0; β_lock = 0.025
+lockdown!(integ) = (integ.p[1] = integ.t < t2 ? β_lock : 0.05)
+cb = PresetTimeCallback([t1, t2], lockdown!)
+sol_lock = solve(ODEProblem(sir_ode!, u0, tspan, [0.05, 10.0, 0.25, 1000.0]),
+                 Tsit5(); callback = cb, reltol = 1e-8, abstol = 1e-8)
+
+peak_t = Float64[]
+dIdt(u, p) = p[1] * p[2] * u[2] / p[4] * u[1] - p[3] * u[2]     # eq-s-ch03-peak
+peak_cb = ContinuousCallback((u, t, i) -> dIdt(u, i.p), i -> push!(peak_t, i.t))
+solve(ODEProblem(sir_ode!, u0, tspan, collect(p)), Tsit5();
+      callback = peak_cb, reltol = 1e-8, abstol = 1e-8)
+(round.(peak_t; digits = 2), round(maximum(sol[2, :]); digits = 1),
+ round(maximum(sol_lock[2, :]); digits = 1))
+```
+
+## Generated result
+
+```{julia}
+#| label: fig-s-ch03-lockdown
+#| echo: true
+#| fig-cap: "Infectious curve without intervention (red) and with a lockdown halving β over days 10–30 (dashed blue, shaded). The vertical line marks the detected baseline peak."
+using CairoMakie
+tt = 0.0:0.25:80.0
+fig = Figure(size = (760, 400))
+ax = Axis(fig[1,1]; xlabel = "day", ylabel = "I(t)", title = "SIR with a lockdown")
+vspan!(ax, t1, t2; color = (:grey, 0.15))
+lines!(ax, tt, [sol(t)[2] for t in tt];      color = :firebrick, linewidth = 3, label = "no intervention")
+lines!(ax, tt, [sol_lock(t)[2] for t in tt]; color = :steelblue, linewidth = 3, linestyle = :dash, label = "lockdown")
+vlines!(ax, peak_t; color = :black, linestyle = :dot, label = "detected peak")
+axislegend(ax; position = :rt); fig
+```
+
+## Validation
+
+Conservation, interpolation self-consistency, and event-detected peak vs a
+brute-force scan:
+
+```{julia}
+#| label: s-ch03-check
+#| echo: true
+cons = all(u -> isapprox(sum(u), 1000.0; atol = 1e-6), sol.u)
+interp = isapprox(sol(sol.t[10]), sol.u[10]; atol = 1e-8)
+dense_t = 0.0:0.01:80.0
+brute = dense_t[argmax([sol(t)[2] for t in dense_t])]
+peak_ok = isapprox(peak_t[1], brute; atol = 0.05)
+(cons, interp, peak_ok)
+```
+
+All `true`: the solver conserves population, its interpolant is faithful, and the
+callback peak matches the maximum.
+
+## Limitations & takeaways
+
+- The workflow separates **what** the model is from **how** it is solved and
+  **what happens during** the solve — the same `ODEProblem` scales to stiff
+  solvers, sensitivity, and fitting.
+- Callbacks turn an integrator into an event-driven simulator.
+- Limits are those of deterministic SIR; the lockdown here is a perfect switch.
+- **Takeaway:** master `ODEProblem` + `Tsit5` + callbacks once, reuse everywhere.
+
+::: {.notes}
+Highlight that dense output means sol(t) is a high-order interpolant, not a saved
+sample, which is how solutions are resampled onto observation grids later. The
+mutable parameter vector is required so the PresetTimeCallback can change β.
+Note that realistic interventions involve uncertainty and feedback, deferred to
+the interventions and control chapter. Invite learners to sweep β_lock in the
+notebook.
+:::
+
+## Learn more
+
+- Book chapter: [Ordinary differential equations](../../chapters/03-ordinary-differential-equations.html)
+- Pluto notebook: [`03-ordinary-differential-equations.jl`](../../notebooks/chapters/03-ordinary-differential-equations.jl)
+- [OrdinaryDiffEq](https://docs.sciml.ai/OrdinaryDiffEq/stable/) ·
+  [Callbacks](https://docs.sciml.ai/DiffEqDocs/stable/features/callback_functions/)

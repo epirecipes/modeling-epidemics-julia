@@ -1,0 +1,212 @@
+---
+course-unit: p02-probability-and-stochastic-processes
+status: complete
+---
+
+# Probability and stochastic processes {#sec-probability-and-stochastic-processes}
+
+Epidemics in finite populations are inherently random: whether the next contact
+transmits, and whether an infectious person recovers today or tomorrow, are
+chance events. This unit builds the probability foundations the course needs —
+random variables, the Bernoulli/Binomial family, expectation and variance, and
+the idea of a discrete-time Markov chain — and applies them immediately to a
+stochastic SIR model driven by binomial draws.
+
+## Learning goals
+
+By the end of this unit you should be able to:
+
+- describe a Bernoulli trial and derive the Binomial distribution as a sum of
+  independent trials;
+- compute the mean and variance of a Binomial random variable;
+- define the Markov property and explain why the binomial SIR chain has it;
+- convert continuous transition rates into per-step probabilities;
+- simulate an ensemble of stochastic epidemics reproducibly with `Distributions`
+  and `StableRNGs`;
+- compare the ensemble mean against a deterministic expectation.
+
+## Model assumptions and classification
+
+We model each time step of width $\delta t$ as a batch of independent Bernoulli
+trials. Every susceptible individual either becomes infected or not; every
+infectious individual either recovers or not. The number of new infections is
+therefore Binomial in the number of susceptibles, and likewise for recoveries.
+The population is closed and well mixed, and — crucially — the transition
+probabilities depend only on the *current* counts $(S_t, I_t, R_t)$, not on the
+history. This is the Markov property.
+
+| Property | Classification |
+|---|---|
+| Determinism | Stochastic |
+| Time | Discrete (step $\delta t$) |
+| State | Discrete (integer counts) |
+| Representation | Population (compartmental) |
+
+## Equations
+
+A Bernoulli$(p)$ variable takes value 1 with probability $p$. The sum of $n$
+independent Bernoulli$(p)$ trials is Binomial$(n, p)$, with
+
+$$
+\Pr(X = k) = \binom{n}{k} p^{k}(1-p)^{n-k}, \qquad
+\mathbb{E}[X] = np, \qquad \operatorname{Var}[X] = np(1-p).
+$$ {#eq-p02-binomial}
+
+Over a step of width $\delta t$, a susceptible individual is infected with
+probability $p_I$ and an infectious individual recovers with probability $p_R$,
+where the per-capita hazards are the SIR rates converted through
+@eq-p01-rate:
+
+$$
+p_I = 1 - \exp\!\left(-\frac{\beta c I_t}{N}\,\delta t\right), \qquad
+p_R = 1 - \exp\!\left(-\gamma\,\delta t\right).
+$$ {#eq-p02-probs}
+
+The chain then updates by drawing the two event counts and moving individuals
+between compartments:
+
+$$
+\begin{aligned}
+Y_t &\sim \text{Binomial}(S_t, p_I), &\quad Z_t &\sim \text{Binomial}(I_t, p_R),\\
+S_{t+1} &= S_t - Y_t, &\quad
+I_{t+1} &= I_t + Y_t - Z_t, &\quad
+R_{t+1} &= R_t + Z_t.
+\end{aligned}
+$$ {#eq-p02-chain}
+
+Because every individual moves *forward* through S→I→R and none are created or
+destroyed, $S_{t+1}+I_{t+1}+R_{t+1} = S_t+I_t+R_t = N$ for all $t$.
+
+## Julia implementation
+
+The kernel below maps @eq-p02-probs and @eq-p02-chain directly onto code. The
+random number generator `rng` is passed explicitly so that the stochastic stream
+is reproducible and local. `Binomial(n, p)` from `Distributions` is exactly the
+distribution in @eq-p02-binomial.
+
+```{julia}
+#| label: p02-kernel
+using Distributions, StableRNGs
+
+rate_to_proportion(r, δt) = -expm1(-r * δt)
+
+function sir_markov_step(state, p, δt, rng)
+    S, I, R = state
+    β, c, γ, N = p
+    p_I = rate_to_proportion(β * c * I / N, δt)   # eq-p02-probs
+    p_R = rate_to_proportion(γ, δt)
+    Y = rand(rng, Binomial(S, p_I))               # new infections
+    Z = rand(rng, Binomial(I, p_R))               # new recoveries
+    return (S - Y, I + Y - Z, R + Z)              # eq-p02-chain
+end
+
+function simulate_chain(u0, p, δt, nsteps, rng)
+    traj = Matrix{Int}(undef, 3, nsteps + 1)
+    traj[:, 1] .= u0
+    state = Tuple(u0)
+    for k in 1:nsteps
+        state = sir_markov_step(state, p, δt, rng)
+        traj[:, k + 1] .= state
+    end
+    return traj
+end
+```
+
+We run an ensemble of 200 realisations from the baseline initial condition and
+also record the ensemble mean of the infectious compartment.
+
+```{julia}
+#| label: p02-ensemble
+u0 = [990, 10, 0]                 # integer S, I, R
+p  = (0.05, 10.0, 0.25, 1000)     # β, c, γ, N
+δt = 1.0
+nsteps = 40
+nsims = 200
+
+ensemble = [simulate_chain(u0, p, δt, nsteps, StableRNG(seed))
+            for seed in 1:nsims]
+I_paths = reduce(hcat, (traj[2, :] for traj in ensemble))  # (nsteps+1) × nsims
+mean_I = vec(sum(I_paths; dims = 2)) ./ nsims
+(size(I_paths), round(maximum(mean_I); digits = 1))
+```
+
+```{julia}
+#| label: fig-p02-ensemble
+#| fig-cap: "Two hundred stochastic SIR realisations of the infectious compartment (thin grey) with the ensemble mean overlaid (red). Individual epidemics fluctuate and some fade early, but the mean traces a smooth, reproducible curve."
+using CairoMakie
+
+ts = 0:nsteps
+fig = Figure(size = (680, 420))
+ax = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "infectious I(t)",
+          title = "Binomial SIR chain: 200 realisations")
+for j in 1:nsims
+    lines!(ax, ts, I_paths[:, j]; color = (:grey, 0.15), linewidth = 1)
+end
+lines!(ax, ts, mean_I; color = :firebrick, linewidth = 3, label = "ensemble mean")
+axislegend(ax; position = :rt)
+fig
+```
+
+## Validation
+
+For a single Binomial draw the sample mean over many replicates must approach
+the theoretical mean $np$ from @eq-p02-binomial. We check this directly:
+
+```{julia}
+#| label: p02-check-binomial
+rng = StableRNG(7)
+n, prob = 990, 0.02
+samples = [rand(rng, Binomial(n, prob)) for _ in 1:100_000]
+theoretical = n * prob
+empirical = sum(samples) / length(samples)
+(theoretical, round(empirical; digits = 3), isapprox(empirical, theoretical; rtol = 0.02))
+```
+
+As a structural check on the chain itself, every realisation must conserve the
+population exactly (@eq-p02-chain moves integers between compartments):
+
+```{julia}
+#| label: p02-check-conservation
+totals = [sum(traj[:, k]) for traj in ensemble for k in 1:nsteps+1]
+all(==(1000), totals)
+```
+
+Both checks pass: the empirical Binomial mean matches $np$ to within 2%, and all
+$200 \times 41$ population totals equal $N = 1000$.
+
+## Interpretation and limitations
+
+The binomial chain captures *demographic stochasticity* — the randomness of a
+finite population — that the deterministic ODE ignores. Individual epidemics can
+peak at different times or fade out entirely, yet the ensemble mean tracks a
+smooth trajectory close to the deterministic solution we study in
+@sec-foundations. The binomial construction, however, allows more than one event
+per individual per step to be double-counted only if $p_I + p_R$ per compartment
+were mishandled; here susceptibles and infectious individuals are treated in
+separate binomials, which is exact only in the limit of small $\delta t$. It
+also assumes infections and recoveries within a step are independent. The
+exact, event-by-event alternative — the Gillespie algorithm of @gillespie1977 —
+is developed in the continuous-time Markov chapter. For the distributions API
+see the [Distributions.jl documentation](https://juliastats.org/Distributions.jl/stable/).
+
+## Exercises
+
+### Exercise 1 {#p02-ex1}
+
+The variance of a Binomial$(n,p)$ is $np(1-p)$ (@eq-p02-binomial). Draw
+100 000 samples from `Binomial(990, 0.02)` using `StableRNG(7)` and compare the
+sample variance with the theoretical value. Then repeat with $p = 0.5$ and
+explain, using the formula, why the variance is largest near $p = 0.5$.
+
+### Exercise 2 {#p02-ex2}
+
+Reduce the step width to $\delta t = 0.1$ (and increase `nsteps` to 400 so the
+horizon is unchanged) and rerun the ensemble. Report how the fraction of
+realisations that reach $I = 0$ before day 40 changes, and explain why finer
+steps change the discrete-time dynamics.
+
+## Companion materials
+
+- [Slides](../slides/prerequisites/02-probability-and-stochastic-processes.html)
+- [Pluto preview](../notebook-exports/prerequisites/02-probability-and-stochastic-processes.html)
+- [Pluto source](../notebooks/prerequisites/02-probability-and-stochastic-processes.jl)

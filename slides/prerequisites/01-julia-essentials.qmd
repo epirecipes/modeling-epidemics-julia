@@ -1,0 +1,128 @@
+---
+title: "Julia essentials for modelers"
+course-unit: p01-julia-essentials
+status: complete
+---
+
+## Why this unit matters
+
+- The course reuses one object throughout: the SIR model of Kermack & McKendrick (1927).
+- Before solving it we need a precise slice of Julia:
+  - **in-place kernels** `f(du, u, p, t)` — the SciML calling convention;
+  - **broadcasting** and comprehensions to evaluate models on a grid;
+  - **structs / named tuples** and **multiple dispatch** to organise parameters;
+  - **reproducible randomness** with `StableRNGs`.
+- Goal: the vocabulary, not a language tour.
+
+## The running model {.smaller}
+
+Deterministic, continuous-time, population SIR with force of infection
+$\lambda = \beta c I/N$:
+
+$$
+\frac{\mathrm{d}S}{\mathrm{d}t} = -\lambda S,\quad
+\frac{\mathrm{d}I}{\mathrm{d}t} = \lambda S - \gamma I,\quad
+\frac{\mathrm{d}R}{\mathrm{d}t} = \gamma I.
+$$ {#eq-s-p01-sir}
+
+The three right-hand sides sum to zero, so $S+I+R=N$ is conserved.
+Rate → per-step probability for later discretisation:
+$p(r,\delta t)=1-e^{-r\,\delta t}$.
+
+## Julia API: an in-place kernel
+
+`u = [S, I, R]` maps onto @eq-s-p01-sir; `p` carries $(\beta,c,\gamma,N)$.
+
+```{julia}
+#| label: s-p01-kernel
+#| echo: true
+function sir_ode!(du, u, p, t)
+    S, I, R = u
+    β, c, γ, N = p
+    λ = β * c * I / N              # force of infection
+    du[1] = -λ * S                # dS/dt
+    du[2] = λ * S - γ * I         # dI/dt
+    du[3] = γ * I                 # dR/dt
+    return nothing
+end
+
+u0 = [990.0, 10.0, 0.0]
+p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
+du = zeros(3); sir_ode!(du, u0, values(p), 0.0); du
+```
+
+## Broadcasting & a figure from code
+
+```{julia}
+#| label: fig-s-p01-rate
+#| echo: true
+#| fig-cap: "Rate-to-proportion $1-e^{-r\\delta t}$ for a fast ($r=1$) and slow ($r=0.25$) rate: broadcasting evaluates the curve with no explicit loop."
+using CairoMakie
+rate_to_proportion(r, δt) = -expm1(-r * δt)   # stable 1 - exp(-r δt)
+δts = 0.0:0.05:2.0
+fig = Figure(size = (760, 360))
+ax = Axis(fig[1, 1]; xlabel = "δt", ylabel = "event probability")
+lines!(ax, δts, rate_to_proportion.(1.0, δts);  linewidth = 3, label = "r = 1.0")
+lines!(ax, δts, rate_to_proportion.(0.25, δts); linewidth = 3, label = "r = 0.25")
+axislegend(ax; position = :rb); fig
+```
+
+## Dispatch & reproducible randomness
+
+```{julia}
+#| label: s-p01-dispatch
+#| echo: true
+using StableRNGs
+struct SIRParameters; β::Float64; c::Float64; γ::Float64; N::Float64; end
+foi(I, p::NamedTuple)    = p.β * p.c * I / p.N
+foi(I, p::SIRParameters) = p.β * p.c * I / p.N
+
+params = SIRParameters(0.05, 10.0, 0.25, 1000.0)
+rng = StableRNG(2024)               # local, version-stable stream
+(foi(10.0, p), foi(10.0, params), rand(rng, 3))
+```
+
+One function name, two methods — the mechanism SciML relies on everywhere.
+
+## Validation
+
+The derivatives must sum to zero (conservation) and `rate_to_proportion`
+must stay a valid probability and match its Taylor limit $p\approx r\,\delta t$:
+
+```{julia}
+#| label: s-p01-check
+#| echo: true
+sir_ode!(du, u0, values(p), 0.0)
+conserved = isapprox(sum(du), 0.0; atol = 1e-12)
+taylor    = isapprox(rate_to_proportion(0.25, 1e-6), 0.25e-6; rtol = 1e-3)
+(conserved, taylor)
+```
+
+Both `true`: the kernel conserves population and the conversion is well behaved.
+
+## Limitations & takeaways
+
+- **Scope:** this is not a full Julia course — no package management beyond
+  `using`, no profiling, metaprogramming, or parametric types.
+- **Takeaways:**
+  - write mutating kernels with the `f(du, u, p, t)` signature;
+  - broadcast with `.` and fuse operations; use `expm1` for stability;
+  - group parameters in typed containers and dispatch on them;
+  - seed a *local* `StableRNG` for bit-reproducible figures.
+- Next: we actually *solve* the model in **Foundations**.
+
+::: {.notes}
+Emphasise that the `!` suffix is a convention, not syntax, and that in-place
+kernels avoid per-evaluation allocations across the thousands of solver calls.
+Stress that `StableRNG` output is fixed across Julia versions, unlike the global
+default RNG, which is why every stochastic figure in the course is reproducible.
+Point listeners to the book for the full narrative and to the Pluto notebook to
+vary the baseline interactively.
+:::
+
+## Learn more
+
+- Book chapter: [Julia essentials for modelers](../../prerequisites/01-julia-essentials.html)
+- Pluto notebook: [`01-julia-essentials.jl`](../../notebooks/prerequisites/01-julia-essentials.jl)
+- [Julia manual](https://docs.julialang.org/en/v1/) ·
+  [CairoMakie](https://docs.makie.org/stable/)

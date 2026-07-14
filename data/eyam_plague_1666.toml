@@ -1,0 +1,34 @@
+name = "Eyam plague, 1666 second wave"
+description = "SIR state counts from 18 June to 20 October 1666 in Eyam, Derbyshire."
+time_origin = "1666-06-18"
+time_unit = "months"
+population = 261
+columns = ["time_months", "S", "I", "R"]
+csv_sha256 = "8914a233d464bfa0ba0a7398ee2656ebeaef5be144d2de02bace8a697f52dcc0"
+
+[initial_conditions]
+S = 254
+I = 7
+R = 0
+
+[provenance]
+primary_record = "Burial register of St. Lawrence Church, Eyam, Derbyshire"
+analytical_source = "Raggett, G. F. (1982), A stochastic model of the Eyam plague"
+analytical_source_doi = "10.1080/02664768200000021"
+packaged_source = "MultiBD 1.0.2"
+packaged_source_url = "https://github.com/msuchard/MultiBD"
+packaged_source_file = "R/Eyam.R and data/Eyam.rda"
+packaged_source_file_sha = "1f0947c3777216360e8eeb16c774ebe7109a9b57"
+packaged_source_license = "Apache License 2.0"
+
+[interpretation]
+S = "Susceptible persons"
+I = "Infectious persons"
+R = "Removed persons"
+
+caveats = [
+  "The population of 261 is the population at the start of the second wave, not the pre-plague village population.",
+  "The S and I series are model-derived reconstructions from historical records rather than direct measurements.",
+  "A simple closed homogeneous SIR model omits possible rodent-to-human transmission and population movement.",
+  "The final observation is one month after the preceding observation; earlier intervals are half a month.",
+]

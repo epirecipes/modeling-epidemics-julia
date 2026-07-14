@@ -1,0 +1,316 @@
+---
+course-unit: a02-stochastic-delay-differential-equations
+status: complete
+---
+
+# Stochastic delay differential equations {#sec-stochastic-delay-differential-equations}
+
+The delay differential equation (DDE) of @sec-delay-differential-equations is
+still deterministic: given the same history, it always produces the same
+trajectory. Real epidemics have finite populations and demographic noise, just
+like the chemical-Langevin stochastic differential equation (SDE) that
+extends the ordinary SIR model. This appendix combines both ideas — a
+diffusion approximation *and* a fixed recovery delay — into a stochastic delay
+differential equation (SDDE), using the current, actively maintained
+`DelayDiffEq` + `StochasticDiffEq` route rather than the archived
+`StochasticDelayDiffEq.jl` package. That combination is new enough that the
+official documentation marks `SDDEProblem` "experimental," and this appendix
+shows concretely what that means in practice.
+
+## Learning goals
+
+By the end of this unit you should be able to:
+
+- classify an SDDE model and describe how it combines the delayed drift of
+  @sec-delay-differential-equations with the chemical-Langevin diffusion of
+  the stochastic differential equations chapter;
+- construct an `SDDEProblem` and solve it with `StochasticDiffEq`'s `LambaEM`
+  through `DelayDiffEq`'s `MethodOfSteps`, which now supports stochastic
+  delay problems directly;
+- explain why adaptive step-size control is currently unreliable for this
+  problem class near the history discontinuity, and why a fixed step is used
+  instead;
+- explain why demographic noise can drive a compartment negative, and why
+  that risk is *harder* to control for an SDDE than for the plain SDE; and
+- reproduce a stochastic run deterministically despite a currently unreliable
+  `rng` keyword for this problem/algorithm combination.
+
+## Model assumptions and classification
+
+The population, contact process, and fixed recovery delay $\tau = 1/\gamma =
+4$ are exactly those of @sec-delay-differential-equations. What changes is
+that transmission and recovery are now treated as random events with
+Poisson-like variance (the chemical Langevin approximation), applied to the
+*delayed* recovery flow just as in @eq-a01-dde.
+
+| Property | Classification |
+|---|---|
+| Determinism | Stochastic |
+| Time | Continuous |
+| State | Continuous (diffusion approximation to an integer population) |
+| Delay | Fixed lag $\tau$, as in @sec-delay-differential-equations |
+| Noise | Chemical Langevin (non-diagonal, state- and history-dependent) |
+
+This is a **stochastic, continuous-time, continuous-state, population-level**
+model. It is not Markovian in the usual continuous-time sense — like the DDE,
+the recovery term depends on the state at $t - \tau$ — and it is not
+guaranteed to stay inside the physically meaningful region $S, I, R \ge 0$,
+for reasons explored below.
+
+## Equations
+
+With $\lambda(t) = \beta c\, I(t)/N(t)$ as before, the SDDE adds one Wiener
+increment per reaction channel to the delayed-recovery drift of @eq-a01-dde:
+
+$$
+\begin{aligned}
+\mathrm{d}S(t) &= -\lambda(t) S(t)\, \mathrm{d}t - \sqrt{\lambda(t) S(t)}\, \mathrm{d}W_1(t), \\
+\mathrm{d}I(t) &= \bigl[\lambda(t) S(t) - \lambda(t-\tau) S(t-\tau)\bigr] \mathrm{d}t
+  + \sqrt{\lambda(t) S(t)}\, \mathrm{d}W_1(t) - \sqrt{\lambda(t-\tau) S(t-\tau)}\, \mathrm{d}W_2(t), \\
+\mathrm{d}R(t) &= \lambda(t-\tau) S(t-\tau)\, \mathrm{d}t + \sqrt{\lambda(t-\tau) S(t-\tau)}\, \mathrm{d}W_2(t),
+\end{aligned}
+$$ {#eq-a02-sdde}
+
+with the same history $h(t) = (N, 0, 0)$ for $t \le 0$ as @eq-a01-history. As
+in the SDE chapter, the two noise columns are built so that they cancel when
+summed across compartments, which is what keeps $S + I + R$ exactly conserved
+regardless of the realized noise. The official SciML reference for this
+problem type is the
+[SDDE problem page](https://docs.sciml.ai/DiffEqDocs/stable/types/sdde_types/),
+which explicitly labels this functionality experimental.
+
+## Julia implementation
+
+`DelayDiffEq.jl` now recognizes an `SDDEProblem` directly: it automatically
+wraps a bare SDE algorithm like `LambaEM` in `MethodOfSteps`, exactly as it
+wraps `Tsit5` for the deterministic DDE. Both `DelayDiffEq` and
+`StochasticDiffEq` must be loaded for this dispatch to resolve.
+
+```{julia}
+#| label: code-a02-setup
+using DelayDiffEq
+using OrdinaryDiffEq
+using StochasticDiffEq
+using SparseArrays
+using Random
+using CairoMakie
+```
+
+The drift is identical to @eq-a01-dde; the diffusion follows the two reaction
+channels (infection, delayed recovery) with a sparse `3×2` noise matrix, as in
+the chemical Langevin SDE. Rates are clamped with `max(..., 0.0)` purely to
+avoid `sqrt` of a negative number if the state has already drifted below
+zero — a numerical safety net, not a fix for the underlying issue discussed
+in Validation below.
+
+```{julia}
+#| label: code-a02-kernel
+function sir_dde!(du, u, h, p, t)
+    S, I, R = u
+    β, c, τ = p
+    N = S + I + R
+    λ = β * c * I / N
+    Sd, Id, Rd = h(p, t - τ)
+    Nd = Sd + Id + Rd
+    λd = β * c * Id / Nd
+    du[1] = -λ * S
+    du[2] = λ * S - λd * Sd
+    du[3] = λd * Sd
+    return nothing
+end
+
+function sir_delayed_noise!(G, u, h, p, t)
+    S, I, R = u
+    β, c, τ = p
+    N = S + I + R
+    infection = max(β * c * I / N * S, 0.0)
+    Sd, Id, Rd = h(p, t - τ)
+    Nd = Sd + Id + Rd
+    recovery = max(β * c * Id / Nd * Sd, 0.0)
+    G[1, 1] = -sqrt(infection)
+    G[2, 1] = sqrt(infection)
+    G[2, 2] = -sqrt(recovery)
+    G[3, 2] = sqrt(recovery)
+    return nothing
+end
+
+sir_history(p, t) = [1000.0, 0.0, 0.0]
+
+u0 = [990.0, 10.0, 0.0]
+γ = 0.25
+p = (0.05, 10.0, 1 / γ)
+tspan = (0.0, 40.0)
+noise_shape() = sparse([1.0 0.0; 1.0 1.0; 0.0 1.0])
+```
+
+### Adaptive stepping breaks down at the history discontinuity
+
+Solving with the solver's default adaptive stepping fails almost
+immediately, long before any real epidemic dynamics unfold:
+
+```{julia}
+#| label: code-a02-adaptive-attempt
+Random.seed!(4)
+prob_probe = SDDEProblem(sir_dde!, sir_delayed_noise!, u0, sir_history, tspan, p;
+                          noise_rate_prototype = noise_shape())
+sol_probe = solve(prob_probe, LambaEM())
+(sol_probe.retcode, round(sol_probe.t[end]; sigdigits = 3), length(sol_probe.t))
+```
+
+The solver's own step-size controller shrinks `dt` to machine epsilon and
+aborts (`DtLessThanMin`) after roughly a hundred steps, having advanced the
+clock by less than $10^{-4}$ time units out of 40. The cause is the same
+jump discontinuity discussed in @sec-delay-differential-equations — all
+history before $t=0$ is fully susceptible, while $u_0$ already has 10
+infections — combined with multiplicative $\sqrt{\cdot}$ noise, whose
+derivative is unbounded as the argument approaches zero. The practical fix,
+used throughout the rest of this appendix, is the same one the stochastic
+differential equations chapter uses for a *non-delayed* chemical Langevin
+model: a fixed step with `adaptive = false`.
+
+```{julia}
+#| label: code-a02-solve
+Random.seed!(4)
+prob_sdde = SDDEProblem(sir_dde!, sir_delayed_noise!, u0, sir_history, tspan, p;
+                         noise_rate_prototype = noise_shape())
+sol_sdde = solve(prob_sdde, LambaEM(); dt = 0.1, adaptive = false)
+round.(sol_sdde.u[end]; digits = 2)
+```
+
+Note the seed is set with a **global** `Random.seed!` rather than the
+`rng = StableRNG(seed)` keyword used in the SDE and jump-process chapters.
+Passing `rng` directly to `solve` for this `SDDEProblem`/`MethodOfSteps`
+combination currently produces a *different* trajectory on every run, even
+with an identical `StableRNG` seed — the keyword is not fully threaded
+through the delay bookkeeping in the current package versions. Seeding the
+global RNG before each `solve` call, as the original `StochasticDelayDiffEq`-based
+tutorials did, is currently the only reproducible option for this
+combination and is the deliberate, documented deviation from the rest of the
+course's convention.
+
+```{julia}
+#| label: code-a02-compare
+sol_dde = solve(DDEProblem(sir_dde!, u0, sir_history, tspan, p; constant_lags = [p[3]]),
+                 MethodOfSteps(Tsit5()); reltol = 1e-8, abstol = 1e-8)
+
+grid = 0.0:0.1:40.0
+states_sdde = reduce(hcat, sol_sdde(t) for t in grid)
+states_dde = reduce(hcat, sol_dde(t) for t in grid)
+size(states_sdde)
+```
+
+```{julia}
+#| label: fig-a02-trajectories
+#| fig-cap: "One SDDE realization (solid) against the deterministic DDE drift of @sec-delay-differential-equations (dashed infectious curve). The realization tracks the drift closely but shows realization-to-realization variation typical of demographic noise."
+fig = Figure(size = (720, 440))
+ax = Axis(fig[1, 1]; xlabel = "time", ylabel = "number",
+          title = "SDDE realization (seed 4) vs deterministic DDE drift")
+lines!(ax, grid, states_sdde[1, :]; color = :steelblue, linewidth = 3, label = "S (SDDE)")
+lines!(ax, grid, states_sdde[2, :]; color = :firebrick, linewidth = 3, label = "I (SDDE)")
+lines!(ax, grid, states_sdde[3, :]; color = :seagreen, linewidth = 3, label = "R (SDDE)")
+lines!(ax, grid, states_dde[2, :]; color = :firebrick, linewidth = 2, linestyle = :dash,
+       label = "I (DDE drift)")
+axislegend(ax; position = :rt)
+fig
+```
+
+## Validation
+
+**Conservation.** Like the non-delayed chemical Langevin SDE, the noise
+columns are built to sum to zero, so conservation should hold regardless of
+the realized path:
+
+```{julia}
+#| label: code-a02-check-conservation
+conserved_clean = maximum(abs.(vec(sum(states_sdde; dims = 1)) .- 1000.0))
+nonneg_clean = minimum(states_sdde)
+(conserved_clean < 1e-8, nonneg_clean)
+```
+
+For this seed the run also happens to stay nonnegative throughout — but that
+is a property of this particular realization, not a guarantee.
+
+**The nonnegativity caveat, quantified.** Changing only the random seed, with
+every other line of code identical, produces a realization where the
+infectious compartment swings *substantially* negative, while conservation
+still holds to solver precision:
+
+```{julia}
+#| label: code-a02-check-caveat
+Random.seed!(1)
+prob_caveat = SDDEProblem(sir_dde!, sir_delayed_noise!, u0, sir_history, tspan, p;
+                           noise_rate_prototype = noise_shape())
+sol_caveat = solve(prob_caveat, LambaEM(); dt = 0.1, adaptive = false)
+states_caveat = Array(sol_caveat)
+conserved_caveat = maximum(abs.(vec(sum(states_caveat; dims = 1)) .- 1000.0))
+nonneg_caveat = minimum(states_caveat)
+(conserved_caveat < 1e-8, round(nonneg_caveat; digits = 1))
+```
+
+Conservation is a structural property of the noise matrix and holds to
+solver tolerance in both realizations; nonnegativity is not structural at
+all, and this second seed drives $I$ to roughly $-87$ individuals at its
+worst point. A model that can report a negative number of infectious people
+has left the region where its equations mean anything, even though its total
+population still "adds up."
+
+## Interpretation and limitations
+
+This appendix demonstrates, concretely rather than abstractly, why the
+official documentation calls `SDDEProblem` experimental. Three specific,
+reproducible issues appear even in this small, textbook-scale model:
+
+1. **Adaptive stepping is currently unusable** here: the controller
+   collapses `dt` to machine epsilon at the history discontinuity, aborting
+   after a fraction of a percent of the time span. A fixed step sidesteps
+   the problem but forfeits the automatic error control adaptive solvers
+   normally provide, so results should be checked for step-size sensitivity
+   (Exercise 1).
+2. **The `rng` keyword is unreliable for this combination.** Reproducibility
+   currently requires the older global-state pattern
+   (`Random.seed!` before `solve`), unlike the rest of the course.
+3. **Nonnegativity is not guaranteed, and is harder to police than for a
+   plain SDE.** For an ordinary chemical Langevin SDE, clamping a compartment
+   at each step is at least a *local* correction. Here, recovery at time $t$
+   is driven by the state at $t - \tau$; clamping the *current* state cannot
+   repair the *delayed* history that will keep influencing the drift and
+   diffusion for up to $\tau$ more time units. A per-step correction is
+   therefore even more of a pragmatic patch than in the non-delayed case
+   discussed in the stochastic differential equations chapter, and is not
+   used here for that reason.
+
+None of this invalidates the chemical Langevin idea itself — it is a
+well-established diffusion approximation to a reaction network
+[@gillespie1977] — but it does mean that, at present, this particular
+software combination is best treated as a teaching device and a basis for
+further testing, not as a production tool. A more robust alternative for
+small populations is the exact stochastic simulation approach of the
+jump-process chapter, extended with a fixed delay through an event queue —
+which is exactly the discrete-event simulation covered in the next appendix.
+
+## Exercises
+
+### Exercise 1 {#a02-ex1}
+
+Repeat the seed-4 run at `dt` values of $0.2$, $0.1$, and $0.05$. For each,
+record the maximum conservation error and the minimum state value over the
+whole trajectory. Discuss whether decreasing `dt` makes nonnegativity
+violations more or less frequent, and explain why — unlike the convergence
+study in the calculus and numerical methods unit — this is not a simple
+"smaller step, smaller error" relationship.
+
+### Exercise 2 {#a02-ex2}
+
+Run the seed-1 (caveat) trajectory again, this time adding a `DiscreteCallback`
+that clamps $I$ to zero whenever it is negative after a step. Report the
+new minimum value of $I$, the new maximum conservation error, and the number
+of times the callback fires. Compare the corrected trajectory's conservation
+error with the uncorrected one, and use the result to explain concretely why
+clamping the current state is an incomplete fix for a *delayed* recovery
+term.
+
+## Companion materials
+
+- [Slides](../slides/appendices/02-stochastic-delay-differential-equations.html)
+- [Pluto preview](../notebook-exports/appendices/02-stochastic-delay-differential-equations.html)
+- [Pluto source](../notebooks/appendices/02-stochastic-delay-differential-equations.jl)

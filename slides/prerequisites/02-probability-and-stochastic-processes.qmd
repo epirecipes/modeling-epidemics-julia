@@ -1,0 +1,113 @@
+---
+title: "Probability and stochastic processes"
+course-unit: p02-probability-and-stochastic-processes
+status: complete
+---
+
+## Why this unit matters
+
+- Epidemics in finite populations are **random**: whether a contact transmits,
+  or an individual recovers today, are chance events.
+- We build the probability the course needs — Bernoulli/Binomial, mean and
+  variance, the **Markov property** — and apply it to a stochastic SIR chain.
+- Deterministic ODEs describe the *mean*; here we capture the *fluctuations*.
+
+## Equations {.smaller}
+
+A sum of $n$ independent Bernoulli$(p)$ trials is Binomial$(n,p)$:
+
+$$
+\Pr(X=k)=\binom{n}{k}p^k(1-p)^{n-k},\quad \mathbb{E}[X]=np,\quad \operatorname{Var}[X]=np(1-p).
+$$ {#eq-s-p02-binom}
+
+Per-step probabilities from the SIR rates, then a Markov update:
+
+$$
+p_I = 1-e^{-\beta c I_t \delta t/N},\quad p_R = 1-e^{-\gamma\delta t},
+$$ {#eq-s-p02-probs}
+
+$$
+Y_t\sim\text{Bin}(S_t,p_I),\; Z_t\sim\text{Bin}(I_t,p_R),\;
+S_{t+1}=S_t-Y_t,\; I_{t+1}=I_t+Y_t-Z_t,\; R_{t+1}=R_t+Z_t.
+$$ {#eq-s-p02-chain}
+
+Only current counts enter — the **Markov property** — and $N$ is conserved.
+
+## Julia API: the Markov kernel
+
+```{julia}
+#| label: s-p02-kernel
+#| echo: true
+using Distributions, StableRNGs
+rate_to_proportion(r, δt) = -expm1(-r * δt)
+
+function chain_step(state, p, δt, rng)
+    S, I, R = state; β, c, γ, N = p
+    Y = rand(rng, Binomial(S, rate_to_proportion(β * c * I / N, δt)))  # infections
+    Z = rand(rng, Binomial(I, rate_to_proportion(γ, δt)))             # recoveries
+    return (S - Y, I + Y - Z, R + Z)
+end
+
+function simulate(u0, p, δt, nsteps, rng)
+    traj = Matrix{Int}(undef, 3, nsteps + 1); traj[:, 1] .= u0
+    s = Tuple(u0)
+    for k in 1:nsteps; s = chain_step(s, p, δt, rng); traj[:, k+1] .= s; end
+    traj
+end
+```
+
+## Generated result: an ensemble
+
+```{julia}
+#| label: fig-s-p02-ensemble
+#| echo: true
+#| fig-cap: "Two hundred stochastic realisations of $I(t)$ (grey) with the ensemble mean (red). Individual epidemics fluctuate and some fade early; the mean is smooth and reproducible."
+using CairoMakie
+u0 = [990, 10, 0]; p = (0.05, 10.0, 0.25, 1000); δt = 1.0; nsteps = 40; nsims = 200
+ens = [simulate(u0, p, δt, nsteps, StableRNG(seed)) for seed in 1:nsims]
+Ipaths = reduce(hcat, (t[2, :] for t in ens)); meanI = vec(sum(Ipaths; dims = 2)) ./ nsims
+ts = 0:nsteps
+fig = Figure(size = (760, 380)); ax = Axis(fig[1,1]; xlabel = "day", ylabel = "I(t)")
+for j in 1:nsims; lines!(ax, ts, Ipaths[:, j]; color = (:grey, 0.12)); end
+lines!(ax, ts, meanI; color = :firebrick, linewidth = 3, label = "ensemble mean")
+axislegend(ax; position = :rt); fig
+```
+
+## Validation
+
+Sample mean of a Binomial draw → $np$; every realisation conserves $N$:
+
+```{julia}
+#| label: s-p02-check
+#| echo: true
+rng = StableRNG(7); n, prob = 990, 0.02
+samples = [rand(rng, Binomial(n, prob)) for _ in 1:100_000]
+mean_ok = isapprox(sum(samples) / length(samples), n * prob; rtol = 0.02)
+cons_ok = all(t -> all(k -> sum(t[:, k]) == 1000, 1:nsteps+1), ens)
+(mean_ok, cons_ok)
+```
+
+Both `true`: the empirical mean matches $np$ and all $200\times41$ totals equal $N$.
+
+## Limitations & takeaways
+
+- The binomial chain captures **demographic stochasticity** the ODE ignores.
+- It is exact only as $\delta t\to0$: infections and recoveries within a step are
+  treated in separate binomials and assumed independent.
+- Event-by-event exactness → the **Gillespie** algorithm (jump-process chapter).
+- **Takeaways:** Binomial = sum of Bernoullis; convert rates to per-step
+  probabilities; seed local RNGs; average an ensemble to recover the mean.
+
+::: {.notes}
+Explain why variance peaks near p = 0.5 from the np(1-p) formula, and why finer
+steps reduce the within-step double-event artefact. Note that the ensemble mean
+approaches the deterministic solution studied in the Foundations chapter, which
+motivates the map-versus-chain comparison in Discrete-time models. Encourage
+learners to open the notebook and vary the seed range and step width.
+:::
+
+## Learn more
+
+- Book chapter: [Probability and stochastic processes](../../prerequisites/02-probability-and-stochastic-processes.html)
+- Pluto notebook: [`02-probability-and-stochastic-processes.jl`](../../notebooks/prerequisites/02-probability-and-stochastic-processes.jl)
+- [Distributions.jl](https://juliastats.org/Distributions.jl/stable/)

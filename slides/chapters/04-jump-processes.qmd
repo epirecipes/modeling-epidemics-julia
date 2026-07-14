@@ -1,0 +1,129 @@
+---
+title: "Continuous-time Markov chains and jump processes"
+course-unit: ch04-jump-processes
+status: complete
+---
+
+## Why events matter
+
+- A CTMC waits for the next infection or recovery.
+- The state is integer-valued: $X=(S,I,R)$.
+- Exact event timing exposes fade-out and peak variability.
+
+For the baseline population,
+$$
+a_{\mathrm{inf}}=\frac{\beta cSI}{N},\qquad
+a_{\mathrm{rec}}=\gamma I.
+$$
+
+::: {.notes}
+Contrast this with an ODE: an ODE advances all flows over a numerical
+interval, while a jump process samples the next event and its type.
+:::
+
+## Gillespie direct algorithm
+
+At state $x$, let $a_0=a_{\mathrm{inf}}+a_{\mathrm{rec}}$.
+
+1. Draw $\tau\sim\operatorname{Exponential}(a_0)$.
+2. Choose infection with probability $a_{\mathrm{inf}}/a_0$.
+3. Apply $(-1,+1,0)$ or $(0,-1,+1)$.
+
+This is a stochastic, continuous-time, discrete-state, population-level
+model.  Every event conserves $S+I+R=N$.
+
+::: {.notes}
+The propensities are rates, not probabilities.  The waiting time is continuous
+even though the state changes by integer increments.
+:::
+
+## A visible Julia kernel
+
+```{julia}
+using Random, StableRNGs
+
+function gillespie_sir(N, I₀, β, c, γ, tmax, rng)
+    t, x = 0.0, [N - I₀, I₀, 0]
+    times, states = [t], [copy(x)]
+    while t < tmax && x[2] > 0
+        a = (β*c*x[1]*x[2]/N, γ*x[2])
+        a₀ = sum(a)
+        a₀ == 0 && break
+        t += randexp(rng)/a₀
+        t > tmax && break
+        if rand(rng)*a₀ < a[1]
+            x[1] -= 1; x[2] += 1
+        else
+            x[2] -= 1; x[3] += 1
+        end
+        push!(times, t); push!(states, copy(x))
+    end
+    (; times, states)
+end
+```
+
+::: {.notes}
+The state update is the stoichiometric change vector in code.  The local
+StableRNG makes the result reproducible without relying on global state.
+:::
+
+## Current-code result
+
+```{julia}
+path = gillespie_sir(1000, 10, 0.05, 10.0, 0.25, 40.0,
+    StableRNG(20250711))
+states = reduce(hcat, path.states)
+mass_error = maximum(abs.(sum(states; dims=1) .- 1000))
+(events = length(path.times) - 1, peak_I = maximum(states[2, :]),
+    mass_error)
+```
+
+The returned result is generated at render time.  `mass_error == 0` is a
+structural validation; `peak_I` and the event count are realization-specific.
+
+::: {.notes}
+Do not interpret one path as an expected epidemic.  Use seeded ensembles when
+comparing with the deterministic mean-field model.
+:::
+
+## From model to package API
+
+The same reaction structure can be represented with current SciML packages:
+
+```julia
+using Catalyst, JumpProcesses
+sir_network = @reaction_network begin
+    κ, S + I --> 2I
+    γ, I --> R
+end
+jump_problem = JumpProblem(
+    sir_network, [:S=>990, :I=>10, :R=>0], (0.0, 40.0),
+    [:κ=>0.05*10/1000, :γ=>0.25];
+    aggregator=Direct(), rng=StableRNG(20250711))
+jump_solution = solve(jump_problem, SSAStepper(); saveat=0.2)
+```
+
+The network records species, propensities, and stoichiometry explicitly.
+
+::: {.notes}
+The direct kernel is useful for learning; Catalyst plus JumpProcesses is useful
+when the reaction network will be reused as an ODE, SDE, or jump model.
+:::
+
+## Takeaways and links
+
+- Propensities determine both waiting times and event probabilities.
+- Exact jumps preserve integer states and population conservation.
+- Ensemble summaries are needed for comparison with an ODE.
+
+Further reading:
+
+- [JumpProcesses direct stochastic tutorial](https://docs.sciml.ai/JumpProcesses/stable/tutorials/discrete_stochastic_example/)
+- [Catalyst documentation](https://docs.sciml.ai/Catalyst/stable/)
+- [Book chapter](../../chapters/04-jump-processes.html) · [Pluto notebook](../../notebook-exports/chapters/04-jump-processes.html)
+
+::: {.notes}
+Invite readers to open the Pluto companion and change transmission or the
+initial number infected.  The book contains the random time-change derivation
+and exercises.
+:::

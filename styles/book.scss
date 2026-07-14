@@ -1,0 +1,22 @@
+/*-- scss:defaults --*/
+$primary: #1f5f78;
+$link-color: #176b87;
+$font-family-sans-serif: "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+$font-family-monospace: "JuliaMono", "SFMono-Regular", Consolas, monospace;
+
+/*-- scss:rules --*/
+.quarto-figure {
+  margin-block: 1.5rem;
+}
+
+.cell-output-display {
+  overflow-x: auto;
+}
+
+.callout-note {
+  border-left-color: $primary;
+}
+
+table {
+  font-size: 0.95rem;
+}

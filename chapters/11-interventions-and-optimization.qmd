@@ -1,0 +1,306 @@
+---
+course-unit: ch11-interventions-and-optimization
+status: complete
+---
+
+# Interventions and optimization
+
+An intervention model has two layers. First, a **scenario** specifies a
+policy and simulates its consequences. Second, an **optimization** compares
+many admissible policies using an explicit objective and constraints. Keeping
+those layers separate makes it possible to audit a proposed policy before
+asking an optimizer to choose one.
+
+## Learning goals
+
+By the end of this chapter you should be able to:
+
+- represent a temporary reduction in transmission with an ODE callback;
+- distinguish a callback-driven scenario from an optimization problem;
+- formulate a small bounded intervention-timing problem with
+  [Optimization.jl](https://docs.sciml.ai/Optimization/stable/);
+- compare an optimized policy with no intervention and a fixed reference
+  policy; and
+- state the objective, bounds, and limitations that determine what an
+  “optimal” intervention means.
+
+## Model assumptions and classification
+
+The model is deterministic, continuous in time, continuous in state, and
+population based. It retains the closed, homogeneous SIR assumptions of
+@kermack1927 and adds a temporary intervention that reduces transmission by a
+fraction $v(t)$. This is a scenario model, not an individual-level simulation:
+the callback changes one population-level coefficient at specified times.
+
+The baseline is $S(0)=990$, $I(0)=10$, $R(0)=0$, $N=1000$,
+$\beta=0.05$, $c=10$, and $\gamma=0.25$. The intervention used below reduces
+transmission by $v_{\max}=0.5$ for a fixed duration of 10 time units. The
+decision variable is only the start time $t_1$, bounded to $0\leq t_1\leq25$.
+More general time-varying controls belong in the advanced
+[InfiniteOpt/SDDP unit](../appendices/08-advanced-optimal-control.html).
+
+## Equations
+
+We add cumulative incidence $C(t)$ as a bookkeeping state. During a policy
+window, transmission is multiplied by $1-v(t)$:
+
+$$
+\begin{aligned}
+\frac{\mathrm dS}{\mathrm dt}
+  &= -\beta c(1-v(t))\frac{SI}{N},\\
+\frac{\mathrm dI}{\mathrm dt}
+  &= \beta c(1-v(t))\frac{SI}{N}-\gamma I,\\
+\frac{\mathrm dR}{\mathrm dt}
+  &= \gamma I,\\
+\frac{\mathrm dC}{\mathrm dt}
+  &= \beta c(1-v(t))\frac{SI}{N}.
+\end{aligned}
+$$ {#eq-intervention-sir}
+
+For a rectangular policy,
+
+$$
+v(t;t_1)=
+\begin{cases}
+v_{\max},&t_1\leq t<t_1+d,\\
+0,&\text{otherwise}.
+\end{cases}
+$$ {#eq-rectangular-policy}
+
+The objective in this chapter is the final cumulative incidence
+$J(t_1)=C(T;t_1)$ at $T=45$. Because the intervention level and duration are
+fixed, minimizing $J$ is a one-dimensional bounded problem. If intervention
+cost, equity, hospital capacity, or uncertainty matters, those terms must be
+added explicitly rather than inferred from this objective.
+
+## Julia implementation
+
+The right-hand side makes the policy multiplier visible. `PresetTimeCallback`
+is the appropriate tool for this rectangular scenario; its official
+documentation is in [DiffEqCallbacks.jl](https://docs.sciml.ai/DiffEqCallbacks/stable/).
+
+```{julia}
+using CairoMakie
+using DiffEqCallbacks
+using OrdinaryDiffEq
+using Optimization
+using OptimizationOptimJL
+
+course_root = normpath(joinpath(@__DIR__, ".."))
+include(joinpath(course_root, "src", "EpiModelingCourse.jl"))
+using .EpiModelingCourse
+
+baseline = BASELINE_PARAMETERS
+u0 = Float64[
+    BASELINE_INITIAL_STATE.S,
+    BASELINE_INITIAL_STATE.I,
+    BASELINE_INITIAL_STATE.R,
+    0.0,
+]
+time_grid = collect(0.0:0.5:45.0)
+intervention_duration = 10.0
+maximum_reduction = 0.5
+
+function policy_sir!(du, u, p, t)
+    β, c, γ, reduction, N = p
+    S, I, R, C = u
+    incidence = β * c * (1 - reduction) * S * I / N
+    du[1] = -incidence
+    du[2] = incidence - γ * I
+    du[3] = γ * I
+    du[4] = incidence
+    return nothing
+end
+```
+
+### Scenario simulation with a callback
+
+`run_scenario` starts with no intervention, changes the fourth parameter at
+$t_1$, and restores it at $t_1+d$. The callback does not optimize anything;
+it simply implements one policy that has already been specified.
+
+```{julia}
+function run_scenario(
+    start_time;
+    duration = intervention_duration,
+    reduction = maximum_reduction,
+)
+    stop_time = start_time + duration
+    parameters = [
+        baseline.beta,
+        baseline.contact_rate,
+        baseline.gamma,
+        0.0,
+        baseline.N,
+    ]
+    function affect!(integrator)
+        integrator.p[4] = integrator.t < stop_time ? reduction : 0.0
+        return nothing
+    end
+    callback = PresetTimeCallback([start_time, stop_time], affect!)
+    problem = ODEProblem(policy_sir!, u0, (0.0, last(time_grid)), parameters)
+    return solve(
+        problem,
+        Tsit5();
+        callback = callback,
+        saveat = time_grid,
+        abstol = 1e-8,
+        reltol = 1e-8,
+    )
+end
+
+no_intervention = solve(
+    ODEProblem(
+        policy_sir!,
+        u0,
+        (0.0, last(time_grid)),
+        [baseline.beta, baseline.contact_rate, baseline.gamma, 0.0, baseline.N],
+    ),
+    Tsit5();
+    saveat = time_grid,
+    abstol = 1e-8,
+    reltol = 1e-8,
+)
+reference_start = 8.0
+reference_solution = run_scenario(reference_start)
+```
+
+The figure compares the infectious trajectories and cumulative incidence for
+the no-intervention and reference scenarios.
+
+```{julia}
+#| label: fig-ch11-scenarios
+#| fig-cap: "A callback-defined intervention scenario compared with no intervention."
+baseline_array = Array(no_intervention)
+reference_array = Array(reference_solution(time_grid))
+fig = Figure(size = (900, 700))
+ax1 = Axis(fig[1, 1], xlabel = "time", ylabel = "infectious people")
+lines!(ax1, time_grid, baseline_array[2, :], label = "none", color = :firebrick)
+lines!(ax1, time_grid, reference_array[2, :], label = "50% reduction", color = :steelblue)
+vspan!(ax1, reference_start, reference_start + intervention_duration,
+    color = (:steelblue, 0.15))
+axislegend(ax1, position = :rb)
+ax2 = Axis(fig[2, 1], xlabel = "time", ylabel = "cumulative incidence")
+lines!(ax2, time_grid, baseline_array[4, :], label = "none", color = :firebrick)
+lines!(ax2, time_grid, reference_array[4, :], label = "50% reduction", color = :steelblue)
+vspan!(ax2, reference_start, reference_start + intervention_duration,
+    color = (:steelblue, 0.15))
+fig
+```
+
+### A bounded Optimization.jl problem
+
+Now the scenario function becomes the objective. `OptimizationFunction` with
+`AutoFiniteDiff()` differentiates the scalar objective by finite differences,
+while `Fminbox(LBFGS())` enforces the explicit lower and upper bounds. The
+optimizer only chooses $t_1$; it does not decide whether the intervention is
+ethical, feasible to deliver, or appropriate for the model.
+
+```{julia}
+function final_incidence(x, _)
+    solution = run_scenario(x[1])
+    return Array(solution)[4, end]
+end
+
+objective = OptimizationFunction(final_incidence, AutoFiniteDiff())
+optimization_problem = OptimizationProblem(
+    objective,
+    [reference_start],
+    nothing;
+    lb = [0.0],
+    ub = [25.0],
+)
+optimization_solution = solve(
+    optimization_problem,
+    Fminbox(LBFGS());
+    maxiters = 30,
+)
+optimal_start = optimization_solution.u[1]
+optimal_solution = run_scenario(optimal_start)
+```
+
+The bounded problem can be inspected on a grid as well as by the optimizer.
+The grid is a diagnostic, not a replacement for the optimization API.
+
+```{julia}
+candidate_starts = collect(0.0:1.0:25.0)
+candidate_objectives = [final_incidence([start], nothing) for start in candidate_starts]
+objective_at_optimum = final_incidence([optimal_start], nothing)
+```
+
+```{julia}
+#| label: fig-ch11-optimization
+#| fig-cap: "Final cumulative incidence as intervention start time varies."
+fig = Figure(size = (900, 450))
+ax = Axis(
+    fig[1, 1],
+    xlabel = "intervention start time",
+    ylabel = "final cumulative incidence",
+    title = "Bounded timing optimization",
+)
+lines!(ax, candidate_starts, candidate_objectives, color = :darkorange)
+scatter!(ax, [optimal_start], [objective_at_optimum],
+    color = :firebrick, markersize = 14, label = "optimizer")
+axislegend(ax)
+fig
+```
+
+## Validation
+
+The state equations imply $S+I+R=N$ and $C$ is nondecreasing. The
+scenario callback should also reduce final incidence relative to no
+intervention for this parameter choice. Finally, the optimizer result must
+lie inside the declared box and agree with a nearby grid value.
+
+```{julia}
+optimal_array = Array(optimal_solution(time_grid))
+conservation_error = maximum(abs.(vec(sum(optimal_array[1:3, :]; dims = 1)) .- baseline.N))
+incidence_is_monotone = all(diff(optimal_array[4, :]) .>= -1e-10)
+grid_minimum = minimum(candidate_objectives)
+
+@assert conservation_error < 1e-6
+@assert incidence_is_monotone
+@assert 0.0 <= optimal_start <= 25.0
+@assert objective_at_optimum <= grid_minimum + 1.0
+@assert optimal_array[4, end] < baseline_array[4, end]
+(conservation_error = conservation_error, optimal_start = optimal_start,
+    final_incidence_without_policy = baseline_array[4, end],
+    final_incidence_with_policy = optimal_array[4, end])
+```
+
+## Interpretation and limitations
+
+The result is an optimal start time **conditional on** a fixed 50% reduction,
+a fixed ten-unit duration, a homogeneous closed population, perfect timing,
+and the final-incidence objective. It is not a universal recommendation.
+Changing the cost of intervention, adding a peak-infection penalty, or
+penalizing delayed action changes the problem. The rectangular callback also
+creates an idealized instantaneous policy switch; a ramp-up, adherence model,
+or stochastic transmission would be a different model. This chapter uses a
+small bounded problem intentionally; continuous controls, path constraints,
+and multistage uncertainty are deferred to the advanced optimal-control
+appendix.
+
+## Exercises
+
+### Exercise 1 {#ch11-ex1}
+
+Modify `run_scenario` to compare reductions of `0.25`, `0.50`, and `0.75`.
+For each reduction, optimize the start time using the same bounds. Report
+the start time and final incidence, and explain why the best timing need not
+be the time at which infectious prevalence is largest.
+
+### Exercise 2 {#ch11-ex2}
+
+Define a new scalar objective
+$C(T)+\lambda\int v(t)\,\mathrm dt$ for a nonnegative cost weight
+$\lambda$. With a variable intervention duration, describe which additional
+bound or constraint prevents the optimizer from selecting an unrealistically
+long intervention. Implement the objective for two values of $\lambda$ and
+compare the resulting policy choices.
+
+## Companion materials
+
+- [Slides](../slides/chapters/11-interventions-and-optimization.html)
+- [Pluto preview](../notebook-exports/chapters/11-interventions-and-optimization.html)
+- [Pluto source](../notebooks/chapters/11-interventions-and-optimization.jl)

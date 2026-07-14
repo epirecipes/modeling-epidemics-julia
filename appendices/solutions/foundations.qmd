@@ -1,0 +1,421 @@
+## Prerequisite and foundational solutions
+
+### Julia essentials for modelers
+
+#### Solution to Exercise 1 {#solution-p01-ex1}
+
+We extend the in-place kernel with a fourth state $C$ whose derivative is the
+force of infection times $S$, i.e. the instantaneous incidence $\lambda S$. Since
+new infections *leave* $S$ at exactly the rate they *enter* $C$, we expect
+`du[4] == -du[1]`.
+
+```{julia}
+#| label: sol-p01-ex1
+function sir_incidence!(du, u, p, t)
+    S, I, R, C = u
+    β, c, γ, N = p
+    λ = β * c * I / N
+    du[1] = -λ * S
+    du[2] = λ * S - γ * I
+    du[3] = γ * I
+    du[4] = λ * S            # cumulative incidence
+    return nothing
+end
+
+u0 = [990.0, 10.0, 0.0, 0.0]
+p  = (0.05, 10.0, 0.25, 1000.0)
+du = zeros(4)
+sir_incidence!(du, u0, p, 0.0)
+(du = du, matches = isapprox(du[4], -du[1]; atol = 1e-12))
+```
+
+The check returns `true`: cumulative incidence grows at precisely the rate the
+susceptible pool depletes, because both equal $\lambda S$. The recovered term
+$\gamma I$ does not enter $C$ — recovery is a separate flow out of $I$.
+
+#### Solution to Exercise 2 {#solution-p01-ex2}
+
+`rand` returns uniform draws on $[0,1)$, so the fraction below a threshold $q$
+estimates $q$ itself. Here $q = 1 - e^{-0.25}\approx 0.221$.
+
+```{julia}
+#| label: sol-p01-ex2
+using StableRNGs
+rate_to_proportion(r, δt) = -expm1(-r * δt)
+
+rng = StableRNG(2024)
+draws = rand(rng, 10_000)
+q = rate_to_proportion(0.25, 1.0)
+fraction = count(<(q), draws) / length(draws)   # broadcasting via count(<(q), ·)
+(target = q, observed = fraction, absolute_error = abs(fraction - q))
+```
+
+The observed fraction sits within about $0.01$ of the target. Because the stream
+is produced by a *local* `StableRNG(2024)`, whose algorithm is fixed across Julia
+versions and platforms, every reader obtains the identical `draws` vector and the
+identical fraction — the figure is bit-for-bit reproducible, unlike one seeded
+through the global `default_rng()`.
+
+### Probability and stochastic processes
+
+#### Solution to Exercise 1 {#solution-p02-ex1}
+
+The Binomial$(n,p)$ variance is $np(1-p)$. We compare the sample variance of
+100 000 draws against this value for two probabilities.
+
+```{julia}
+#| label: sol-p02-ex1
+using Distributions, StableRNGs, Statistics
+
+function variance_check(n, p; seed = 7, nsamples = 100_000)
+    rng = StableRNG(seed)
+    samples = [rand(rng, Binomial(n, p)) for _ in 1:nsamples]
+    (theoretical = n * p * (1 - p), empirical = var(samples))
+end
+
+low  = variance_check(990, 0.02)
+half = variance_check(990, 0.50)
+(p_002 = low, p_050 = half)
+```
+
+Both empirical variances match $np(1-p)$ closely. Viewed as a function of $p$,
+$np(1-p)$ is a downward parabola maximised at $p = 0.5$: the outcome of each
+Bernoulli trial is then maximally uncertain (a fair coin), so the sum fluctuates
+most. Near $p = 0$ or $p = 1$ almost every trial has the same outcome and the
+variance collapses — hence the $p = 0.5$ case has by far the larger spread.
+
+#### Solution to Exercise 2 {#solution-p02-ex2}
+
+We rerun the ensemble at the coarse ($\delta t = 1$) and fine ($\delta t = 0.1$)
+steps over the same 40-day horizon and record the extinction fraction.
+
+```{julia}
+#| label: sol-p02-ex2
+using Distributions, StableRNGs
+rate_to_proportion(r, δt) = -expm1(-r * δt)
+
+function chain_step(state, p, δt, rng)
+    S, I, R = state; β, c, γ, N = p
+    Y = rand(rng, Binomial(S, rate_to_proportion(β * c * I / N, δt)))
+    Z = rand(rng, Binomial(I, rate_to_proportion(γ, δt)))
+    (S - Y, I + Y - Z, R + Z)
+end
+
+function extinction_fraction(δt; nsims = 200, horizon = 40.0)
+    p = (0.05, 10.0, 0.25, 1000); nsteps = round(Int, horizon / δt)
+    extinct = 0
+    for seed in 1:nsims
+        rng = StableRNG(seed); s = (990, 10, 0)
+        faded = false
+        for _ in 1:nsteps
+            s = chain_step(s, p, δt, rng)
+            s[2] == 0 && (faded = true)
+        end
+        faded && (extinct += 1)
+    end
+    extinct / nsims
+end
+
+(coarse_dt1 = extinction_fraction(1.0), fine_dt0_1 = extinction_fraction(0.1))
+```
+
+Extinction is rare at $R_0 = 2$: no realisation faded out at $\delta t = 1$,
+while a small fraction did at $\delta t = 0.1$. Finer steps change the discrete
+dynamics because the per-step probabilities $p_I, p_R$ are *nonlinear* in
+$\delta t$: a single coarse step lumps together events that finer steps resolve
+individually, and the binomial construction cannot let an individual become
+infected *and* recover within one step. Resolving the early phase in smaller
+increments exposes more chances for the last infective to recover before
+transmitting, so the finer grid detects the occasional fade-out the coarse grid
+misses. As $\delta t \to 0$ these artefacts vanish and the chain approaches the
+exact continuous-time Markov process.
+
+### Calculus and numerical methods
+
+#### Solution to Exercise 1 {#solution-p03-ex1}
+
+The midpoint (RK2) method evaluates the derivative at a half-step to cancel the
+leading error term, giving second-order global accuracy.
+
+```{julia}
+#| label: sol-p03-ex1
+function sir_ode!(du, u, p, t)
+    S, I, R = u; β, c, γ, N = p
+    λ = β * c * I / N
+    du[1] = -λ * S; du[2] = λ * S - γ * I; du[3] = γ * I; return nothing
+end
+
+function midpoint(f, u0, p, δt, tmax)
+    ts = 0.0:δt:tmax
+    us = Matrix{Float64}(undef, length(u0), length(ts)); us[:, 1] .= u0
+    k1 = similar(u0); k2 = similar(u0)
+    for n in 1:length(ts) - 1
+        u = @view us[:, n]
+        f(k1, u, p, ts[n])
+        f(k2, u .+ (δt / 2) .* k1, p, ts[n] + δt / 2)
+        us[:, n + 1] .= u .+ δt .* k2
+    end
+    collect(ts), us
+end
+
+u0 = [990.0, 10.0, 0.0]; p = (0.05, 10.0, 0.25, 1000.0); tmax = 40.0
+_, ref = midpoint(sir_ode!, u0, p, tmax / 2^13, tmax); u_ref = ref[:, end]
+δts = [tmax / 2^k for k in 5:10]
+errs = map(δt -> maximum(abs.(midpoint(sir_ode!, u0, p, δt, tmax)[2][:, end] .- u_ref)), δts)
+orders = [log2(errs[k] / errs[k + 1]) for k in 1:length(errs) - 1]
+(mean_order = sum(orders) / length(orders), close_to_2 = isapprox(sum(orders) / length(orders), 2.0; atol = 0.2))
+```
+
+The mean empirical order is close to 2 — one higher than forward Euler — so
+halving the step now cuts the error roughly fourfold rather than twofold.
+
+#### Solution to Exercise 2 {#solution-p03-ex2}
+
+First the relative error in $I$ at $\delta t = 0.1$, using a fine Euler reference;
+then a search for the largest step keeping every compartment nonnegative.
+
+```{julia}
+#| label: sol-p03-ex2
+function euler(f, u0, p, δt, tmax)
+    ts = 0.0:δt:tmax
+    us = Matrix{Float64}(undef, length(u0), length(ts)); us[:, 1] .= u0
+    du = similar(u0)
+    for n in 1:length(ts) - 1
+        f(du, @view(us[:, n]), p, ts[n]); us[:, n + 1] .= us[:, n] .+ δt .* du
+    end
+    collect(ts), us
+end
+
+_, ref2 = euler(sir_ode!, u0, p, tmax / 2^13, tmax); Iref = ref2[2, end]
+_, u01 = euler(sir_ode!, u0, p, 0.1, tmax)
+rel_err_I = abs(u01[2, end] - Iref) / Iref
+
+nonneg(δt) = all(≥(0), euler(sir_ode!, u0, p, δt, tmax)[2])
+candidates = 0.1:0.2:6.0
+largest_stable = maximum(δt for δt in candidates if nonneg(δt))
+(relative_error_I = rel_err_I, largest_nonnegative_step = largest_stable)
+```
+
+The relative error in the infectious compartment at $\delta t = 0.1$ is a fraction
+of a percent. Beyond a critical step size, forward Euler overshoots and drives a
+compartment negative — an instability the reported `largest_nonnegative_step`
+locates. This conditional stability, not accuracy alone, is why adaptive solvers
+are preferred.
+
+### Foundations: SIR theory and the Julia workflow
+
+#### Solution to Exercise 1 {#solution-ch01-ex1}
+
+Holding $\beta = 0.05$ and $\gamma = 0.25$, $R_0 = \beta c/\gamma$ scales linearly
+with the contact rate. The threshold $R_0 = 1$ occurs at $c = \gamma/\beta = 5$.
+
+```{julia}
+#| label: sol-ch01-ex1
+using NonlinearSolve, DataFrames
+
+β, γ, N = 0.05, 0.25, 1000.0
+s₀ = 990.0 / N
+attack(R0) = 1 - solve(NonlinearProblem((s, r) -> s - s₀ * exp(-r * (1 - s)), 0.2, R0), NewtonRaphson()).u
+
+DataFrame(c = [4, 6, 8, 10],
+          R0 = [β * c / γ for c in (4, 6, 8, 10)],
+          attack_rate = [round(attack(β * c / γ); digits = 3) for c in (4, 6, 8, 10)])
+```
+
+For $c = 4$ we have $R_0 = 0.8 < 1$ and the attack rate ($\approx 0.045$) barely
+exceeds the initial 1% seed — the few initial infections cannot sustain a chain
+of transmission, so no epidemic occurs. For $c \ge 6$ ($R_0 \ge 1.2$) a genuine
+epidemic develops and the attack rate climbs steeply with $R_0$. The switch
+happens exactly at $c = 5$, where $R_0 = 1$: below it each infection produces
+fewer than one secondary case on average.
+
+#### Solution to Exercise 2 {#solution-ch01-ex2}
+
+We locate the infectious peak and read off the susceptible fraction there; theory
+predicts $S/N = 1/R_0$.
+
+```{julia}
+#| label: sol-ch01-ex2
+using OrdinaryDiffEq
+function sir_ode!(du, u, p, t)
+    S, I, R = u; β, c, γ, N = p; λ = β * c * I / N
+    du[1] = -λ * S; du[2] = λ * S - γ * I; du[3] = γ * I; return nothing
+end
+
+u0 = [990.0, 10.0, 0.0]
+sol = solve(ODEProblem(sir_ode!, u0, (0.0, 80.0), (0.05, 10.0, 0.25, 1000.0)), Tsit5(); saveat = 0.1)
+I = sol[2, :]; R0 = 0.05 * 10.0 / 0.25
+peak_ok = isapprox(sol[1, argmax(I)] / 1000.0, 1 / R0; atol = 0.01)
+
+sol_crit = solve(ODEProblem(sir_ode!, u0, (0.0, 80.0), (0.05, 10.0, 0.5, 1000.0)), Tsit5(); saveat = 0.1)
+(R0 = R0, S_over_N_at_peak = sol[1, argmax(I)] / 1000.0, threshold_ok = peak_ok,
+ peak_I_baseline = round(maximum(I); digits = 1),
+ peak_I_R0eq1 = round(maximum(sol_crit[2, :]); digits = 1))
+```
+
+At the baseline $R_0 = 2$ the susceptible fraction at the peak equals $1/R_0 = 0.5$
+to within 1%, confirming @eq-ch01-threshold. Raising $\gamma$ to $0.5$ makes
+$R_0 = 1$: the growth rate $\lambda S - \gamma I$ is negative from the outset
+because $S/N = 0.99 < 1 = 1/R_0$ only marginally, and prevalence merely decays
+from its initial value — there is no epidemic wave, only monotone extinction of
+the initial infectives.
+
+### Discrete-time models
+
+#### Solution to Exercise 1 {#solution-ch02-ex1}
+
+We compare the deterministic map and the stochastic-chain mean against a
+high-accuracy ODE reference at $\delta t = 1$ and $\delta t = 0.25$.
+
+```{julia}
+#| label: sol-ch02-ex1
+using Distributions, StableRNGs, OrdinaryDiffEq
+rate_to_proportion(r, δt) = -expm1(-r * δt)
+function map_step(s, p, δt)
+    S, I, R = s; β, c, γ, N = p
+    inf = rate_to_proportion(β * c * I / N, δt) * S
+    rec = rate_to_proportion(γ, δt) * I
+    (S - inf, I + inf - rec, R + rec)
+end
+function chain_step(s, p, δt, rng)
+    S, I, R = s; β, c, γ, N = p
+    Y = rand(rng, Binomial(round(Int, S), rate_to_proportion(β * c * I / N, δt)))
+    Z = rand(rng, Binomial(round(Int, I), rate_to_proportion(γ, δt)))
+    (S - Y, I + Y - Z, R + Z)
+end
+function run_traj(step, u0, p, δt, n; extra = ())
+    traj = Matrix{Float64}(undef, 3, n + 1); traj[:, 1] .= u0; s = Tuple(float.(u0))
+    for k in 1:n; s = step(s, p, δt, extra...); traj[:, k + 1] .= s; end
+    traj
+end
+
+function sir_ode!(du, u, p, t)
+    S, I, R = u; β, c, γ, N = p; λ = β * c * I / N
+    du[1] = -λ * S; du[2] = λ * S - γ * I; du[3] = γ * I; return nothing
+end
+p = (0.05, 10.0, 0.25, 1000.0)
+ode_peak = maximum(solve(ODEProblem(sir_ode!, [990.0, 10, 0], (0.0, 40.0), p), Tsit5(); saveat = 0.05)[2, :])
+
+function peaks(δt; nsims = 60)
+    n = round(Int, 40 / δt)
+    map_peak = maximum(run_traj((s, p, d) -> map_step(s, p, d), [990, 10, 0], p, δt, n)[2, :])
+    ens = [run_traj(chain_step, [990, 10, 0], p, δt, n; extra = (StableRNG(s),)) for s in 1:nsims]
+    chain_mean_peak = maximum(vec(sum(reduce(hcat, (t[2, :] for t in ens)); dims = 2)) ./ nsims)
+    (map_peak = round(map_peak; digits = 1), chain_mean_peak = round(chain_mean_peak; digits = 1))
+end
+
+(ode_peak = round(ode_peak; digits = 1), dt1 = peaks(1.0), dt025 = peaks(0.25))
+```
+
+The deterministic map at $\delta t = 0.25$ lands much closer to the ODE peak
+($\approx 158$) than at $\delta t = 1$, because the map is a first-order
+(forward-Euler-like) discretisation whose error shrinks with the step. The
+stochastic-chain mean lies close to the map at each step size — it is the map's
+random counterpart — but its peak is additionally *lowered* by peak-timing
+jitter: individual epidemics crest at slightly different times, so averaging them
+flattens the ensemble-mean peak, which can therefore sit even nearer to (or just
+below) the ODE value than the map does. Either way, refining $\delta t$ moves both
+discrete peaks toward the continuous-time reference.
+
+#### Solution to Exercise 2 {#solution-ch02-ex2}
+
+Extinction probability is the fraction of realisations reaching $I = 0$ before day
+40, computed at two contact rates.
+
+```{julia}
+#| label: sol-ch02-ex2
+function extinction(c; nsims = 200, δt = 1.0)
+    p = (0.05, c, 0.25, 1000.0); n = round(Int, 40 / δt); extinct = 0
+    for seed in 1:nsims
+        rng = StableRNG(seed); s = (990, 10, 0); faded = false
+        for _ in 1:n; s = chain_step(s, p, δt, rng); s[2] == 0 && (faded = true); end
+        faded && (extinct += 1)
+    end
+    extinct / nsims
+end
+(R0_2_c10 = extinction(10.0), R0_1_2_c6 = extinction(6.0),
+ R0 = (0.05 * 10 / 0.25, 0.05 * 6 / 0.25))
+```
+
+Lowering the contact rate from $c = 10$ ($R_0 = 2$) to $c = 6$ ($R_0 = 1.2$)
+raises the extinction probability sharply. With a smaller $R_0$ each infectious
+individual produces fewer secondary cases, so the early stochastic phase — when
+only a handful are infected — is far more likely to fizzle out before an epidemic
+establishes. This fade-out is a purely stochastic phenomenon: the deterministic
+map, lacking integer counts, always predicts a (small) deterministic outbreak and
+can never reach exactly zero.
+
+### Ordinary differential equations
+
+#### Solution to Exercise 1 {#solution-ch03-ex1}
+
+We sweep the lockdown strength, using a `ContinuousCallback` on $\mathrm{d}I/
+\mathrm{d}t$ to detect turning points, and report the epidemic peak (largest $I$
+among detected events).
+
+```{julia}
+#| label: sol-ch03-ex1
+using OrdinaryDiffEq, DiffEqCallbacks, DataFrames
+function sir_ode!(du, u, p, t)
+    S, I, R = u; β, c, γ, N = p; λ = β * c * I / N
+    du[1] = -λ * S; du[2] = λ * S - γ * I; du[3] = γ * I; return nothing
+end
+u0 = [990.0, 10.0, 0.0]; tspan = (0.0, 80.0); t1, t2 = 10.0, 30.0
+dIdt(u, p) = p[1] * p[2] * u[2] / p[4] * u[1] - p[3] * u[2]
+
+function peak_under(β_lock)
+    events = Tuple{Float64,Float64}[]
+    lockdown!(i) = (i.p[1] = i.t < t2 ? β_lock : 0.05)
+    peak_cb = ContinuousCallback((u, t, i) -> dIdt(u, i.p), i -> push!(events, (i.t, i.u[2])))
+    set = CallbackSet(PresetTimeCallback([t1, t2], lockdown!), peak_cb)
+    solve(ODEProblem(sir_ode!, u0, tspan, [0.05, 10.0, 0.25, 1000.0]), Tsit5();
+          callback = set, reltol = 1e-8, abstol = 1e-8)
+    t_peak, I_peak = argmax(e -> e[2], events)
+    (t_peak = round(t_peak; digits = 2), I_peak = round(I_peak; digits = 1))
+end
+
+DataFrame(β_lock = [0.045, 0.035, 0.025, 0.015],
+          peak_time = [peak_under(b).t_peak for b in (0.045, 0.035, 0.025, 0.015)],
+          peak_I = [peak_under(b).I_peak for b in (0.045, 0.035, 0.025, 0.015)])
+```
+
+Stronger lockdowns (smaller $\beta_\text{lock}$) do not simply lower the peak: the
+detected peak height and timing behave *non-monotonically*. Moderate lockdowns
+(e.g. $\beta_\text{lock}=0.035$) suppress transmission during the window, cutting
+the peak while it still occurs near the intervention. But very strong lockdowns
+defer the epidemic almost entirely: with growth stifled between days 10 and 30,
+susceptibles are "saved" and the wave resurges *after* the lockdown lifts —
+pushing the peak time out to ~50–60 days and, because a larger susceptible pool
+is preserved, allowing the rebound peak to climb again for the most aggressive
+setting. This is the flatten-*and-delay* trade-off with a sting in the tail: a
+temporary intervention reshapes and postpones the epidemic rather than removing
+it, and the strongest short lockdown is not necessarily the one with the lowest
+overall peak.
+
+#### Solution to Exercise 2 {#solution-ch03-ex2}
+
+We augment the system with cumulative incidence $C$ and reconstruct daily
+incidence from the dense interpolant.
+
+```{julia}
+#| label: sol-ch03-ex2
+function sir_cumulative!(du, u, p, t)
+    S, I, R, C = u; β, c, γ, N = p; λ = β * c * I / N
+    du[1] = -λ * S; du[2] = λ * S - γ * I; du[3] = γ * I; du[4] = λ * S; return nothing
+end
+p = (0.05, 10.0, 0.25, 1000.0)
+sol = solve(ODEProblem(sir_cumulative!, [990.0, 10.0, 0.0, 0.0], (0.0, 80.0), p),
+            Tsit5(); reltol = 1e-9, abstol = 1e-9)
+
+days = 1:80
+daily = [sol(t)[4] - sol(t - 1)[4] for t in days]     # C(t) − C(t−1)
+(final_C = round(sol(80.0)[4]; digits = 3),
+ sum_daily = round(sum(daily); digits = 3),
+ reconstructs = isapprox(sum(daily), sol(80.0)[4] - sol(0.0)[4]; atol = 1e-6))
+```
+
+The daily increments are differences of the cumulative-incidence interpolant, and
+their sum telescopes to $C(80) - C(0)$. The check confirms the reconstruction to
+machine tolerance, illustrating that the dense output `sol(t)` can be resampled
+onto any grid — here the integer-day grid used to compare a continuous model with
+daily surveillance data, a pattern the observation-model chapter builds on.

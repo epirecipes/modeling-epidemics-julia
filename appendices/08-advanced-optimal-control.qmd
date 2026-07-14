@@ -1,0 +1,237 @@
+---
+course-unit: a08-advanced-optimal-control
+status: complete
+---
+
+# Advanced optimal control
+
+Optimal control asks for a time-dependent intervention rather than a single
+parameter value. The control is itself a function, so discretizing time and
+discretizing a control are modeling choices. This appendix uses `InfiniteOpt`
+to state the continuous-time problem and lets its collocation transcription
+produce a finite nonlinear program solved by Ipopt.
+
+## Learning goals
+
+By the end of this appendix you should be able to:
+
+- distinguish a continuous-time, function-valued control from the
+  finite-dimensional intervention in Chapter 11;
+- formulate an ODE-constrained problem with `InfiniteOpt` 0.6;
+- inspect the collocated trajectory and check structural identities; and
+- explain why the historical nonlinear SDDP example is not a valid current
+  SDDP model.
+
+## Model assumptions and classification
+
+We use normalized population fractions, so `S + I` is a fraction and
+`C` is cumulative infection incidence divided by `N`. The model is
+deterministic, continuous in time and state, population-level, and
+ODE-constrained. The control `u(t)` is measurable and bounded between zero and
+`u_max`; it reduces transmission by the factor `1 - u(t)`.
+
+The baseline rates remain `β = 0.05`, `c = 10.0`, and `γ = 0.25`, so the
+effective transmission rate is `βc = 0.5`. We use
+`S(0) = 0.99`, `I(0) = 0.01`, and `C(0) = 0`. The finite horizon is
+`t_f = 20`, `u_max = 0.5`, and the intervention budget is
+`B = 2.0`. These horizon and budget values are intentionally smaller than a
+production policy study.
+
+## Equations
+
+The controlled dynamics are
+
+$$
+\begin{aligned}
+\dot S(t) &= -(1-u(t))\beta c\,S(t)I(t),\\
+\dot I(t) &= (1-u(t))\beta c\,S(t)I(t)-\gamma I(t),\\
+\dot C(t) &= (1-u(t))\beta c\,S(t)I(t).
+\end{aligned}
+\tag{4}
+$$ {#eq-a08-controlled-sir}
+
+We minimize final cumulative cases plus a small quadratic regularizer:
+
+$$
+\begin{aligned}
+\underset{S,I,C,u}{\operatorname{minimize}}\quad
+& C(t_f) + 10^{-3}\int_0^{t_f}u(t)^2\,\mathrm dt\\
+\text{subject to}\quad
+& 0\le u(t)\le u_{\max},\qquad
+\int_0^{t_f}u(t)\,\mathrm dt\le B,
+\end{aligned}
+\tag{5}
+$$ {#eq-a08-objective}
+
+with the initial conditions above. `deriv(S, t)` in the code is
+`\dot S(t)`, `integral(u, t)` is the budget measure, and `S(tf)` is a
+restricted value of the infinite variable at the terminal time.
+
+This is not the same problem class as the core Chapter 11 example, which
+optimizes a finite set of intervention parameters around an ODE simulation.
+Here `u` is declared as `Infinite(t)` and is represented numerically by
+orthogonal collocation supports.
+
+## Julia implementation
+
+### InfiniteOpt formulation
+
+The following is a complete, current `InfiniteOpt` 0.6 path. The
+`OrthogonalCollocation(2)` derivative method supplies a transcription for the
+ODE constraints. `constant_over_collocation` prevents the piecewise control
+from acquiring extra, unconstrained values at collocation points.
+
+```{julia}
+using CairoMakie
+using InfiniteOpt
+using Ipopt
+
+const a08_tf = 20.0
+const a08_beta_c = 0.05 * 10.0
+const a08_gamma = 0.25
+const a08_umax = 0.5
+const a08_budget = 2.0
+
+model = InfiniteModel(Ipopt.Optimizer)
+set_optimizer_attribute(model, "print_level", 0)
+set_optimizer_attribute(model, "max_iter", 1000)
+set_optimizer_attribute(model, "tol", 1e-7)
+
+@infinite_parameter(
+    model,
+    t in [0.0, a08_tf],
+    num_supports = 21,
+    derivative_method = OrthogonalCollocation(2),
+)
+
+@variable(model, S >= 0, Infinite(t), start = 0.99)
+@variable(model, I >= 0, Infinite(t), start = 0.01)
+@variable(model, C >= 0, Infinite(t), start = 0.0)
+@variable(model, 0 <= u <= a08_umax, Infinite(t), start = 0.0)
+
+@constraint(model, S(0.0) == 0.99)
+@constraint(model, I(0.0) == 0.01)
+@constraint(model, C(0.0) == 0.0)
+@constraint(model, deriv(S, t) == -(1 - u) * a08_beta_c * S * I)
+@constraint(model, deriv(I, t) == (1 - u) * a08_beta_c * S * I - a08_gamma * I)
+@constraint(model, deriv(C, t) == (1 - u) * a08_beta_c * S * I)
+@constraint(model, integral(u, t) <= a08_budget)
+@objective(model, Min, C(a08_tf) + 1e-3 * integral(u^2, t))
+
+constant_over_collocation(u, t)
+optimize!(model)
+```
+
+The solution query uses the same support values for all four time-dependent
+variables, which makes the plotted trajectories directly comparable.
+
+```{julia}
+solver_status = termination_status(model)
+objective = objective_value(model)
+time_supports = supports(t)
+S_values = value.(S)
+I_values = value.(I)
+C_values = value.(C)
+u_values = value.(u)
+(; solver_status, objective, number_of_supports = length(time_supports))
+```
+
+### Plotting the policy and trajectory
+
+```{julia}
+#| label: fig-a08-infiniteopt
+#| fig-cap: "InfiniteOpt's collocated epidemic trajectory and the optimized continuous-time intervention."
+fig = Figure(size = (900, 400))
+ax1 = Axis(
+    fig[1, 1],
+    xlabel = "Time",
+    ylabel = "Population fraction",
+)
+lines!(ax1, time_supports, S_values; color = :steelblue, linewidth = 3, label = "S")
+lines!(ax1, time_supports, I_values; color = :firebrick, linewidth = 3, label = "I")
+lines!(ax1, time_supports, C_values; color = :seagreen, linewidth = 3, label = "C")
+axislegend(ax1; position = :lt)
+
+ax2 = Axis(fig[1, 2], xlabel = "Time", ylabel = "Intervention u(t)")
+stairs!(ax2, time_supports, u_values; color = :darkorange, linewidth = 3)
+hlines!(ax2, [a08_umax]; color = :gray, linestyle = :dash, label = "u_max")
+axislegend(ax2; position = :rb)
+fig
+```
+
+## Validation
+
+Two identities are useful checks for this formulation. Since `C` and `S`
+have opposite incidence derivatives,
+`C(t) = S(0) - S(t)` should hold. Also, the collocated policy must remain
+within its declared bounds. These checks validate the transcription output;
+they do not prove global optimality of a nonconvex nonlinear program.
+
+```{julia}
+incidence_identity_error = maximum(abs.(0.99 .- S_values .- C_values))
+control_bound_violation = maximum(max.(0.0, u_values .- a08_umax))
+nonnegative_state_violation = minimum(vcat(S_values, I_values, C_values))
+(;
+    incidence_identity_error,
+    control_bound_violation,
+    nonnegative_state_violation,
+    solver_status,
+)
+```
+
+The first two values should be at floating-point or solver tolerance. The
+third should be nonnegative. Refining `num_supports` is the natural numerical
+convergence check: repeat the model with 41 supports and compare the objective
+and the policy at common times.
+
+## Interpretation and limitations
+
+`InfiniteOpt` separates the mathematical infinite-dimensional problem from its
+transcription. The result is a policy defined over the time domain, rather
+than one value per hand-chosen daily interval. Collocation does not remove
+discretization error, and Ipopt reports a local solution for this nonlinear
+problem. The budget, bounds, and objective are stylized; real interventions
+have delays, costs, compliance, observation feedback, and integer decisions.
+
+The old `../sir-julia/tutorials/sddp/sddp.jmd` example is intentionally not copied
+as runnable code here. It places SIR updates containing exponentials and
+products of state and control variables inside `SDDP.LinearPolicyGraph` using
+`@NLconstraint`. Current SDDP.jl documents policy graphs for multistage
+linear, mixed-integer linear, and supported quadratic formulations; arbitrary
+nonlinear epidemic dynamics are outside that supported class. Presenting that
+old script as current would be misleading. A valid SDDP treatment would first
+construct a linear or mixed-integer approximation with an explicit error
+analysis, or use a different nonlinear stochastic-control method. See the
+[current SDDP manual](https://sddp.dev/stable/) and
+[@dowson2021] for the supported decomposition setting.
+
+For the continuous formulation used here, consult the
+[InfiniteOpt quick-start guide](https://infiniteopt.github.io/InfiniteOpt.jl/stable/tutorials/quick_start/)
+and the package's [official documentation](https://infiniteopt.github.io/InfiniteOpt.jl/stable/).
+The one-lockdown structural result discussed by Britton and Leskelä
+[@britton2022] is useful context, but it is not used as a fabricated
+closed-form validation of this collocated solve.
+
+## Exercises
+
+### Exercise 1 {#a08-ex1}
+
+Repeat the optimization with 21 and 41 time supports. Interpolate both
+policies onto a common grid and compare their objectives, final cumulative
+cases, and maximum pointwise policy difference. Explain which discrepancy is
+transcription error and which could be a different local optimum.
+
+### Exercise 2 {#a08-ex2}
+
+Design a supported SDDP approximation rather than reusing the historical
+nonlinear script: use a finite-horizon linear policy graph for a linear
+inventory-like intervention budget with exogenous scenario costs. Document
+the approximation and its relation to the SIR objective, then explain which
+epidemic nonlinearities have been discarded. Do not claim that an SDDP
+solution is an exact solution of @eq-a08-controlled-sir.
+
+## Companion materials
+
+- [Slides](../slides/appendices/08-advanced-optimal-control.html)
+- [Pluto preview](../notebook-exports/appendices/08-advanced-optimal-control.html)
+- [Pluto source](../notebooks/appendices/08-advanced-optimal-control.jl)

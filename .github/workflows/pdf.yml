@@ -1,0 +1,47 @@
+name: Build combined PDF
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - uses: julia-actions/cache@v2
+
+      - uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: "1.9.28"
+
+      - name: Install PDF tools
+        run: |
+          quarto install tinytex --no-prompt
+          sudo apt-get update
+          sudo apt-get install --yes ghostscript poppler-utils
+
+      - name: Instantiate Julia environments
+        run: |
+          julia --project=. -e 'using Pkg; Pkg.instantiate()'
+          julia --project=environments/ch08 -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Validate PDF source
+        run: julia --project=. scripts/check_pdf_figures.jl
+
+      - name: Build self-contained PDF
+        run: julia --project=. scripts/build_combined_pdf.jl
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: modeling-epidemics-with-julia-pdf
+          path: |
+            dist/modeling-epidemics-with-julia-complete.pdf
+            dist/modeling-epidemics-with-julia-complete.pdf.sha256

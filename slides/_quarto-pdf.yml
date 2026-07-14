@@ -1,0 +1,11 @@
+project:
+  output-dir: ../_pdf/slides
+
+execute:
+  freeze: false
+
+format:
+  beamer:
+    pdf-engine: lualatex
+    aspectratio: 169
+    keep-tex: false

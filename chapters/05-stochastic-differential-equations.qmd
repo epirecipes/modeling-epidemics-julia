@@ -1,0 +1,257 @@
+---
+course-unit: ch05-stochastic-differential-equations
+status: complete
+---
+
+# Stochastic differential equations
+
+A jump process resolves every infection and recovery. A stochastic differential
+equation (SDE) instead describes continuous-valued fluctuations around a
+drift. This is useful when the population is large enough for a diffusion
+approximation to be reasonable, and when we want to connect stochastic
+simulation with the calculus and solvers used for ODEs.
+
+## Learning goals
+
+You will:
+
+- derive the chemical Langevin approximation from SIR reaction propensities;
+- distinguish drift, diffusion columns, and independent Wiener processes;
+- solve a non-diagonal-noise SDE with the current StochasticDiffEq API; and
+- diagnose conservation and the possibility of negative populations.
+
+## Model assumptions and classification
+
+The baseline is the closed, homogeneously mixing SIR population
+$(S,I,R)=(990,10,0)$ with $N=1000$, $c=10.0$, $\beta=0.05$, and
+$\gamma=0.25$. We retain the two transitions
+$S+I\to 2I$ and $I\to R$, but replace integer event counts by a diffusion.
+
+This is a **stochastic, continuous-time, continuous-state, population-level**
+model. “Continuous state” means the numerical approximation can produce real
+values, not that people are fractional. It is an approximation to the
+discrete-state CTMC from Chapter 4, and is most defensible when propensities
+are large and the process is away from absorbing boundaries.
+
+## Equations
+
+Write the stoichiometric columns and propensities as
+
+$$
+ V =
+ \begin{pmatrix}
+ -1 & 0\\
+ 1 & -1\\
+ 0 & 1
+ \end{pmatrix},
+ \qquad
+ a(X)=
+ \begin{pmatrix}
+ \kappa SI\\
+ \gamma I
+ \end{pmatrix},
+ \qquad \kappa=\frac{\beta c}{N}.
+$$
+
+For a short interval $dt$, a Poisson event count with mean $a_jdt$ can
+be approximated by
+$$
+\operatorname{Poisson}(a_jdt)\approx a_jdt+\sqrt{a_j}\,dW_j,
+$$
+
+where $dW_j$ are independent Brownian increments with variance $dt$.
+Substituting both reactions into the time-change equation gives the chemical
+Langevin equation
+
+$$
+ dX = V a(X)\,dt + V\operatorname{diag}(\sqrt{a(X)})\,dW.
+$$ {#eq-chemical-langevin}
+
+Thus the drift $f(X)=Va(X)$ is
+$$
+f(X)=(-a_1,\ a_1-a_2,\ a_2)^\mathsf{T},
+$$
+
+and the $3\times2$ diffusion matrix $G(X)$ has columns
+$$
+G_{\cdot1}=(-\sqrt{a_1},\sqrt{a_1},0)^\mathsf{T},\qquad
+G_{\cdot2}=(0,-\sqrt{a_2},\sqrt{a_2})^\mathsf{T}.
+$$
+
+Because each column of $V$ sums to zero, both the drift and every Brownian
+increment conserve $S+I+R$ algebraically. Numerical integration can still
+accumulate roundoff error.
+
+## Julia implementation
+
+`SDEProblem` accepts an in-place drift `f!` and diffusion `g!`. A vector-valued
+state with a $3\times2$ diffusion requires
+`noise_rate_prototype=zeros(3, 2)`: two columns correspond to the two
+independent Wiener processes. `LambaEM()` is the StochasticDiffEq method for
+Euler--Maruyama with general (non-diagonal) noise in the installed 7.1.1
+environment. The unusual spelling is part of the package API.
+
+```{julia}
+#| label: code-ch05-setup
+using CairoMakie
+using OrdinaryDiffEq
+using StochasticDiffEq
+using StableRNGs
+
+const N = 1000.0
+const β = 0.05
+const c = 10.0
+const γ = 0.25
+const κ = β * c / N
+const u₀ = [990.0, 10.0, 0.0]
+const tspan = (0.0, 30.0)
+const times = collect(0.0:0.1:30.0)
+
+function propensities(u, p)
+    κ, γ = p
+    S, I = max(u[1], 0.0), max(u[2], 0.0)
+    return (κ * S * I, γ * I)
+end
+```
+
+The `max` operations make the code well-defined if an Euler step crosses a
+boundary. They do not repair the interpretation of a negative state; the
+boundary issue is discussed below.
+
+```{julia}
+#| label: code-ch05-kernel
+function sir_drift!(du, u, p, t)
+    infection, recovery = propensities(u, p)
+    du[1] = -infection
+    du[2] = infection - recovery
+    du[3] = recovery
+    return nothing
+end
+
+function sir_diffusion!(G, u, p, t)
+    infection, recovery = propensities(u, p)
+    infection_noise = sqrt(infection)
+    recovery_noise = sqrt(recovery)
+    G[1, 1] = -infection_noise
+    G[2, 1] = infection_noise
+    G[3, 1] = 0.0
+    G[1, 2] = 0.0
+    G[2, 2] = -recovery_noise
+    G[3, 2] = recovery_noise
+    return nothing
+end
+
+noise_shape = zeros(3, 2)
+sde_problem = SDEProblem(
+    sir_drift!, sir_diffusion!, u₀, tspan, (κ, γ);
+    noise_rate_prototype = noise_shape,
+)
+sde_solution = solve(
+    sde_problem, LambaEM();
+    dt = 0.02, adaptive = false, saveat = times,
+    rng = StableRNG(20250711),
+)
+sde_states = Array(sde_solution)
+```
+
+The function `sir_diffusion!` is a direct transcription of the two columns of
+$G$ in Equation @eq-chemical-langevin. It is intentionally not replaced by
+independent noise on $S$, $I$, and $R$: doing that would break the
+reaction-level correlation and population conservation.
+
+For a baseline comparison, solve the drift alone:
+
+```{julia}
+#| label: code-ch05-ode
+ode_problem = ODEProblem(sir_drift!, u₀, tspan, (κ, γ))
+ode_solution = solve(ode_problem, Tsit5(); saveat = times)
+ode_states = Array(ode_solution)
+
+mass_error = maximum(abs.(vec(sum(sde_states; dims = 1)) .- N))
+minimum_state = minimum(sde_states)
+@assert mass_error < 1e-8
+(; mass_error, minimum_state)
+```
+
+The ODE is not the expected trajectory of every SDE path, but it is the
+large-population drift comparison. The conservation assertion is stronger:
+it checks a structural property of the implementation independently of the
+random realization.
+
+```{julia}
+#| label: fig-ch05-diffusion
+#| fig-cap: "A chemical-Langevin SIR path compared with the deterministic drift."
+fig = Figure(size = (760, 430))
+ax = Axis(fig[1, 1], xlabel = "time", ylabel = "people",
+    title = "Chemical Langevin SIR")
+for (j, (name, color)) in enumerate(zip(["S", "I", "R"],
+                                         [:steelblue, :firebrick, :seagreen]))
+    lines!(ax, times, sde_states[j, :]; color, linewidth = 2, label = "$name (SDE)")
+    lines!(ax, times, ode_states[j, :]; color, linestyle = :dash,
+        linewidth = 1.5, label = "$name (ODE)")
+end
+axislegend(ax, position = :rt, nbanks = 2)
+fig
+```
+
+## Validation
+
+The noise columns sum to zero, so conservation is a useful first test. We can
+also check the diffusion construction directly at one valid state:
+
+```{julia}
+#| label: code-ch05-validation
+G = zeros(3, 2)
+sir_diffusion!(G, [900.0, 80.0, 20.0], (κ, γ), 0.0)
+@assert maximum(abs.(vec(sum(G; dims = 1)))) < 1e-12
+@assert mass_error < 1e-8
+```
+
+At $N=1000$, the path should broadly follow the ODE while showing
+realization-to-realization variation. A practical extension is to solve the
+same `sde_problem` repeatedly with different `StableRNG` seeds and compare
+the sample mean and standard deviation at the epidemic peak. Such an
+ensemble comparison tests the approximation statistically; it does not make
+the diffusion exact.
+
+## Interpretation and limitations
+
+The chemical Langevin equation is derived by replacing Poisson reaction counts
+with Gaussian increments. It is therefore fast and differentiable in much of
+the interior of the state space, but it can produce $S<0$, $I<0$, or
+$R<0$, especially near extinction, with large time steps, or in small
+populations. Clipping a trajectory after each step changes its probability
+law; it is a pragmatic visualization safeguard, not a principled boundary
+condition. Alternatives include the exact CTMC, nonnegative tau-leaping,
+reflecting/absorbing boundary schemes, or transforming the model.
+
+`noise_rate_prototype` is an API-level detail with mathematical meaning:
+leaving it out would ask for diagonal noise, not the two reaction noises in
+Equation @eq-chemical-langevin. The [StochasticDiffEq SDE tutorial](https://docs.sciml.ai/DiffEqDocs/stable/tutorials/sde_example/)
+documents `SDEProblem`, `EM`, and non-diagonal noise. The approximation itself
+is the chemical Langevin construction associated with reaction networks
+[@gillespie1977].
+
+## Exercises
+
+### Exercise 1 {#ch05-ex1}
+
+Run the SDE with `dt` values $0.1$, $0.05$, and $0.01$, using the same
+seed and `adaptive=false`. For each run, record the maximum conservation
+error and the minimum state value. Explain why decreasing `dt` usually reduces
+discretization error but cannot guarantee nonnegative populations for a
+Gaussian diffusion.
+
+### Exercise 2 {#ch05-ex2}
+
+Construct a diagonal-noise SDE that adds independent noise to $S$, $I$, and
+$R$, keeping the same drift. Compare its conservation error and infected
+trajectory with the reaction-level model. Identify the precise covariance
+term that is lost when the two reaction channels are replaced by three
+independent state noises.
+
+## Companion materials
+
+- [Slides](../slides/chapters/05-stochastic-differential-equations.html)
+- [Pluto preview](../notebook-exports/chapters/05-stochastic-differential-equations.html)
+- [Pluto source](../notebooks/chapters/05-stochastic-differential-equations.jl)

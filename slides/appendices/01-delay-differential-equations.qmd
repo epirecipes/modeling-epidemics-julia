@@ -1,0 +1,189 @@
+---
+title: "Delay differential equations"
+course-unit: a01-delay-differential-equations
+status: complete
+---
+
+## Why this unit matters
+
+- Every earlier model assumes an **exponentially distributed** infectious
+  period: memoryless recovery at constant hazard $\gamma$.
+- A delay differential equation (DDE) replaces that with the opposite
+  extreme: every infectious period lasts *exactly* $\tau$ time units.
+- Question: how much does the **shape**, not just the mean, of the
+  infectious-period distribution change epidemic dynamics?
+
+::: {.notes}
+Frame this as a direct challenge to the memoryless assumption baked into
+every ODE/CTMC/SDE model so far. The point is not that fixed delays are more
+"realistic" than exponential ones — real infectious periods sit between the
+two — but that the two extremes bound how sensitive predictions are to a
+modeling choice that is often made for mathematical convenience.
+:::
+
+## Model assumptions and classification
+
+Same baseline cohort throughout the course: $N=1000$, $S(0)=990$, $I(0)=10$,
+$R(0)=0$, $c=10$, $\beta=0.05$. Only the recovery mechanism changes.
+
+| Property | Classification |
+|---|---|
+| Determinism | Deterministic |
+| Time / state | Continuous / continuous |
+| Infectious period | Fixed delay $\tau = 1/\gamma = 4$ (variance 0) |
+
+Still **deterministic, continuous, population-level** — but *not* Markovian:
+the recovery flow at $t$ depends on the state at $t - \tau$.
+
+## Equations
+
+$$
+\frac{\mathrm{d}S}{\mathrm{d}t} = -\lambda(t) S(t), \quad
+\frac{\mathrm{d}I}{\mathrm{d}t} = \lambda(t) S(t) - \lambda(t-\tau) S(t-\tau), \quad
+\frac{\mathrm{d}R}{\mathrm{d}t} = \lambda(t-\tau) S(t-\tau)
+$$
+
+with $\lambda(t) = \beta c\, I(t)/N(t)$ and history $h(t) = (N, 0, 0)$ for
+$t \le 0$: recovery at $t$ equals infection $\tau$ time units earlier.
+
+::: {.notes}
+Emphasize that the history function is not optional bookkeeping — a DDE
+needs a *function* on $(-\infty, 0]$, not a single initial vector, because
+the right-hand side reaches back in time.
+:::
+
+## Method of steps
+
+- On $[0, \tau]$ the delayed term is fully known from the history $h$, so the
+  DDE is an *ordinary* ODE there.
+- That segment's dense solution becomes the exact history for $[\tau, 2\tau]$,
+  and so on — solving a sequence of ODEs.
+- Derivative discontinuities from the $t=0$ history mismatch propagate to
+  $t = \tau, 2\tau, \dots$, smoothing at each step.
+- Declaring the lag via `constant_lags` tells the solver exactly where to
+  place step boundaries instead of discovering them by trial and error.
+
+## Julia API
+
+```julia
+using DelayDiffEq, OrdinaryDiffEq
+
+function sir_dde!(du, u, h, p, t)
+    S, I, R = u
+    β, c, τ = p
+    λ  = β * c * I / (S + I + R)
+    Sd, Id, Rd = h(p, t - τ)          # delayed state
+    λd = β * c * Id / (Sd + Id + Rd)
+    du[1] = -λ * S
+    du[2] =  λ * S - λd * Sd
+    du[3] =  λd * Sd
+end
+
+prob = DDEProblem(sir_dde!, u0, history, tspan, p; constant_lags = [τ])
+sol  = solve(prob, MethodOfSteps(Tsit5()); reltol = 1e-8, abstol = 1e-8)
+```
+
+`MethodOfSteps` wraps any `OrdinaryDiffEq` algorithm; `h(p, t)` supplies the
+delayed state as the third positional argument of the right-hand side.
+
+## Generated result
+
+```{julia}
+#| label: fig-slide-a01-trajectories
+#| fig-cap: "Fixed-delay DDE (solid) vs exponential-recovery ODE (dashed) with the same mean infectious period τ = 1/γ = 4."
+#| echo: false
+
+using DelayDiffEq
+using OrdinaryDiffEq
+using CairoMakie
+
+function sir_dde!(du, u, h, p, t)
+    S, I, R = u
+    β, c, τ = p
+    N = S + I + R
+    λ = β * c * I / N
+    Sd, Id, Rd = h(p, t - τ)
+    Nd = Sd + Id + Rd
+    λd = β * c * Id / Nd
+    du[1] = -λ * S
+    du[2] = λ * S - λd * Sd
+    du[3] = λd * Sd
+    return nothing
+end
+sir_history(p, t) = [1000.0, 0.0, 0.0]
+
+function sir_ode!(du, u, p, t)
+    S, I, R = u
+    β, c, γrate = p
+    N = S + I + R
+    λ = β * c * I / N
+    du[1] = -λ * S
+    du[2] = λ * S - γrate * I
+    du[3] = γrate * I
+    return nothing
+end
+
+u0 = [990.0, 10.0, 0.0]
+γ = 0.25
+p = (0.05, 10.0, 1 / γ)
+tspan = (0.0, 40.0)
+
+sol_dde = solve(DDEProblem(sir_dde!, u0, sir_history, tspan, p; constant_lags = [p[3]]),
+                MethodOfSteps(Tsit5()); reltol = 1e-6, abstol = 1e-6)
+sol_ode = solve(ODEProblem(sir_ode!, u0, tspan, (0.05, 10.0, γ)), Tsit5(); reltol = 1e-6, abstol = 1e-6)
+
+tt = 0.0:0.5:40.0
+fig = Figure(size = (760, 400))
+ax = Axis(fig[1, 1]; xlabel = "time", ylabel = "infectious count")
+lines!(ax, tt, [sol_dde(t)[2] for t in tt]; color = :firebrick, linewidth = 3, label = "I (DDE)")
+lines!(ax, tt, [sol_ode(t)[2] for t in tt]; color = :firebrick, linewidth = 2, linestyle = :dash, label = "I (ODE)")
+axislegend(ax; position = :rt)
+fig
+```
+
+## Validation
+
+- **Cross-check**: an independent two-stage (presolved ODE + continued DDE)
+  construction agrees with the single-history run to solver tolerance.
+- **Conservation & nonnegativity**: $S+I+R=1000$ and all states $\ge 0$
+  throughout $[0, 40]$.
+- **Structural comparison**: at matched mean infectious period, the fixed
+  delay produces a **taller, sharper** peak ($\approx 351$) than exponential
+  recovery ($\approx 158$) — the shape of the distribution matters, not just
+  its mean.
+
+## Interpretation and limitations
+
+- A fixed delay has coefficient of variation 0: nobody recovers early, so
+  the initial cohort transmits at full strength for all of $[0, \tau)$.
+- Omitting `constant_lags` still gives a correct answer but forces the
+  adaptive controller to *rediscover* breakpoints at $\tau, 2\tau, \dots$ —
+  slower and less accurate near those points.
+- The "instant seeding" history convention (all $I(0)$ infected exactly at
+  $t=0$) is convenient, not realistic; the two-stage construction shows how
+  to relax it.
+- Still fully deterministic — no demographic noise. That gap motivates the
+  stochastic delay differential equation of the next unit.
+
+::: {.notes}
+If time allows, sketch why the linear-chain (Erlang) trick from the
+model-composition appendix is the usual way to interpolate between the two
+extremes without leaving the ODE framework — useful context for why DDEs are
+a specialized, not default, tool.
+:::
+
+## Key takeaways
+
+- DDEs model *fixed* recovery delays; the method of steps reduces them to a
+  sequence of ODE solves.
+- Declare `constant_lags` for solver efficiency at known breakpoints.
+- Distribution *shape* (not just mean) materially changes epidemic peak
+  height and timing.
+- This model has no stochasticity — see the next two units for the
+  stochastic and individual-level extensions.
+
+## Further reading
+
+- [DelayDiffEq.jl documentation](https://docs.sciml.ai/DelayDiffEq/stable/)
+- [SciML DDE problem reference](https://docs.sciml.ai/DiffEqDocs/stable/types/dde_types/)
+- Full derivation, code, and exercises: [book chapter](../../appendices/01-delay-differential-equations.html)

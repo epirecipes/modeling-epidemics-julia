@@ -1,0 +1,384 @@
+---
+course-unit: a03-discrete-event-simulation
+status: complete
+---
+
+# Discrete-event simulation {#sec-discrete-event-simulation}
+
+The jump-process chapter simulates a continuous-time Markov chain by
+tracking *aggregate counts* and repeatedly asking "what happens next, and to
+how many people?" The agent-based model chapter tracks *individuals*, but
+advances them in fixed time steps of $\Delta t = 0.1$. A discrete-event
+simulation (DES) combines both ideas: it tracks individuals **and** advances
+time continuously, jumping directly from one scheduled event to the next
+without ever discretizing the clock. This appendix builds the same SIR
+process as an event queue two different ways — with Agents.jl's current
+`EventQueueABM`, and with the general-purpose process-oriented `ConcurrentSim.jl`
+— and shows how naturally a DES can express things the earlier chapters
+could not, including the fixed delay of @sec-delay-differential-equations.
+
+## Learning goals
+
+By the end of this unit you should be able to:
+
+- classify an individual-level, continuous-time, event-queue simulation and
+  contrast it with the population-level CTMC (jump-process chapter) and the
+  discrete-time ABM (agent-based models chapter);
+- construct an `EventQueueABM` with `AgentEvent`s whose propensities depend
+  on agent state, using the current Agents.jl 7 API;
+- construct an equivalent model with `ConcurrentSim.jl`'s coroutine-based
+  processes, and explain when its more general process/resource abstraction
+  is preferable to an agent-centric framework;
+- validate a DES implementation with conservation, monotonicity of the
+  one-way $S\to I\to R$ transition, and an ensemble comparison against the
+  deterministic mean field; and
+- recognize how an event's *timing* function, not just its propensity, can
+  encode a fixed delay directly, connecting back to the method of steps.
+
+## Model assumptions and classification
+
+The population and rates are the usual baseline: $N=1000$, $S(0)=990$,
+$I(0)=10$, $R(0)=0$, contact rate $c=10$, transmission probability $\beta =
+0.05$, recovery rate $\gamma=0.25$. Each individual is in exactly one of
+three states. A susceptible individual's next contact, and an infectious
+individual's recovery, are each scheduled as an **event** at a specific
+future time; the simulation clock jumps directly to the next scheduled
+event anywhere in the population, executes it, and reschedules as needed.
+There is no fixed time step anywhere in the model.
+
+| Property | Classification |
+|---|---|
+| Determinism | Stochastic |
+| Time | Continuous, event-driven (no fixed $\Delta t$) |
+| State | Discrete (individual status) |
+| Representation | Individual-level |
+
+This is a **stochastic, continuous-time, discrete-state, individual-level**
+model — the same underlying process as the jump-process chapter's CTMC, by
+the superposition of independent exponential clocks, but resolved per
+individual rather than by a single aggregate "what happens next" draw, and
+without the agent-based model chapter's time-step discretization.
+
+## Equations
+
+Each susceptible individual's next contact is scheduled after an
+$\mathrm{Exponential}(1/c)$ waiting time; when that contact fires, a
+uniformly random other individual is chosen, and infection occurs with
+probability $\beta$ if the alter is infectious:
+
+$$
+T_\text{contact} \sim \mathrm{Exponential}(1/c), \qquad
+\Pr(\text{infect} \mid \text{contact with infectious alter}) = \beta.
+$$ {#eq-a03-contact}
+
+Each infectious individual's recovery fires after an independent
+$\mathrm{Exponential}(1/\gamma)$ waiting time:
+
+$$
+T_\text{recovery} \sim \mathrm{Exponential}(1/\gamma).
+$$ {#eq-a03-recovery}
+
+By the memoryless property and superposition of independent Poisson
+processes, the *population-level* counting process implied by
+@eq-a03-contact and @eq-a03-recovery is exactly the CTMC of the jump-process
+chapter; the individual-event view additionally retains *who* infected
+*whom* and *when* each specific event is scheduled, which an event queue
+(a priority queue ordered by event time) makes explicit.
+
+## Julia implementation
+
+### Primary: `Agents.jl` `EventQueueABM`
+
+`EventQueueABM` associates each agent with one or more `AgentEvent`s. By
+default `AgentEvent`'s `timing` samples an exponential waiting time
+parameterized by the event's `propensity`, exactly matching
+@eq-a03-contact–@eq-a03-recovery; only agents with nonzero propensity are
+scheduled.
+
+```{julia}
+#| label: code-a03-setup
+using Agents
+using ConcurrentSim
+using ResumableFunctions
+using Random
+using Distributions
+using DataFrames
+using OrdinaryDiffEq
+using CairoMakie
+
+const β = 0.05
+const c = 10.0
+const γ = 0.25
+const N = 1000
+const I0 = 10
+const tf = 40.0
+```
+
+```{julia}
+#| label: code-a03-eventqueue
+@agent struct Person(NoSpaceAgent)
+    status::Symbol
+end
+
+function transmit!(agent, model)
+    alter = random_agent(model)
+    if alter.status == :I && (rand(abmrng(model)) ≤ model.β)
+        agent.status = :I
+    end
+    return nothing
+end
+recover!(agent, model) = (agent.status = :R)
+
+transmit_propensity(agent, model) = agent.status == :S ? model.c : 0.0     # eq-a03-contact
+recovery_propensity(agent, model) = agent.status == :I ? model.γ : 0.0    # eq-a03-recovery
+
+transmit_event = AgentEvent(action! = transmit!, propensity = transmit_propensity)
+recovery_event = AgentEvent(action! = recover!, propensity = recovery_propensity)
+events = (transmit_event, recovery_event)
+
+susceptible(x) = count(==(:S), x)
+infected(x) = count(==(:I), x)
+recovered(x) = count(==(:R), x)
+
+function init_eventqueue_model(β, c, γ, N, I0, rng)
+    properties = Dict(:β => β, :c => c, :γ => γ)
+    model = EventQueueABM(Person, events; properties, rng)
+    for i in 1:N
+        status = i <= I0 ? :I : :S
+        add_agent!(Person(; id = i, status = status), model)
+    end
+    return model
+end
+
+rng = Xoshiro(20250711)
+eq_model = init_eventqueue_model(β, c, γ, N, I0, rng)
+to_collect = [(:status, f) for f in (susceptible, infected, recovered)]
+eq_data, _ = run!(eq_model, tf; adata = to_collect)
+first(eq_data, 3)
+```
+
+### Alternative: `ConcurrentSim.jl` general-purpose processes
+
+`ConcurrentSim.jl` (the maintained continuation of the historical `SimJulia`)
+is not agent-centric: it provides coroutine-based *processes* that `timeout`
+for arbitrary durations, plus general `Resource`/`Store` primitives for
+queueing and contention. Where `EventQueueABM` gives you propensities and
+actions, `ConcurrentSim` gives you the process itself as a Julia function —
+more bookkeeping, but no requirement that the model be phrased as "agents
+with events." Each individual here is a `@resumable` process that repeats
+"wait for a contact, maybe get infected" until infected, then waits once
+more to recover.
+
+```{julia}
+#| label: code-a03-concurrentsim
+mutable struct SIRPerson
+    id::Int
+    status::Symbol
+end
+
+mutable struct SIRModel
+    sim::Simulation
+    β::Float64
+    c::Float64
+    γ::Float64
+    ta::Vector{Float64}
+    Sa::Vector{Int}
+    Ia::Vector{Int}
+    Ra::Vector{Int}
+    people::Vector{SIRPerson}
+end
+
+function record!(m::SIRModel)
+    push!(m.ta, now(m.sim))
+    push!(m.Sa, count(p -> p.status == :S, m.people))
+    push!(m.Ia, count(p -> p.status == :I, m.people))
+    push!(m.Ra, count(p -> p.status == :R, m.people))
+    return nothing
+end
+
+@resumable function live(sim::Simulation, person::SIRPerson, m::SIRModel, rng)
+    while person.status == :S
+        @yield timeout(sim, rand(rng, Exponential(1 / m.c)))      # eq-a03-contact
+        alter = person
+        while alter === person
+            alter = rand(rng, m.people)
+        end
+        if alter.status == :I && rand(rng) < m.β
+            person.status = :I
+            record!(m)
+        end
+    end
+    if person.status == :I
+        @yield timeout(sim, rand(rng, Exponential(1 / m.γ)))      # eq-a03-recovery
+        person.status = :R
+        record!(m)
+    end
+end
+
+function init_concurrentsim_model(S, I, R, β, c, γ)
+    sim = Simulation()
+    people = SIRPerson[]
+    for i in 1:S
+        push!(people, SIRPerson(i, :S))
+    end
+    for i in 1:I
+        push!(people, SIRPerson(S + i, :I))
+    end
+    for i in 1:R
+        push!(people, SIRPerson(S + I + i, :R))
+    end
+    SIRModel(sim, β, c, γ, [0.0], [S], [I], [R], people)
+end
+
+cs_rng = Xoshiro(20250711)
+cs_model = init_concurrentsim_model(N - I0, I0, 0, β, c, γ)
+for person in cs_model.people
+    @process live(cs_model.sim, person, cs_model, cs_rng)
+end
+run(cs_model.sim, tf)
+(cs_model.Sa[end], cs_model.Ia[end], cs_model.Ra[end])
+```
+
+```{julia}
+#| label: fig-a03-trajectories
+#| fig-cap: "Two independent discrete-event realizations of the same SIR process — Agents.jl's EventQueueABM and ConcurrentSim's process model — against the deterministic ODE mean field. The EventQueueABM curve is coarser because its adata collection samples the model once per unit time by default, while ConcurrentSim's manual bookkeeping records every individual event."
+function sir_ode!(du, u, p, t)
+    S, I, R = u
+    β, c, γ = p
+    Ntot = S + I + R
+    λ = β * c * I / Ntot
+    du[1] = -λ * S
+    du[2] = λ * S - γ * I
+    du[3] = γ * I
+    return nothing
+end
+sol_ode = solve(ODEProblem(sir_ode!, [990.0, 10.0, 0.0], (0.0, tf), (β, c, γ)), Tsit5())
+
+fig = Figure(size = (720, 440))
+ax = Axis(fig[1, 1]; xlabel = "time", ylabel = "infectious count",
+          title = "Two discrete-event realizations vs the ODE mean field")
+stairs!(ax, eq_data.time, eq_data.infected_status; color = :firebrick, linewidth = 2,
+        label = "I (EventQueueABM)")
+stairs!(ax, cs_model.ta, cs_model.Ia; color = :steelblue, linewidth = 2,
+        label = "I (ConcurrentSim)")
+lines!(ax, sol_ode.t, sol_ode[2, :]; color = :black, linestyle = :dash, linewidth = 2,
+       label = "I (ODE mean field)")
+axislegend(ax; position = :rt)
+fig
+```
+
+## Validation
+
+**Conservation.** Every recorded row of both simulations must sum to $N$:
+
+```{julia}
+#| label: code-a03-check-conservation
+conserved_eq = all(r -> r.susceptible_status + r.infected_status + r.recovered_status == N,
+                    eachrow(eq_data))
+conserved_cs = all(cs_model.Sa .+ cs_model.Ia .+ cs_model.Ra .== N)
+(conserved_eq, conserved_cs)
+```
+
+**Monotonicity.** Because transitions are strictly $S \to I \to R$, the
+susceptible count can only fall and the recovered count can only rise:
+
+```{julia}
+#| label: code-a03-check-monotone
+mono_eq = issorted(eq_data.susceptible_status; rev = true) && issorted(eq_data.recovered_status)
+mono_cs = issorted(cs_model.Sa; rev = true) && issorted(cs_model.Ra)
+(mono_eq, mono_cs)
+```
+
+**Ensemble comparison with the mean field.** A small ensemble of
+`EventQueueABM` runs should scatter around the deterministic prediction:
+
+```{julia}
+#| label: code-a03-check-ensemble
+finals = Int[]
+for seed in 1:20
+    ensemble_rng = Xoshiro(seed)
+    ensemble_model = init_eventqueue_model(β, c, γ, N, I0, ensemble_rng)
+    ensemble_data, _ = run!(ensemble_model, tf; adata = to_collect)
+    push!(finals, last(ensemble_data).recovered_status)
+end
+mean_final_R = sum(finals) / length(finals)
+ode_final_R = sol_ode.u[end][3]
+(mean_final_R, round(ode_final_R; digits = 1), abs(mean_final_R - ode_final_R) / ode_final_R < 0.1)
+```
+
+All checks pass: both implementations conserve $N$ exactly, both respect the
+one-way state ordering, and the 20-run ensemble mean final size is within
+10% of the deterministic prediction — consistent given the ensemble is small
+and some realizations have not fully burned out by $t=40$.
+
+## Interpretation and limitations
+
+Both implementations encode identical dynamics, but the two frameworks make
+different things easy. `EventQueueABM` handles scheduling and bookkeeping
+automatically once propensities are declared, and its `adata` mechanism is
+convenient — but by default it samples the model once per unit time, coarser
+than the true event resolution, as the visibly "steppier" red curve in
+@fig-a03-trajectories shows. `ConcurrentSim` requires writing the recording
+logic by hand, but every event is available exactly when it happens, and its
+general `Resource`/`Store` primitives (queues, limited capacity, priorities)
+extend naturally to models that are not naturally agent-centric — a
+patient-flow model with a limited number of hospital beds, for instance,
+maps directly onto a `ConcurrentSim` `Resource` but has no obvious
+`EventQueueABM` analogue.
+
+Both frameworks share a structural limitation relative to the aggregated
+jump-process chapter: scheduling and executing $O(N)$ individual events is
+more expensive than resampling a single aggregate "what happens next," so
+neither scales as well to very large populations. The specific transmission
+rule used here — every susceptible polls a uniformly random alter — is also
+deliberately inefficient (it costs one event per susceptible regardless of
+how few individuals are infectious), matching the reference tutorials this
+appendix is based on; a production-oriented implementation would instead
+schedule new infection attempts only from currently infectious individuals.
+
+Finally, notice that nothing here required an exponential recovery time.
+`AgentEvent`'s `timing` argument accepts any function
+`timing(agent, model, propensity)`, not just the default exponential
+sampler, and `ConcurrentSim`'s `timeout` accepts any waiting time, fixed or
+random. A discrete-event framework can therefore encode the *exact* fixed
+recovery delay of @sec-delay-differential-equations directly — Exercise 1
+asks you to do exactly that — without any history function or method of
+steps, because the individual retains its own infection time rather than
+solving a continuous population-level state.
+
+For the current APIs, see the
+[Agents.jl EventQueueABM documentation](https://juliadynamics.github.io/Agents.jl/stable/api/#Agents.EventQueueABM)
+and the
+[ConcurrentSim.jl repository](https://github.com/JuliaDynamics/ConcurrentSim.jl).
+Agents.jl itself is described in [@datseris2022].
+
+## Exercises
+
+### Exercise 1 {#a03-ex1}
+
+Modify the `EventQueueABM` recovery event so that its `timing` function
+returns a fixed value $\tau = 1/\gamma = 4$ instead of sampling an
+exponential distribution — keep `recovery_propensity` constant and nonzero
+for infectious agents, and write
+`fixed_delay_timing(agent, model, propensity) = agent.status == :I ? τ : Inf`
+as the event's `timing`. Run the modified model and compare its infectious
+curve with the deterministic DDE of @sec-delay-differential-equations at the
+same parameters. Explain why this individual-level construction reaches the
+same fixed-delay assumption without a history function.
+
+### Exercise 2 {#a03-ex2}
+
+Extend the `ConcurrentSim` model with a `Resource` representing a limited
+number of hospital beds: an infectious individual must successfully
+`request` a bed before starting the recovery `timeout`, and must `release`
+it on recovery. Run the model with a small number of beds (for example, 50)
+and compare the infectious curve and the time individuals spend waiting for
+a bed with the unconstrained model above. Explain why this kind of resource
+contention has no natural equivalent in the `EventQueueABM` formulation used
+in this appendix.
+
+## Companion materials
+
+- [Slides](../slides/appendices/03-discrete-event-simulation.html)
+- [Pluto preview](../notebook-exports/appendices/03-discrete-event-simulation.html)
+- [Pluto source](../notebooks/appendices/03-discrete-event-simulation.jl)

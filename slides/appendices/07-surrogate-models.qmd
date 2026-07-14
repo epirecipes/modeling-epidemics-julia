@@ -1,0 +1,113 @@
+---
+title: "Surrogate and emulator models"
+course-unit: a07-surrogate-models
+status: complete
+---
+
+## Why emulate a simulator?
+
+- An ODE solve can be accurate but too expensive inside calibration, uncertainty
+  analysis, or design.
+- A surrogate approximates a declared simulator response on a declared domain.
+- The mechanistic model remains the arbiter for decisions.
+
+::: {.notes}
+Emphasize that a surrogate is a computational approximation, not a new causal
+model. The held-out error plot is more important than the training fit.
+:::
+
+## A small, explicit target
+
+Classification: deterministic, continuous-time, continuous-state, population-level.
+
+$$
+\dot S=-\beta cSI/N,\quad
+\dot I=\beta cSI/N-\gamma I,\quad
+\dot R=\gamma I.
+$$
+
+For $\beta\in[0.02,0.08]$, emulate
+
+$$
+q(\beta)=R(40;\beta)/N,\qquad
+e_j=\widehat q(\beta_j)-q(\beta_j).
+$$
+
+Baseline: $(S,I,R)=(990,10,0)$, $N=1000$, $c=10$, $\gamma=0.25$.
+
+## Design, simulate, fit
+
+```{julia}
+using CairoMakie, EpiModelingCourse, OrdinaryDiffEq
+using Random, Statistics, Surrogates
+
+function q(β)
+    p = SIRParameters(beta=β, contact_rate=10.0, gamma=0.25, N=1000.0)
+    sol = solve(ODEProblem(sir_ode!, [990.0, 10.0, 0.0], (0.0, 40.0), p),
+                Tsit5(); saveat=[40.0], abstol=1e-9, reltol=1e-9)
+    sol[3, end] / p.N
+end
+
+Random.seed!(20260711)
+lb, ub = 0.02, 0.08
+β_train = sample(12, lb, ub, LatinHypercubeSample())
+y_train = q.(β_train)
+emulator = RadialBasis(β_train, y_train, lb, ub; rad=cubicRadial())
+```
+
+::: {.notes}
+The Latin-hypercube design is deliberately small so the approximation error is
+visible and the example remains quick in CI. `RadialBasis` is callable in
+Surrogates.jl 7; `cubicRadial()` is the current constructor form.
+:::
+
+## The diagnostic is out of sample
+
+```{julia}
+#| fig-cap: "Mechanistic SIR output, radial-basis surrogate, training design, and held-out approximation error."
+β_grid = collect(range(lb, ub; length=64))
+y_true, y_hat = q.(β_grid), emulator.(β_grid)
+errors = y_hat .- y_true
+
+fig = Figure(size=(850, 350))
+ax1 = Axis(fig[1, 1], xlabel="β", ylabel="R(40) / N")
+lines!(ax1, β_grid, y_true, label="SIR")
+lines!(ax1, β_grid, y_hat, label="surrogate")
+scatter!(ax1, β_train, y_train, label="training")
+axislegend(ax1)
+ax2 = Axis(fig[1, 2], xlabel="β", ylabel="absolute error")
+scatter!(ax2, β_grid, abs.(errors))
+fig
+```
+
+$$
+\operatorname{RMSE}=\sqrt{m^{-1}\sum_j e_j^2}.
+$$
+
+## Validate, then use
+
+- Check the emulator on held-out inputs, not only training points.
+- Refine locally with `Surrogates.update!` when error identifies a gap.
+- For two or more inputs, scale the design and increase training points.
+- Re-simulate every policy or scientific conclusion with the original model.
+
+```{julia}
+Surrogates.update!(emulator, 0.051, q(0.051))
+(rmse=sqrt(mean(errors.^2)), max_abs_error=maximum(abs.(errors)))
+```
+
+## Limits and links
+
+- Extrapolation outside the design interval is not validated.
+- A peak or threshold target can need many more points than a smooth final size.
+- Solver failures and observation noise must be represented in the training
+  pipeline rather than hidden in one scalar response.
+
+See the [book appendix](../../appendices/07-surrogate-models.html), the
+[Surrogates radial-basis docs](https://docs.sciml.ai/Surrogates/stable/radials/),
+and the [surrogate interface](https://docs.sciml.ai/Surrogates/stable/surrogate/).
+
+::: {.notes}
+Takeaway: design, fit, validate, and retain the simulator. A low RMSE is a
+local statement about this target, domain, and numerical implementation.
+:::

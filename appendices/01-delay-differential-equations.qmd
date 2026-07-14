@@ -1,0 +1,300 @@
+---
+course-unit: a01-delay-differential-equations
+status: complete
+---
+
+# Delay differential equations {#sec-delay-differential-equations}
+
+Every population model so far in this course — the ODE of @sec-foundations,
+the jump process, and the stochastic differential equation — assumes an
+infectious period that is **exponentially distributed**: recovery happens at a
+constant hazard $\gamma$, memoryless of how long an individual has already
+been infectious. A delay differential equation (DDE) replaces that assumption
+with the opposite extreme: every infectious period lasts *exactly* the same
+fixed duration $\tau$. This appendix builds that model, explains the *method
+of steps* used to solve it, and shows numerically how much the shape of the
+infectious-period distribution — not just its mean — changes epidemic
+dynamics.
+
+## Learning goals
+
+By the end of this unit you should be able to:
+
+- classify a DDE model and explain how a fixed recovery delay differs from
+  the memoryless recovery of @sec-foundations;
+- write a DDE for SIR dynamics using a history function for states before the
+  start time;
+- construct a `DDEProblem` with `DelayDiffEq` and solve it with
+  `MethodOfSteps`, declaring the constant lag for solver efficiency;
+- explain the method of steps and why declaring lags helps the solver locate
+  derivative discontinuities; and
+- cross-validate a single DDE run against an equivalent two-stage
+  (ODE-then-DDE) construction, and compare the result with the exponential
+  recovery model.
+
+## Model assumptions and classification
+
+The population is the same closed, homogeneously mixing cohort used
+throughout the course: $N = 1000$, $S(0) = 990$, $I(0) = 10$, $R(0) = 0$,
+contact rate $c = 10$, and per-contact transmission probability $\beta =
+0.05$. The only change from @eq-ch01-sir is *how long an infection lasts*:
+instead of an exponential holding time with rate $\gamma$, every individual
+infected at time $t^{*}$ recovers at exactly $t^{*} + \tau$, with
+$\tau = 1/\gamma = 4$ chosen so the *mean* infectious period matches the rest
+of the course.
+
+| Property | Classification |
+|---|---|
+| Determinism | Deterministic |
+| Time | Continuous |
+| State | Continuous |
+| Infectious period | Fixed delay $\tau$ (degenerate distribution, coefficient of variation 0) |
+
+This is still a **deterministic, continuous-time, continuous-state,
+population-level** model — the same category as @sec-foundations — but it is
+no longer a Markovian ODE, because the rate of recovery at time $t$ depends on
+the state *at time $t-\tau$*, not just the state at time $t$.
+
+## Equations
+
+Let $\lambda(t) = \beta c\, I(t)/N(t)$ be the force of infection at time $t$.
+New infections at time $t$ occur at rate $\lambda(t) S(t)$; each of those
+individuals recovers exactly $\tau$ time units later, so the *recovery* flow
+at time $t$ equals the *infection* flow at time $t - \tau$:
+
+$$
+\frac{\mathrm{d}S}{\mathrm{d}t} = -\lambda(t) S(t), \qquad
+\frac{\mathrm{d}I}{\mathrm{d}t} = \lambda(t) S(t) - \lambda(t-\tau) S(t-\tau), \qquad
+\frac{\mathrm{d}R}{\mathrm{d}t} = \lambda(t-\tau) S(t-\tau).
+$$ {#eq-a01-dde}
+
+Because @eq-a01-dde reaches back to $t - \tau$, it needs a **history
+function** $h(t)$ supplying $\bigl(S(t), I(t), R(t)\bigr)$ for all $t \le 0$,
+not just a single initial vector. We assume everyone was susceptible before
+the simulation starts,
+
+$$
+h(t) = (N, 0, 0), \qquad t \le 0,
+$$ {#eq-a01-history}
+
+and let the $I(0) = 10$ initial infections enter as a discontinuous jump at
+$t=0$ — they are treated as having been infected at $t=0$ itself, so
+@eq-a01-history correctly gives zero recoveries while $t < \tau$ (since
+$t - \tau < 0$ there, and the history has no infected individuals).
+
+**Method of steps.** A DDE with a single constant lag $\tau$ can be solved by
+repeatedly treating it as an ODE: on $[0, \tau]$ the delayed term $S(t-\tau),
+I(t-\tau)$ is fully determined by the *known* history $h$, so @eq-a01-dde is
+an ordinary ODE there. Once that segment is solved, the dense solution on
+$[0, \tau]$ becomes the exact "history" needed to solve the next segment
+$[\tau, 2\tau]$, and so on. Derivative discontinuities introduced by the
+history mismatch at $t=0$ propagate forward at $t = \tau, 2\tau, 3\tau,
+\dots$, growing smoother at each step. Declaring the lag via `constant_lags`
+tells the solver exactly where to expect these breakpoints, so it can place a
+step boundary there instead of discovering the discontinuity through failed
+error control.
+
+## Julia implementation
+
+The current `DelayDiffEq.jl` represents the delayed state through a history
+function `h(p, t)` passed as the third argument of the right-hand side, and
+solves the resulting `DDEProblem` with `MethodOfSteps`, which wraps any
+`OrdinaryDiffEq` algorithm.
+
+```{julia}
+#| label: code-a01-setup
+using DelayDiffEq
+using OrdinaryDiffEq
+using CairoMakie
+```
+
+```{julia}
+#| label: code-a01-kernel
+function sir_dde!(du, u, h, p, t)
+    S, I, R = u
+    β, c, τ = p
+    N = S + I + R
+    λ = β * c * I / N                  # eq-a01-dde, current force of infection
+    Sd, Id, Rd = h(p, t - τ)           # delayed state at t - τ
+    Nd = Sd + Id + Rd
+    λd = β * c * Id / Nd               # delayed force of infection
+    du[1] = -λ * S
+    du[2] = λ * S - λd * Sd
+    du[3] = λd * Sd
+    return nothing
+end
+
+sir_history(p, t) = [1000.0, 0.0, 0.0]     # eq-a01-history: fully susceptible before t=0
+
+u0 = [990.0, 10.0, 0.0]
+γ = 0.25
+p = (0.05, 10.0, 1 / γ)                    # β, c, τ = 1/γ = 4.0
+tspan = (0.0, 40.0)
+
+prob_dde = DDEProblem(sir_dde!, u0, sir_history, tspan, p; constant_lags = [p[3]])
+sol_dde = solve(prob_dde, MethodOfSteps(Tsit5()); reltol = 1e-8, abstol = 1e-8)
+round.(sol_dde.u[end]; digits = 2)
+```
+
+### An independent two-stage construction
+
+Because there are no recoveries before $t = \tau$, the system on $[0, \tau]$
+is exactly an SI ODE (no `R` flow). Solving that ODE first and using its dense
+output as the history for a *second* `DDEProblem` starting at $t=\tau$ gives a
+numerically independent route to the same trajectory — useful both as a
+cross-check and as a template for models whose early history is not as simple
+as "everybody susceptible".
+
+```{julia}
+#| label: code-a01-alt
+function si_ode!(du, u, p, t)
+    S, I = u[1], u[2]
+    β, c, _ = p
+    λ = β * c * I / (u[1] + u[2] + u[3])
+    du[1] = -λ * S
+    du[2] = λ * S
+    du[3] = 0.0
+    return nothing
+end
+
+prob_si = ODEProblem(si_ode!, u0, (0.0, p[3]), p)
+sol_si = solve(prob_si, Tsit5(); reltol = 1e-10, abstol = 1e-10)
+
+history_from_ode(p, t) = sol_si(t)
+prob_dde2 = DDEProblem(sir_dde!, sol_si(p[3]), history_from_ode, (p[3], tspan[2]), p;
+                        constant_lags = [p[3]])
+sol_dde2 = solve(prob_dde2, MethodOfSteps(Tsit5()); reltol = 1e-8, abstol = 1e-8)
+round.(sol_dde2.u[end]; digits = 2)
+```
+
+```{julia}
+#| label: fig-a01-trajectories
+#| fig-cap: "Fixed-delay DDE trajectory (solid) compared with the exponential-recovery ODE of @sec-ordinary-differential-equations (dashed infectious curve). The vertical line marks the fixed recovery delay τ. The DDE produces a taller, sharper peak because every infection lasts exactly τ time units instead of an exponentially varying time."
+function sir_ode!(du, u, p, t)
+    S, I, R = u
+    β, c, γrate = p
+    N = S + I + R
+    λ = β * c * I / N
+    du[1] = -λ * S
+    du[2] = λ * S - γrate * I
+    du[3] = γrate * I
+    return nothing
+end
+sol_ode = solve(ODEProblem(sir_ode!, u0, tspan, (0.05, 10.0, γ)), Tsit5();
+                 reltol = 1e-8, abstol = 1e-8)
+
+tt = 0.0:0.2:40.0
+fig = Figure(size = (720, 440))
+ax = Axis(fig[1, 1]; xlabel = "time", ylabel = "number",
+          title = "Fixed-delay (DDE) vs exponential (ODE) recovery")
+lines!(ax, tt, [sol_dde(t)[1] for t in tt]; color = :steelblue, linewidth = 3, label = "S (DDE)")
+lines!(ax, tt, [sol_dde(t)[2] for t in tt]; color = :firebrick, linewidth = 3, label = "I (DDE)")
+lines!(ax, tt, [sol_dde(t)[3] for t in tt]; color = :seagreen, linewidth = 3, label = "R (DDE)")
+lines!(ax, tt, [sol_ode(t)[2] for t in tt]; color = :firebrick, linewidth = 2,
+       linestyle = :dash, label = "I (ODE)")
+vlines!(ax, [p[3]]; color = :black, linestyle = :dot, label = "τ")
+axislegend(ax; position = :rt)
+fig
+```
+
+## Validation
+
+**Cross-check.** The single-history and two-stage constructions must agree
+everywhere, since they solve the same mathematical problem two different
+ways:
+
+```{julia}
+#| label: code-a01-check-crosscheck
+grid = 0.0:0.5:40.0
+diffs = [maximum(abs.(sol_dde(t) .- (t < p[3] ? sol_si(t) : sol_dde2(t)))) for t in grid]
+maximum(diffs) < 1e-4
+```
+
+**Conservation and non-negativity.** The population total must stay at $N$
+and every compartment must remain nonnegative:
+
+```{julia}
+#| label: code-a01-check-conservation
+ts_dense = 0.0:0.1:40.0
+states = [sol_dde(t) for t in ts_dense]
+conserved = all(u -> isapprox(sum(u), 1000.0; atol = 1e-6), states)
+nonnegative = all(u -> all(>=(-1e-8), u), states)
+(conserved, nonnegative)
+```
+
+**Structural comparison.** Both models share the same mean infectious period
+$1/\gamma = \tau = 4$, yet the fixed delay produces a substantially higher
+infectious peak than the exponential-recovery ODE:
+
+```{julia}
+#| label: code-a01-check-peak
+peak_dde = maximum(sol_dde[2, :])
+peak_ode = maximum(sol_ode[2, :])
+(round(peak_dde; digits = 1), round(peak_ode; digits = 1), peak_dde > peak_ode)
+```
+
+All three checks return `true`: the two DDE constructions agree to solver
+tolerance, the trajectory conserves $N$ and stays nonnegative, and the fixed
+delay yields the higher, sharper peak predicted by epidemic theory.
+
+## Interpretation and limitations
+
+The gap between the two peaks in the validation section is not a numerical
+artifact — it reflects a real, well-known sensitivity of epidemic dynamics to
+the *shape*, not just the mean, of the infectious-period distribution. A fixed
+delay has zero variance (coefficient of variation 0): nobody recovers early,
+so the initial cohort keeps transmitting at full strength throughout $[0,
+\tau)$ before disappearing all at once. Exponential recovery has the same
+mean but a coefficient of variation of 1, so many individuals recover quickly
+and temper the early growth. Real infectious periods usually sit between
+these two extremes; the model-composition appendix's Erlang (linear chain)
+construction is one common way to interpolate between them within ordinary
+differential equations, avoiding the delay machinery altogether for that
+class of distributions.
+
+Numerically, `MethodOfSteps` is only as efficient as the lag information you
+give it: omitting `constant_lags` still produces a correct answer for a
+constant delay, but the adaptive step-size controller must rediscover the
+breakpoints at $\tau, 2\tau, \dots$ by trial and error, which is slower and can
+be less accurate near those points. The history discontinuity at $t=0$ is a
+genuine limitation of the "instant seeding" convention used here: it assumes
+all initial infections happened simultaneously, which is convenient but not
+realistic; the two-stage construction above shows how to relax that
+assumption by supplying a more detailed history function. Finally, this
+remains a population-level, deterministic model: it has no demographic
+noise, so the SDDE built on it in the next appendix is needed whenever
+finite-population fluctuations matter.
+
+For the full API, see the
+[DelayDiffEq.jl documentation](https://docs.sciml.ai/DelayDiffEq/stable/) and
+the
+[SciML DDE problem reference](https://docs.sciml.ai/DiffEqDocs/stable/types/dde_types/).
+For the classical role of infectious-period distributions in epidemic
+dynamics see @andersonmay1991.
+
+## Exercises
+
+### Exercise 1 {#a01-ex1}
+
+Solve the DDE model for $\tau \in \{2, 4, 8\}$ (holding $\beta$, $c$, and $N$
+fixed) and record the peak infectious count and the time at which it occurs
+for each. Compare with the peak of the exponential-recovery ODE at the
+matching mean infectious period $1/\gamma = \tau$. Describe how the size and
+timing of the gap between the two models changes as $\tau$ grows.
+
+### Exercise 2 {#a01-ex2}
+
+The single-history construction in this appendix seeds all $I(0)=10$ initial
+infections as happening exactly at $t=0$. Repeat the two-stage construction
+(presolve, then continue as a DDE) for $I(0) = 1$ initial infection instead of
+10, and confirm that the resulting trajectory still conserves the population
+and stays nonnegative. Then add a `ContinuousCallback` that would clamp $I$ to
+zero if it ever went negative, run the model, and report whether the callback
+ever fires. Explain why it should not, in contrast to the stochastic delay
+model of the next appendix.
+
+## Companion materials
+
+- [Slides](../slides/appendices/01-delay-differential-equations.html)
+- [Pluto preview](../notebook-exports/appendices/01-delay-differential-equations.html)
+- [Pluto source](../notebooks/appendices/01-delay-differential-equations.jl)

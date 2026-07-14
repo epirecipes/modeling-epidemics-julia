@@ -1,0 +1,20 @@
+project:
+  output-dir: _pdf/book
+
+book:
+  output-file: modeling-epidemics-with-julia
+
+execute:
+  freeze: false
+
+format:
+  pdf:
+    documentclass: scrreprt
+    pdf-engine: lualatex
+    toc: true
+    number-sections: true
+    colorlinks: true
+    cap-location: bottom
+    fig-cap-location: bottom
+    tbl-cap-location: top
+    keep-tex: true

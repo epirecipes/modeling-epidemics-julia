@@ -1,0 +1,260 @@
+---
+course-unit: ch03-ordinary-differential-equations
+status: complete
+---
+
+# Ordinary differential equations {#sec-ordinary-differential-equations}
+
+Chapter @sec-foundations solved the SIR model to establish the theory; this
+chapter is about the *tools*. We work through the `OrdinaryDiffEq` workflow in
+depth: defining an `ODEProblem`, choosing the `Tsit5` solver, evaluating the
+dense continuous solution with interpolation, and — most importantly — using
+**callbacks** to inject events such as a time-limited lockdown and to detect the
+epidemic peak automatically. These techniques recur in every dynamical chapter
+that follows.
+
+## Learning goals
+
+By the end of this chapter you should be able to:
+
+- assemble an `ODEProblem` from a kernel, initial condition, timespan, and
+  parameters;
+- solve it with `Tsit5` and control accuracy through `reltol`/`abstol`;
+- evaluate the dense interpolant `sol(t)` at arbitrary times;
+- apply a `PresetTimeCallback` to change a parameter mid-simulation (a
+  lockdown);
+- use a `ContinuousCallback` to detect an event (the infectious peak) exactly.
+
+## Model assumptions and classification
+
+The base model is the deterministic SIR system of @eq-ch01-sir, unchanged. For
+the intervention example we make the transmission parameter time-dependent:
+during a lockdown window $[t_1, t_2]$ the per-contact transmission probability
+$\beta$ drops to a reduced value $\beta_\text{lock}$, then returns. The model
+remains deterministic and continuous; the only new ingredient is a piecewise-
+constant parameter.
+
+| Property | Classification |
+|---|---|
+| Determinism | Deterministic |
+| Time | Continuous |
+| State | Continuous |
+| Parameters | Piecewise-constant (lockdown example) |
+
+## Equations
+
+The governing equations are those of @sec-foundations, written here with an
+explicit time-dependent force of infection:
+
+$$
+\frac{\mathrm{d}S}{\mathrm{d}t} = -\lambda(t) S, \quad
+\frac{\mathrm{d}I}{\mathrm{d}t} = \lambda(t) S - \gamma I, \quad
+\frac{\mathrm{d}R}{\mathrm{d}t} = \gamma I, \quad
+\lambda(t) = \frac{\beta(t)\, c\, I}{N}.
+$$ {#eq-ch03-sir}
+
+The lockdown makes $\beta$ a step function of time:
+
+$$
+\beta(t) =
+\begin{cases}
+\beta_\text{lock}, & t_1 \le t < t_2,\\
+\beta, & \text{otherwise.}
+\end{cases}
+$$ {#eq-ch03-lockdown}
+
+The infectious peak is the instant at which growth turns to decline,
+characterised by
+
+$$
+\frac{\mathrm{d}I}{\mathrm{d}t} = \lambda(t) S - \gamma I = 0,
+$$ {#eq-ch03-peak}
+
+which a `ContinuousCallback` can locate to solver tolerance by root-finding on
+this expression.
+
+## Julia implementation
+
+### Problem, solver, and interpolation
+
+An `ODEProblem` bundles the kernel, initial state `u0`, timespan `tspan`, and
+parameters `p`. `Tsit5` is a 5th-order adaptive Runge–Kutta method suitable for
+non-stiff problems like SIR.
+
+```{julia}
+#| label: ch03-solve
+using OrdinaryDiffEq
+
+function sir_ode!(du, u, p, t)
+    S, I, R = u
+    β, c, γ, N = p
+    λ = β * c * I / N            # eq-ch03-sir
+    du[1] = -λ * S
+    du[2] = λ * S - γ * I
+    du[3] = γ * I
+    return nothing
+end
+
+u0 = [990.0, 10.0, 0.0]
+p  = (0.05, 10.0, 0.25, 1000.0)   # β, c, γ, N
+tspan = (0.0, 80.0)
+
+prob = ODEProblem(sir_ode!, u0, tspan, p)
+sol = solve(prob, Tsit5(); reltol = 1e-8, abstol = 1e-8)
+length(sol.t)     # number of adaptive steps chosen by the solver
+```
+
+Because `Tsit5` produces a *dense* output, `sol(t)` returns a high-order
+interpolant at any time inside the span — no need to have saved that point. This
+is how we later resample a solution onto a regular observation grid.
+
+```{julia}
+#| label: ch03-interp
+grid = 0.0:1.0:80.0
+I_on_grid = [sol(t)[2] for t in grid]     # interpolated infectious counts
+(sol(12.5)[2], I_on_grid[13])
+```
+
+### A lockdown via `PresetTimeCallback`
+
+A `PresetTimeCallback` fires the `affect!` function at prescribed times. Here it
+overwrites the mutable parameter vector to enact @eq-ch03-lockdown: $\beta$ drops
+to $0.025$ over days 10–30, then recovers. We use a `Vector` for `p` so the
+callback can mutate it.
+
+```{julia}
+#| label: ch03-lockdown
+using DiffEqCallbacks
+
+t1, t2 = 10.0, 30.0
+β_base, β_lock = 0.05, 0.025
+
+function lockdown!(integrator)
+    integrator.p[1] = integrator.t < t2 ? β_lock : β_base
+end
+cb = PresetTimeCallback([t1, t2], lockdown!)
+
+p_vec = [0.05, 10.0, 0.25, 1000.0]
+prob_lock = ODEProblem(sir_ode!, u0, tspan, p_vec)
+sol_lock = solve(prob_lock, Tsit5(); callback = cb, reltol = 1e-8, abstol = 1e-8)
+(maximum(sol[2, :]), maximum(sol_lock[2, :]))   # peak I: baseline vs lockdown
+```
+
+### Peak detection via `ContinuousCallback`
+
+`ContinuousCallback` root-finds a scalar condition and fires when it crosses
+zero. Setting the condition to $\mathrm{d}I/\mathrm{d}t$ (@eq-ch03-peak) locates
+the infectious peak exactly, without scanning saved points.
+
+```{julia}
+#| label: ch03-peak
+peak_times = Float64[]
+peak_values = Float64[]
+dIdt(u, p) = p[1] * p[2] * u[2] / p[4] * u[1] - p[3] * u[2]   # eq-ch03-peak
+peak_cb = ContinuousCallback(
+    (u, t, integrator) -> dIdt(u, integrator.p),
+    integrator -> (push!(peak_times, integrator.t);
+                   push!(peak_values, integrator.u[2])))
+
+solve(ODEProblem(sir_ode!, u0, tspan, collect(p)), Tsit5();
+      callback = peak_cb, reltol = 1e-8, abstol = 1e-8)
+(peak_times, peak_values)
+```
+
+```{julia}
+#| label: fig-ch03-lockdown
+#| fig-cap: "Infectious curve without intervention (solid red) and with a lockdown reducing β by half over days 10–30 (dashed blue, shaded window). The vertical line marks the callback-detected baseline peak. The lockdown flattens and delays the peak."
+using CairoMakie
+
+tt = 0.0:0.25:80.0
+I_base = [sol(t)[2] for t in tt]
+I_lock = [sol_lock(t)[2] for t in tt]
+
+fig = Figure(size = (720, 440))
+ax = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "infectious I(t)",
+          title = "SIR with a lockdown intervention")
+vspan!(ax, t1, t2; color = (:grey, 0.15))
+lines!(ax, tt, I_base; color = :firebrick, linewidth = 3, label = "no intervention")
+lines!(ax, tt, I_lock; color = :steelblue, linewidth = 3, linestyle = :dash,
+       label = "lockdown (days 10–30)")
+vlines!(ax, peak_times; color = :black, linestyle = :dot, label = "detected peak")
+axislegend(ax; position = :rt)
+fig
+```
+
+## Validation
+
+**Conservation.** The adaptive solution must conserve the population at every
+step (@eq-ch01-conservation):
+
+```{julia}
+#| label: ch03-check-conservation
+all(u -> isapprox(sum(u), 1000.0; atol = 1e-6), sol.u)
+```
+
+**Interpolation consistency.** The dense interpolant evaluated at a saved time
+must reproduce the stored state, confirming `sol(t)` is faithful:
+
+```{julia}
+#| label: ch03-check-interp
+t_check = sol.t[10]
+isapprox(sol(t_check), sol.u[10]; atol = 1e-8)
+```
+
+**Peak detection.** The callback-detected peak must coincide with the maximum of
+a densely sampled solution and satisfy $\mathrm{d}I/\mathrm{d}t \approx 0$:
+
+```{julia}
+#| label: ch03-check-peak
+dense_t = 0.0:0.01:80.0
+dense_I = [sol(t)[2] for t in dense_t]
+brute_peak_time = dense_t[argmax(dense_I)]
+residual = dIdt(sol(peak_times[1]), collect(p))
+(isapprox(peak_times[1], brute_peak_time; atol = 0.05), isapprox(residual, 0.0; atol = 1e-4))
+```
+
+All three checks return `true`: the solver conserves population, its interpolant
+is self-consistent, and the event-detected peak matches the brute-force maximum
+while zeroing the growth rate.
+
+## Interpretation and limitations
+
+The `OrdinaryDiffEq` workflow separates *what* the model is (the kernel and
+problem) from *how* it is solved (the algorithm and tolerances) and *what
+happens during* the solve (callbacks). This separation scales: the same
+`ODEProblem` can be handed to a stiff solver, differentiated for sensitivity
+analysis, or fitted to data with no change to the kernel. Callbacks turn a plain
+integrator into an event-driven simulator — lockdowns, vaccination pulses, and
+threshold-triggered interventions all follow the same pattern. The limitations
+are those of the deterministic SIR model itself (@sec-foundations): no
+stochasticity, homogeneous mixing, exponential infectious periods. The lockdown
+here is a deterministic, perfectly-timed switch; realistic interventions involve
+uncertainty and feedback, taken up in the interventions and control chapter. For
+the full API see the
+[OrdinaryDiffEq documentation](https://docs.sciml.ai/OrdinaryDiffEq/stable/) and
+the
+[event-handling and callback guide](https://docs.sciml.ai/DiffEqDocs/stable/features/callback_functions/).
+
+## Exercises
+
+### Exercise 1 {#ch03-ex1}
+
+Extend the lockdown study by sweeping the intervention strength: for
+$\beta_\text{lock} \in \{0.045, 0.035, 0.025, 0.015\}$ over the same window
+10–30, solve the model and record the peak infectious count and its timing using
+the `ContinuousCallback`. Describe how intervention strength trades off peak
+height against peak timing.
+
+### Exercise 2 {#ch03-ex2}
+
+Add a fourth state $C$ for cumulative incidence with
+$\mathrm{d}C/\mathrm{d}t = \lambda(t) S$, solve the baseline model, and use the
+dense interpolant `sol(t)` to compute daily incidence as the difference
+$C(t) - C(t-1)$ on the integer-day grid. Verify that summing the daily
+increments recovers the final cumulative incidence $C(80)$.
+
+## Companion materials
+
+- [Slides](../slides/chapters/03-ordinary-differential-equations.html)
+- [Pluto preview](../notebook-exports/chapters/03-ordinary-differential-equations.html)
+- [Pluto source](../notebooks/chapters/03-ordinary-differential-equations.jl)

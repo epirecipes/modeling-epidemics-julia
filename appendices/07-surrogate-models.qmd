@@ -1,0 +1,269 @@
+---
+course-unit: a07-surrogate-models
+status: complete
+---
+
+# Surrogate and emulator models
+
+An epidemic simulator can be accurate and still be too expensive to call inside
+an uncertainty analysis, calibration loop, or optimal-design calculation. A
+**surrogate** (or emulator) is a cheaper function fitted to simulator outputs.
+It is not a replacement for the mechanistic model: its predictions are useful
+only over a declared input domain and should be accompanied by an error
+assessment.
+
+## Learning goals
+
+By the end of this appendix you should be able to:
+
+- distinguish a simulator, a training design, and a surrogate prediction;
+- use the current `Surrogates.jl` 7 interface to fit a radial-basis emulator;
+- measure out-of-sample error rather than judging a surrogate only by its
+  training fit; and
+- identify when a response surface is a poor summary of an epidemic model.
+
+## Model assumptions and classification
+
+We use the homogeneous baseline SIR model from the course. It is a
+deterministic, continuous-time, continuous-state, population-level model. A
+single scalar input, the per-contact transmission probability `β`, varies
+while the contact rate `c = 10.0` and recovery rate `γ = 0.25` remain fixed.
+The population is `N = 1000`, with
+`(S(0), I(0), R(0)) = (990, 10, 0)`. The surrogate is therefore a
+deterministic map from one parameter to one quantity of interest, not a
+stochastic epidemic model.
+
+We choose the recovered fraction at a finite horizon, `t_f = 40`, as the
+quantity of interest. In a larger application the same workflow could emulate
+peak prevalence, an observation likelihood, or an intervention cost. The
+training design has only twelve points, deliberately making the approximation
+error visible while keeping this example CI-sized.
+
+## Equations
+
+Let `ρ = βc` be the effective transmission rate. The simulator solves
+
+$$
+\begin{aligned}
+\frac{\mathrm dS}{\mathrm dt} &= -\rho\frac{SI}{N},&
+\frac{\mathrm dI}{\mathrm dt} &= \rho\frac{SI}{N}-\gamma I,&
+\frac{\mathrm dR}{\mathrm dt} &= \gamma I.
+\end{aligned}
+\tag{1}
+$$ {#eq-a07-sir}
+
+For a selected value of `β`, the target supplied to the surrogate is
+
+$$
+q(\beta) = \frac{R(t_f;\beta)}{N}.
+\tag{2}
+$$ {#eq-a07-target}
+
+The fitted function `\widehat q(\beta)` is an approximation to `q(β)`. We
+evaluate it at parameter values that were not used for fitting and calculate
+
+$$
+e_j = \widehat q(\beta_j) - q(\beta_j),\qquad
+\operatorname{RMSE} =
+\sqrt{\frac{1}{m}\sum_{j=1}^{m}e_j^2}.
+\tag{3}
+$$ {#eq-a07-error}
+
+In the code, `sir_ode!` implements the three derivatives in
+@eq-a07-sir, `final_recovered_fraction` implements @eq-a07-target, and
+`RadialBasis` represents `\widehat q`.
+
+## Julia implementation
+
+### Simulator and training design
+
+The shared course module supplies the baseline state, parameter type, and
+right-hand side. `Surrogates.sample` with `LatinHypercubeSample()` gives one
+stratified point per interval in this one-dimensional design. The seed makes
+the displayed training design reproducible.
+
+```{julia}
+using CairoMakie
+using EpiModelingCourse
+using OrdinaryDiffEq
+using Random
+using Statistics
+using Surrogates
+
+const a07_u0 = [990.0, 10.0, 0.0]
+const a07_tspan = (0.0, 40.0)
+const a07_lb, a07_ub = 0.02, 0.08
+
+function final_recovered_fraction(β)
+    parameters = SIRParameters(
+        beta = β,
+        contact_rate = 10.0,
+        gamma = 0.25,
+        N = 1000.0,
+    )
+    problem = ODEProblem(sir_ode!, a07_u0, a07_tspan, parameters)
+    solution = solve(
+        problem,
+        Tsit5();
+        saveat = [a07_tspan[2]],
+        abstol = 1e-9,
+        reltol = 1e-9,
+    )
+    return solution[3, end] / parameters.N
+end
+
+Random.seed!(20260711)
+n_train = 12
+β_train = sample(n_train, a07_lb, a07_ub, LatinHypercubeSample())
+y_train = final_recovered_fraction.(β_train)
+```
+
+### Current `Surrogates.jl` API
+
+`Surrogates.jl` 7 uses callable surrogate objects. The radial-basis
+constructor takes locations, responses, lower and upper bounds, and a radial
+function. The explicit `cubicRadial()` call is intentional: it is the current
+constructor form, rather than the zero-argument-free function used in some
+older examples. We qualify `update!` because plotting packages can export
+unrelated methods with the same name.
+
+```{julia}
+surrogate = RadialBasis(
+    β_train,
+    y_train,
+    a07_lb,
+    a07_ub;
+    rad = cubicRadial(),
+)
+
+β_test = collect(range(a07_lb, a07_ub; length = 64))
+y_test = final_recovered_fraction.(β_test)
+y_pred = surrogate.(β_test)
+errors = y_pred .- y_test
+validation_summary = (
+    rmse = sqrt(mean(errors .^ 2)),
+    max_abs_error = maximum(abs.(errors)),
+    training_points = length(β_train),
+)
+validation_summary
+```
+
+The surrogate is also incrementally extensible through `update!`. This is
+useful when validation identifies a region that needs another expensive
+simulator run; it is not a substitute for retaining a held-out validation
+set.
+
+```{julia}
+β_new = 0.051
+Surrogates.update!(surrogate, β_new, final_recovered_fraction(β_new))
+surrogate(β_new)
+```
+
+### Visualizing the approximation and its error
+
+The left panel compares the mechanistic simulator on a dense grid with the
+surrogate. The right panel is the important diagnostic: it shows absolute
+error at held-out values. The figure is produced by CairoMakie from the
+values calculated above, not by manually copying computed numbers.
+
+```{julia}
+#| label: fig-a07-surrogate-error
+#| fig-cap: "A radial-basis emulator of the finite-horizon recovered fraction, with held-out absolute error."
+fig = Figure(size = (900, 400))
+ax1 = Axis(
+    fig[1, 1],
+    xlabel = "Transmission probability β",
+    ylabel = "Recovered fraction at t = 40",
+)
+lines!(ax1, β_test, y_test; color = :black, linewidth = 3, label = "SIR simulator")
+lines!(ax1, β_test, y_pred; color = :darkorange, linewidth = 2, label = "Surrogate")
+scatter!(
+    ax1,
+    β_train,
+    y_train;
+    color = :steelblue,
+    markersize = 9,
+    label = "Training points",
+)
+axislegend(ax1; position = :lt)
+
+ax2 = Axis(
+    fig[1, 2],
+    xlabel = "Transmission probability β",
+    ylabel = "|surrogate − simulator|",
+)
+scatter!(ax2, β_test, abs.(errors); color = :firebrick, markersize = 7)
+hlines!(ax2, [0.01]; color = :gray, linestyle = :dash, label = "1% error")
+axislegend(ax2; position = :lt)
+fig
+```
+
+For a high-dimensional input, replace the scalar `β` values by vectors and
+use vector lower and upper bounds. The same callable interface remains, but
+the training design must cover a much larger space.
+
+## Validation
+
+The validation cell reports error on the 64-point grid, including points that
+are not training locations. A small maximum error in this example is evidence
+about this domain and this target only. It does not establish accuracy for a
+different horizon, a different initial condition, or a two-parameter
+`(β, γ)` design. We also check the simulator itself: the SIR total
+`S + I + R` is conserved up to the numerical tolerance used by
+`OrdinaryDiffEq`.
+
+```{julia}
+β_check = 0.053
+check_parameters = SIRParameters(beta = β_check, contact_rate = 10.0, gamma = 0.25, N = 1000.0)
+check_solution = solve(
+    ODEProblem(sir_ode!, a07_u0, a07_tspan, check_parameters),
+    Tsit5();
+    saveat = 0.25,
+    abstol = 1e-10,
+    reltol = 1e-10,
+)
+population_error = maximum(abs.(sum(Array(check_solution); dims = 1)[:] .- check_parameters.N))
+(; validation_summary, population_error)
+```
+
+## Interpretation and limitations
+
+The emulator is valuable when each ODE solve is expensive and many
+predictions are needed. It can support screening, visualization, or a
+proposal mechanism before a final decision is checked against the simulator.
+The error plot makes the validation claim appropriately modest: it describes
+interpolation over the specified `β` interval.
+
+Radial-basis interpolation can extrapolate badly outside `[a07_lb, a07_ub]`
+and can be sensitive to clustered or poorly scaled inputs. Twelve points are
+not enough for a serious multi-parameter epidemic analysis. A surrogate can
+also smooth a threshold, miss a narrow peak, or hide solver failures if the
+training pipeline records only a scalar output. Preserve the original model,
+use a separate validation design, and re-simulate any policy or scientific
+conclusion with the mechanistic model. See the maintained
+[Surrogates.jl radial-basis documentation](https://docs.sciml.ai/Surrogates/stable/radials/)
+and its [surrogate interface reference](https://docs.sciml.ai/Surrogates/stable/surrogate/).
+
+## Exercises
+
+### Exercise 1 {#a07-ex1}
+
+Extend the emulator to two inputs, `β` and `γ`, over
+`β ∈ [0.02, 0.08]` and `γ ∈ [0.15, 0.35]`, while keeping `c`, `N`, and the
+initial state fixed. Use at least 24 Latin-hypercube training points and a
+separate 5 × 5 validation grid. Report the RMSE and maximum absolute error,
+and explain where the two-dimensional surrogate is least accurate.
+
+### Exercise 2 {#a07-ex2}
+
+Replace the smooth recovered fraction with the discontinuous-looking target
+`max(I(t)) / N` over `t ∈ [0, 40]`. Use the same training and validation
+design, plot the absolute error, and compare it with the error for
+`R(40) / N`. Explain why a response involving an internal maximum can require
+more training points even though the underlying ODE is smooth.
+
+## Companion materials
+
+- [Slides](../slides/appendices/07-surrogate-models.html)
+- [Pluto preview](../notebook-exports/appendices/07-surrogate-models.html)
+- [Pluto source](../notebooks/appendices/07-surrogate-models.jl)

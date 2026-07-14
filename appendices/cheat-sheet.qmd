@@ -1,0 +1,38 @@
+# Model and API cheat sheet
+
+Use this table to choose a representation from assumptions and outputs before choosing a package.
+
+| Model type | Time | State | Stochastic? | Mathematical form | Primary Julia API | Main use | Key limitation |
+|---|---|---|---|---|---|---|---|
+| Function map | Discrete | Continuous | No | Recurrence | Plain Julia loop or `DiscreteProblem` | Fixed-step deterministic dynamics | Timestep is part of the model |
+| Markov chain | Discrete | Discrete | Yes | Transition distribution | `Distributions.jl` | Count-valued stochastic dynamics | Multiple events are bundled per step |
+| Ordinary differential equation | Continuous | Continuous | No | $\dot{u}=f(u,p,t)$ | `ODEProblem`, `solve` | Deterministic population dynamics | Omits demographic variability |
+| Jump process | Continuous | Discrete | Yes | Event rates and state changes | `JumpProblem`, `SSAStepper` | Exact stochastic event simulation | Event-by-event cost grows with activity |
+| Stochastic differential equation | Continuous | Continuous | Yes | $\mathrm{d}u=f\,\mathrm{d}t+g\,\mathrm{d}W$ | `SDEProblem` | Diffusion approximations | Gaussian noise can cross state boundaries |
+| Agent-based model | Discrete or event-driven | Individual | Usually | Agent rules | `StandardABM`, `EventQueueABM` | Heterogeneity and individual behavior | More parameters and computational cost |
+| Delay differential equation | Continuous | Continuous | No | $\dot{u}(t)=f(u(t),u(t-\tau),p,t)$ | `DDEProblem`, `MethodOfSteps` | Fixed-duration and delayed effects | Requires a history and lag-aware numerics |
+| Stochastic delay equation | Continuous | Continuous | Yes | Delayed drift and diffusion | `SDDEProblem`, `LambaEM` | Noisy delayed dynamics | Current solver path is experimental |
+| Discrete-event simulation | Event-driven | Individual/process | Usually | Scheduled process events | `EventQueueABM` or `ConcurrentSim.Simulation` | Queues, resources, and irregular events | Detailed bookkeeping can dominate runtime |
+| Observation model | Observation times | Counts or measurements | Yes | $Y_t\sim p(y\mid x_t,\theta)$ | `Distributions.logpdf` | Connect latent dynamics to data | Process and reporting effects may confound |
+| Likelihood optimization | Depends on process model | Parameters | No | $\hat\theta=\arg\max_\theta \ell(\theta;y)$ | `OptimizationProblem`, `ProfileLikelihood` | Point estimates and profile intervals | Local optima and practical non-identifiability |
+| Bayesian inference | Depends on process model | Parameters/latent states | Yes | $p(\theta\mid y)\propto p(y\mid\theta)p(\theta)$ | `Turing.@model`, `NUTS` | Posterior uncertainty and prediction | Computation and conclusions depend on priors |
+| Sensitivity analysis | Depends on process model | Model outputs | No or sampled | Derivatives or variance decomposition | `SciMLSensitivity`, `GlobalSensitivity.gsa` | Rank influential parameters | Rankings depend on output and parameter range |
+| Structural identifiability | Continuous | Symbolic | No | Input-output parameter map | `assess_identifiability` | Determine learnable parameter combinations | Assumes ideal noise-free observations |
+| Optimal intervention | Continuous or discrete | State and control | Usually no | $\min_u J(x,u)$ subject to dynamics | `OptimizationProblem`, `InfiniteModel` | Compare and optimize decisions | A local mathematical optimum may be infeasible |
+| Universal differential equation | Continuous | Continuous | Learned component | Mechanistic $f$ plus neural component | `Lux.Chain`, `Optimization.solve` | Learn unknown mechanisms | Extrapolation and identifiability remain fragile |
+| Finite-state projection | Continuous | Probability vector | Yes | Truncated chemical master equation | Sparse generator + `ODEProblem` | Approximate state probabilities | State space grows combinatorially |
+| Probabilistic numerical solver | Continuous | Distribution over solutions | Numerical uncertainty | Filtering-based ODE solve | `ProbNumDiffEq.EK1` (compatibility-gated) | More expensive and currently gated here |
+| Surrogate model | Input design | Approximate output | Optional | $\hat f(x)\approx f(x)$ | `Surrogates.RadialBasis` | Accelerate repeated model evaluation | Accuracy is local to the validated domain |
+| Composed reaction model | Continuous or event-driven | Continuous/discrete | Either | Reaction system transformed by target representation | `ReactionSystem`, `ODEProblem`, `JumpProblem` | Reuse one specification across solvers | Composition does not validate assumptions |
+
+## Common SIR baseline
+
+| Symbol | Meaning | Baseline |
+|---|---|---:|
+| $S(0)$ | Initially susceptible | 990 |
+| $I(0)$ | Initially infected | 10 |
+| $R(0)$ | Initially recovered | 0 |
+| $N$ | Population size | 1000 |
+| $c$ | Contact rate | 10.0 |
+| $\beta$ | Transmission probability per infectious contact | 0.05 |
+| $\gamma$ | Recovery rate | 0.25 |

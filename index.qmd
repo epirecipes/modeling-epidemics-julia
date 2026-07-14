@@ -1,0 +1,13 @@
+# Modeling Epidemics with Julia {.unnumbered}
+
+This executable course develops mathematical models from their assumptions and equations through simulation, inference, and decision-making in Julia.
+
+The course supports a mixed audience:
+
+- Optional prerequisites introduce Julia, probability, calculus, and numerical methods.
+- Twelve core chapters progress from the SIR model to a complete data-to-decision case study.
+- Nine advanced appendices extend the same modeling ideas to delays, scientific machine learning, probabilistic numerics, control, and model composition.
+
+Every teaching unit has a detailed book chapter, a Reveal.js slide deck, an interactive Pluto notebook, and two exercises with solutions.
+
+See the [course resources](resources.qmd) for all companion materials.

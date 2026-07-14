@@ -1,0 +1,267 @@
+---
+course-unit: ch02-discrete-time-models
+status: complete
+---
+
+# Discrete-time models {#sec-discrete-time-models}
+
+Many epidemic data arrive in discrete intervals — daily case counts, weekly
+reports — and many simulations advance in fixed steps. This chapter develops the
+discrete-time SIR model in two flavours: a **deterministic function map** with
+continuous state, and a **stochastic Markov chain** with integer counts. We then
+show that as the step width $\delta t$ shrinks, the deterministic map converges
+to the continuous ODE of @sec-foundations, tying the discrete and continuous
+worlds together.
+
+## Learning goals
+
+By the end of this chapter you should be able to:
+
+- write a discrete-time SIR update using the rate-to-proportion conversion;
+- contrast the deterministic map with the binomial Markov chain of
+  @sec-probability-and-stochastic-processes;
+- run a stochastic ensemble and compare its mean with the deterministic map;
+- demonstrate numerically that the map converges to the ODE as $\delta t \to 0$;
+- verify population conservation in both formulations.
+
+## Model assumptions and classification
+
+All three models share the SIR assumptions of @sec-foundations — closed,
+well-mixed population, mass-action transmission, constant recovery. They differ
+only in how they represent time and state:
+
+| Model | Determinism | Time | State |
+|---|---|---|---|
+| Function map | Deterministic | Discrete | Continuous |
+| Markov chain | Stochastic | Discrete | Discrete (integer) |
+| ODE (@sec-foundations) | Deterministic | Continuous | Continuous |
+
+The function map is the deterministic *expectation* of the Markov chain: it
+moves the mean number of individuals each step, whereas the chain draws a random
+integer around that mean.
+
+## Equations
+
+Over a step of width $\delta t$, the per-capita probabilities of infection and
+recovery are obtained from the continuous rates via the Poisson conversion
+introduced in @eq-p01-rate:
+
+$$
+p_I = 1 - \exp\!\left(-\frac{\beta c I_t}{N}\,\delta t\right), \qquad
+p_R = 1 - \exp\!\left(-\gamma\,\delta t\right).
+$$ {#eq-ch02-probs}
+
+The **deterministic map** moves the expected number of individuals:
+
+$$
+\begin{aligned}
+S_{t+1} &= S_t - p_I S_t,\\
+I_{t+1} &= I_t + p_I S_t - p_R I_t,\\
+R_{t+1} &= R_t + p_R I_t.
+\end{aligned}
+$$ {#eq-ch02-map}
+
+The **stochastic chain** replaces those expectations with binomial draws (cf.
+@eq-p02-chain):
+
+$$
+Y_t \sim \text{Binomial}(S_t, p_I), \quad
+Z_t \sim \text{Binomial}(I_t, p_R), \quad
+\begin{aligned}
+S_{t+1} &= S_t - Y_t,\\
+I_{t+1} &= I_t + Y_t - Z_t,\\
+R_{t+1} &= R_t + Z_t.
+\end{aligned}
+$$ {#eq-ch02-chain}
+
+As $\delta t \to 0$, $p_I \to \tfrac{\beta c I}{N}\delta t$ and
+$p_R \to \gamma\,\delta t$, so the map @eq-ch02-map reduces to a forward-Euler
+step of the ODE @eq-ch01-sir and converges to it.
+
+## Julia implementation
+
+The two kernels sit side by side so the only difference — deterministic movement
+versus a binomial draw — is explicit.
+
+```{julia}
+#| label: ch02-kernels
+using Distributions, StableRNGs
+
+rate_to_proportion(r, δt) = -expm1(-r * δt)
+
+function sir_map_step(state, p, δt)          # deterministic, eq-ch02-map
+    S, I, R = state
+    β, c, γ, N = p
+    infection = rate_to_proportion(β * c * I / N, δt) * S
+    recovery  = rate_to_proportion(γ, δt) * I
+    return (S - infection, I + infection - recovery, R + recovery)
+end
+
+function sir_chain_step(state, p, δt, rng)   # stochastic, eq-ch02-chain
+    S, I, R = state
+    β, c, γ, N = p
+    Y = rand(rng, Binomial(round(Int, S), rate_to_proportion(β * c * I / N, δt)))
+    Z = rand(rng, Binomial(round(Int, I), rate_to_proportion(γ, δt)))
+    return (S - Y, I + Y - Z, R + Z)
+end
+
+function iterate_model(step, u0, p, δt, nsteps; extra = ())
+    traj = Matrix{Float64}(undef, 3, nsteps + 1)
+    traj[:, 1] .= u0
+    state = Tuple(float.(u0))
+    for k in 1:nsteps
+        state = step(state, p, δt, extra...)
+        traj[:, k + 1] .= state
+    end
+    return traj
+end
+```
+
+We run the deterministic map and a 200-member stochastic ensemble on the
+baseline scenario with $\delta t = 1$ day.
+
+```{julia}
+#| label: ch02-run
+u0 = [990, 10, 0]
+p  = (0.05, 10.0, 0.25, 1000.0)
+δt = 1.0
+nsteps = 40
+ts = 0:nsteps
+
+map_traj = iterate_model((s, p, dt) -> sir_map_step(s, p, dt), u0, p, δt, nsteps)
+
+nsims = 200
+chain_ens = [iterate_model(sir_chain_step, u0, p, δt, nsteps; extra = (StableRNG(seed),))
+             for seed in 1:nsims]
+chain_I = reduce(hcat, (traj[2, :] for traj in chain_ens))
+chain_mean_I = vec(sum(chain_I; dims = 2)) ./ nsims
+(round(maximum(map_traj[2, :]); digits = 1), round(maximum(chain_mean_I); digits = 1))
+```
+
+```{julia}
+#| label: fig-ch02-compare
+#| fig-cap: "Infectious compartment: stochastic Markov-chain realisations (thin grey), their ensemble mean (red), and the deterministic function map (dashed black). The map closely tracks the stochastic mean."
+using CairoMakie
+
+fig = Figure(size = (720, 440))
+ax = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "infectious I(t)",
+          title = "Discrete-time SIR: map vs stochastic chain (δt = 1)")
+for j in 1:nsims
+    lines!(ax, ts, chain_I[:, j]; color = (:grey, 0.12), linewidth = 1)
+end
+lines!(ax, ts, chain_mean_I; color = :firebrick, linewidth = 3, label = "chain mean")
+lines!(ax, ts, map_traj[2, :]; color = :black, linestyle = :dash, linewidth = 3,
+       label = "function map")
+axislegend(ax; position = :rt)
+fig
+```
+
+### Convergence of the map to the ODE
+
+As $\delta t \to 0$ the deterministic map should approach the continuous-time
+ODE solution. We compare the map at the fixed horizon $t = 40$ against a
+high-accuracy `Tsit5` reference across a sequence of shrinking steps.
+
+```{julia}
+#| label: ch02-convergence
+using OrdinaryDiffEq
+
+function sir_ode!(du, u, p, t)
+    S, I, R = u
+    β, c, γ, N = p
+    λ = β * c * I / N
+    du[1] = -λ * S; du[2] = λ * S - γ * I; du[3] = γ * I
+    return nothing
+end
+
+tmax = 40.0
+ode_ref = solve(ODEProblem(sir_ode!, float.(u0), (0.0, tmax), p), Tsit5();
+                reltol = 1e-12, abstol = 1e-12, save_everystep = false).u[end]
+
+δts = [tmax / 2^k for k in 5:13]
+map_errors = map(δts) do dt
+    n = round(Int, tmax / dt)
+    traj = iterate_model((s, p, d) -> sir_map_step(s, p, d), u0, p, dt, n)
+    maximum(abs.(traj[:, end] .- ode_ref))
+end
+[(round(dt; sigdigits = 3), round(err; sigdigits = 3)) for (dt, err) in zip(δts, map_errors)]
+```
+
+```{julia}
+#| label: fig-ch02-convergence
+#| fig-cap: "Error of the deterministic map at $t=40$ relative to the ODE solution, versus step size (log–log). The points parallel the slope-1 guide, confirming first-order convergence of the map to the ODE."
+fig2 = Figure(size = (640, 420))
+ax2 = Axis(fig2[1, 1]; xscale = log10, yscale = log10,
+           xlabel = "step size δt", ylabel = "‖map − ODE‖ at t = 40",
+           title = "Map → ODE convergence")
+scatter!(ax2, δts, map_errors; markersize = 12, color = :steelblue, label = "measured")
+guide = map_errors[1] .* (δts ./ δts[1])
+lines!(ax2, δts, guide; linestyle = :dash, color = :black, label = "slope 1")
+axislegend(ax2; position = :rb)
+fig2
+```
+
+## Validation
+
+**Conservation.** Both the deterministic map and every stochastic realisation
+must keep the population at $N = 1000$:
+
+```{julia}
+#| label: ch02-check-conservation
+map_ok   = all(k -> isapprox(sum(map_traj[:, k]), 1000.0; atol = 1e-8), 1:nsteps+1)
+chain_ok = all(traj -> all(k -> sum(traj[:, k]) == 1000, 1:nsteps+1), chain_ens)
+(map_ok, chain_ok)
+```
+
+**Convergence.** The empirical order of the map-to-ODE error should be close to
+1, matching the forward-Euler analysis of @sec-calculus-and-numerical-methods:
+
+```{julia}
+#| label: ch02-check-order
+orders = [log2(map_errors[k] / map_errors[k+1]) for k in 1:length(map_errors)-1]
+mean_order = sum(orders) / length(orders)
+(round(mean_order; digits = 3), isapprox(mean_order, 1.0; atol = 0.1))
+```
+
+Both cells confirm the expected behaviour: population is conserved in every
+trajectory, and the map converges to the ODE at first order.
+
+## Interpretation and limitations
+
+The three models form a coherent family. The Markov chain is the most faithful:
+it produces integer counts, allows an epidemic to fade out by chance, and shows
+run-to-run variability that shrinks as the population grows. The deterministic
+map is its mean-field shadow — cheap and smooth, but blind to extinction and
+fluctuations. Both are only *approximations* to the continuous process, exact
+only as $\delta t \to 0$; at $\delta t = 1$ day the discretisation error is
+visible but modest. A subtle limitation of the binomial construction is that it
+processes all infections and recoveries within a step simultaneously, so an
+individual cannot become infected *and* recover in the same step — an artefact
+that vanishes as the step shrinks. The exact event-driven treatment is the
+subject of the continuous-time Markov chain chapter. See the
+[Distributions.jl documentation](https://juliastats.org/Distributions.jl/stable/)
+and the [SciML FunctionMap solver](https://docs.sciml.ai/OrdinaryDiffEq/stable/)
+for the corresponding library tools.
+
+## Exercises
+
+### Exercise 1 {#ch02-ex1}
+
+Run the stochastic chain ensemble at $\delta t = 1$ and again at $\delta t = 0.25$
+(with the horizon fixed at 40 days). Compare the ensemble-mean infectious peak
+against the deterministic map at each step size, and explain which discretisation
+sits closer to the ODE reference and why.
+
+### Exercise 2 {#ch02-ex2}
+
+Compute, from the 200-member ensemble, the probability that the epidemic goes
+extinct (reaches $I = 0$) before day 40 for the baseline $R_0 = 2$. Then lower
+the contact rate to $c = 6$ and recompute. Explain the change in terms of the
+reproduction number and demographic stochasticity — a phenomenon the
+deterministic map cannot capture.
+
+## Companion materials
+
+- [Slides](../slides/chapters/02-discrete-time-models.html)
+- [Pluto preview](../notebook-exports/chapters/02-discrete-time-models.html)
+- [Pluto source](../notebooks/chapters/02-discrete-time-models.jl)

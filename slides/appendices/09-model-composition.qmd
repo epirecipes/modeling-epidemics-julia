@@ -1,0 +1,115 @@
+---
+title: "Model composition and structured populations"
+course-unit: a09-model-composition
+status: complete
+---
+
+## Why compose models?
+
+- Named components expose biological assumptions and connections.
+- One Catalyst reaction network can generate deterministic and stochastic
+  problem types.
+- Structure matters: homogeneous mixing hides group-specific contact patterns.
+
+Today: current ModelingToolkit 11 and Catalyst 16 APIs.
+
+::: {.notes}
+Composition is an audit tool. Compile and inspect the equations before trusting
+the numerical trajectory.
+:::
+
+## Symbolic components
+
+For a deterministic continuous-time continuous-state SIR:
+
+$$
+\dot S=-\beta SI/N,\qquad
+\dot I=\beta SI/N-\gamma I,\qquad
+\dot R=\gamma I.
+$$
+
+Keep the flows in separate `System` components, connect shared states and
+parameters, then call `compose` and `mtkcompile`.
+
+```{julia}
+using CairoMakie, ModelingToolkit, OrdinaryDiffEq
+using ModelingToolkit: t_nounits as t, D_nounits as D
+@variables S(t) I(t) R(t); @parameters β γ
+@named s = System([D(S) ~ -β*S*I/(S+I+R)], t)
+@named i = System([D(I) ~ β*S*I/(S+I+R)-γ*I], t)
+@named r = System([D(R) ~ γ*I], t)
+nothing
+```
+
+::: {.notes}
+The complete connection system is shown in the book and notebook. The key API
+is the current `System` → `compose` → `mtkcompile` pipeline.
+:::
+
+## Structured mixing as reactions
+
+For two groups, $m_{12}=m_{21}=0.5$ modifies cross-group infection:
+
+$$
+\lambda_1=\frac{\beta c_1}{N}(S_1I_1+m_{12}S_1I_2),\quad
+\lambda_2=\frac{\beta c_2}{N}(m_{21}S_2I_1+S_2I_2).
+$$
+
+```{julia}
+using Catalyst
+network = @reaction_network begin
+    @parameters N
+    (β*c1)/N, S1 + I1 --> 2I1
+    (β*c1*m12)/N, S1 + I2 --> I1 + I2
+    (β*c2*m21)/N, S2 + I1 --> I2 + I1
+    (β*c2)/N, S2 + I2 --> 2I2
+    γ, I1 --> R1
+    γ, I2 --> R2
+end
+nothing
+```
+
+## One network, multiple interpretations
+
+```{julia}
+using OrdinaryDiffEq, StochasticDiffEq, JumpProcesses
+u0 = [:S1=>495.0,:I1=>5.0,:R1=>0.0,:S2=>495.0,:I2=>5.0,:R2=>0.0]
+p = [:N=>1000.0,:β=>0.05,:c1=>10.0,:c2=>10.0,
+     :m12=>0.5,:m21=>0.5,:γ=>0.25]
+ode = solve(ODEProblem(network,u0,(0.0,2.0),p), Tsit5(); saveat=0.05)
+nothing
+```
+
+The same `ReactionSystem` can be passed to an `SDEProblem` (chemical-Langevin
+approximation) or `JumpProblem` (integer-count event process). Their state
+spaces and error claims are different.
+
+## Generated comparison
+
+```{julia}
+#| fig-cap: "Aggregate infectious prevalence generated from the structured reaction-network model."
+fig = Figure(size=(800,350))
+ax = Axis(fig[1,1], xlabel="time", ylabel="I₁ + I₂")
+lines!(ax, ode.t, ode[:I1] .+ ode[:I2], label="structured ODE")
+axislegend(ax)
+fig
+```
+
+Validation: the ODE and jump stoichiometry conserve
+$S_1+I_1+R_1+S_2+I_2+R_2$. A Gaussian SDE can leave the nonnegative domain;
+report that diagnostic rather than clipping it silently.
+
+## Takeaways and links
+
+- Use `System`, `compose`, and `mtkcompile` for inspectable symbolic assembly.
+- Use Catalyst reactions to preserve stoichiometry and reuse a model.
+- Group structure introduces parameters that aggregate incidence may not identify.
+
+Read the [book appendix](../../appendices/09-model-composition.html),
+[ModelingToolkit composition](https://docs.sciml.ai/ModelingToolkit/stable/basics/Composition/),
+and [Catalyst system generation](https://catalyst.sciml.ai/stable/manual/systems/).
+
+::: {.notes}
+Do not equate ODE, SDE, and jump trajectories. They are related model
+interpretations with different state spaces, noise, and validation requirements.
+:::

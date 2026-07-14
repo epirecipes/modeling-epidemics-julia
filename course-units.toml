@@ -1,0 +1,239 @@
+[[units]]
+id = "p01"
+slug = "julia-essentials"
+title = "Julia essentials for modelers"
+kind = "prerequisite"
+status = "complete"
+environment = "root"
+packages = ["Julia standard library", "StableRNGs"]
+sources = ["https://docs.julialang.org/en/v1/"]
+
+[[units]]
+id = "p02"
+slug = "probability-and-stochastic-processes"
+title = "Probability and stochastic processes"
+kind = "prerequisite"
+status = "complete"
+environment = "root"
+packages = ["Distributions", "StableRNGs", "CairoMakie"]
+sources = ["../sir-julia/tutorials/markov/markov.jmd"]
+
+[[units]]
+id = "p03"
+slug = "calculus-and-numerical-methods"
+title = "Calculus and numerical methods"
+kind = "prerequisite"
+status = "complete"
+environment = "root"
+packages = ["CairoMakie"]
+sources = ["../sir-julia/tutorials/ode_euler/ode_euler.jmd"]
+
+[[units]]
+id = "ch01"
+slug = "foundations"
+title = "Foundations: SIR theory and the Julia workflow"
+kind = "core"
+status = "complete"
+environment = "root"
+packages = ["OrdinaryDiffEq", "ModelingToolkit", "NonlinearSolve", "CairoMakie"]
+sources = ["../sir-julia/tutorials/ode_euler/ode_euler.jmd", "../sir-julia/tutorials/ode/ode.jmd", "../sir-julia/tutorials/ode_steadystate/ode_steadystate.jmd"]
+
+[[units]]
+id = "ch02"
+slug = "discrete-time-models"
+title = "Discrete-time models"
+kind = "core"
+status = "complete"
+environment = "root"
+packages = ["Distributions", "OrdinaryDiffEq", "StableRNGs", "CairoMakie"]
+sources = ["../sir-julia/tutorials/function_map_vanilla/function_map_vanilla.jmd", "../sir-julia/tutorials/function_map/function_map.jmd", "../sir-julia/tutorials/markov/markov.jmd"]
+
+[[units]]
+id = "ch03"
+slug = "ordinary-differential-equations"
+title = "Ordinary differential equations"
+kind = "core"
+status = "complete"
+environment = "root"
+packages = ["OrdinaryDiffEq", "ModelingToolkit", "DiffEqCallbacks", "CairoMakie"]
+sources = ["../sir-julia/tutorials/ode/ode.jmd", "../sir-julia/tutorials/ode_mtk/ode_mtk.jmd", "../sir-julia/tutorials/ode_lockdown/ode_lockdown.jmd"]
+
+[[units]]
+id = "ch04"
+slug = "jump-processes"
+title = "Continuous-time Markov chains and jump processes"
+kind = "core"
+status = "complete"
+environment = "root"
+packages = ["JumpProcesses", "Catalyst", "OrdinaryDiffEq", "CairoMakie"]
+sources = ["../sir-julia/tutorials/jump_process/jump_process.jmd", "../sir-julia/tutorials/jump_process_catalyst/jump_process_catalyst.jmd"]
+
+[[units]]
+id = "ch05"
+slug = "stochastic-differential-equations"
+title = "Stochastic differential equations"
+kind = "core"
+status = "complete"
+environment = "root"
+packages = ["StochasticDiffEq", "DiffEqCallbacks", "CairoMakie"]
+sources = ["../sir-julia/tutorials/sde_stochasticdiffeq/sde_stochasticdiffeq.jmd", "../sir-julia/tutorials/lna/lna.jmd"]
+
+[[units]]
+id = "ch06"
+slug = "agent-based-models"
+title = "Agent-based models"
+kind = "core"
+status = "complete"
+environment = "root"
+packages = ["Agents", "Distributions", "StableRNGs", "CairoMakie"]
+sources = ["../sir-julia/tutorials/abm/abm.jmd", "../sir-julia/tutorials/des_agentsjl/des_agentsjl.jmd", "../sir-julia/tutorials/abm_vector/abm_vector.jmd"]
+
+[[units]]
+id = "ch07"
+slug = "observation-models"
+title = "Observation models and simulated data"
+kind = "core"
+status = "complete"
+environment = "root"
+packages = ["OrdinaryDiffEq", "DelayDiffEq", "DiffEqCallbacks", "Distributions", "StableRNGs", "CairoMakie"]
+sources = ["../sir-julia/tutorials/ode_simdata/ode_simdata.jmd"]
+
+[[units]]
+id = "ch08"
+slug = "parameter-estimation"
+title = "Frequentist parameter estimation"
+kind = "core"
+status = "complete"
+environment = "environments/ch08"
+packages = ["ProfileLikelihood", "Optimization", "OptimizationOptimJL", "OrdinaryDiffEq", "CairoMakie"]
+sources = ["../sir-julia/tutorials/ode_profilelikelihood/ode_profilelikelihood.jmd", "../sir-julia/tutorials/ode_likelihoodintervals/ode_likelihoodintervals.jmd"]
+
+[[units]]
+id = "ch09"
+slug = "bayesian-inference"
+title = "Bayesian inference"
+kind = "core"
+status = "complete"
+environment = "root"
+packages = ["Turing", "MCMCChains", "SciMLSensitivity", "OrdinaryDiffEq", "CairoMakie"]
+sources = ["../sir-julia/tutorials/ode_turing/ode_turing.jmd", "../sir-julia/tutorials/function_map_turing/function_map_turing.jmd"]
+
+[[units]]
+id = "ch10"
+slug = "sensitivity-and-identifiability"
+title = "Sensitivity and identifiability"
+kind = "core"
+status = "complete"
+environment = "root"
+packages = ["SciMLSensitivity", "GlobalSensitivity", "StructuralIdentifiability", "ModelingToolkit", "CairoMakie"]
+sources = ["../sir-julia/tutorials/ode_local_sensitivity/ode_local_sensitivity.jmd", "../sir-julia/tutorials/ode_global_sensitivity2/ode_global_sensitivity2.jmd", "../sir-julia/tutorials/ode_identifiability/ode_identifiability.jmd"]
+
+[[units]]
+id = "ch11"
+slug = "interventions-and-optimization"
+title = "Interventions and optimization"
+kind = "core"
+status = "complete"
+environment = "root"
+packages = ["OrdinaryDiffEq", "DiffEqCallbacks", "Optimization", "OptimizationOptimJL", "CairoMakie"]
+sources = ["../sir-julia/tutorials/ode_lockdown/ode_lockdown.jmd", "../sir-julia/tutorials/ode_lockdown_optimization/ode_lockdown_optimization.jmd"]
+
+[[units]]
+id = "ch12"
+slug = "data-to-decision-capstone"
+title = "Data-to-decision capstone"
+kind = "core"
+status = "complete"
+environment = "root"
+packages = ["CSV", "DataFrames", "OrdinaryDiffEq", "Distributions", "StableRNGs", "Optimization", "CairoMakie"]
+sources = ["../sir-julia/tutorials/ode_simdata/ode_simdata.jmd", "../sir-julia/tutorials/ode_profilelikelihood/ode_profilelikelihood.jmd", "../sir-julia/tutorials/ode_lockdown_optimization/ode_lockdown_optimization.jmd"]
+
+[[units]]
+id = "a01"
+slug = "delay-differential-equations"
+title = "Delay differential equations"
+kind = "advanced"
+status = "complete"
+environment = "root"
+packages = ["DelayDiffEq", "OrdinaryDiffEq", "DiffEqCallbacks", "CairoMakie"]
+sources = ["../sir-julia/tutorials/dde/dde.jmd"]
+
+[[units]]
+id = "a02"
+slug = "stochastic-delay-differential-equations"
+title = "Stochastic delay differential equations"
+kind = "advanced"
+status = "complete"
+environment = "root"
+packages = ["DelayDiffEq", "StochasticDiffEq", "DiffEqCallbacks", "CairoMakie"]
+sources = ["../sir-julia/tutorials/sdde/sdde.jmd"]
+
+[[units]]
+id = "a03"
+slug = "discrete-event-simulation"
+title = "Discrete-event simulation"
+kind = "advanced"
+status = "complete"
+environment = "root"
+packages = ["Agents", "ConcurrentSim", "ResumableFunctions", "CairoMakie"]
+sources = ["../sir-julia/tutorials/des_agentsjl/des_agentsjl.jmd", "../sir-julia/tutorials/des/des.jmd"]
+
+[[units]]
+id = "a04"
+slug = "universal-differential-equations"
+title = "Universal differential equations"
+kind = "advanced"
+status = "complete"
+environment = "root"
+packages = ["Lux", "DiffEqFlux", "SciMLSensitivity", "Optimization", "OptimizationOptimisers", "CairoMakie"]
+sources = ["../sir-julia/tutorials/ude/ude.jmd"]
+
+[[units]]
+id = "a05"
+slug = "finite-state-projection"
+title = "Finite-state projection"
+kind = "advanced"
+status = "complete"
+environment = "root"
+packages = ["SparseArrays", "Catalyst", "JumpProcesses", "OrdinaryDiffEq", "CairoMakie"]
+sources = ["../sir-julia/tutorials/ode_fsp/ode_fsp.jmd", "../sir-julia/tutorials/rn_mtk/rn_mtk.jmd"]
+
+[[units]]
+id = "a06"
+slug = "probabilistic-numerical-integration"
+title = "Probabilistic numerical integration"
+kind = "advanced"
+status = "complete"
+environment = "root"
+packages = ["OrdinaryDiffEq", "CairoMakie"]
+sources = ["../sir-julia/tutorials/ode_probint_probnumdiffeq/ode_probint_probnumdiffeq.jmd"]
+
+[[units]]
+id = "a07"
+slug = "surrogate-models"
+title = "Surrogate and emulator models"
+kind = "advanced"
+status = "complete"
+environment = "root"
+packages = ["Surrogates", "OrdinaryDiffEq", "Optimization", "CairoMakie"]
+sources = ["../sir-julia/tutorials/ode_surrogate_1d_1d/ode_surrogate_1d_1d.jmd"]
+
+[[units]]
+id = "a08"
+slug = "advanced-optimal-control"
+title = "Advanced optimal control"
+kind = "advanced"
+status = "complete"
+environment = "root"
+packages = ["InfiniteOpt", "Ipopt", "SDDP", "JuMP", "CairoMakie"]
+sources = ["../sir-julia/tutorials/ode_lockdown_infiniteopt/ode_lockdown_infiniteopt.jmd", "../sir-julia/tutorials/sddp/sddp.jmd"]
+
+[[units]]
+id = "a09"
+slug = "model-composition"
+title = "Model composition and structured populations"
+kind = "advanced"
+status = "complete"
+environment = "root"
+packages = ["ModelingToolkit", "Catalyst", "OrdinaryDiffEq", "StochasticDiffEq", "JumpProcesses", "CairoMakie"]
+sources = ["../sir-julia/tutorials/ode_stages/ode_stages.jmd", "../sir-julia/tutorials/ode_multigroup/ode_multigroup.jmd", "../sir-julia/tutorials/rn_mtk/rn_mtk.jmd", "../sir-julia/tutorials/ode_compose/ode_compose.jmd"]

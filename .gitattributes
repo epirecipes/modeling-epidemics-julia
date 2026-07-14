@@ -1,0 +1,4 @@
+_freeze/** linguist-generated=true -diff
+slides/_freeze/** linguist-generated=true -diff
+notebook-exports/** linguist-generated=true -diff
+dist/*.pdf binary

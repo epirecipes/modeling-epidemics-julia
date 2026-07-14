@@ -1,0 +1,396 @@
+## Advanced scientific machine learning solutions
+
+These solutions use the shared root environment and reuse the exact model
+kernels from the appendix chapters. Random draws are seeded with `StableRNG`,
+so the reported numbers are reproducible without being universal constants.
+Each solution is wrapped in a `let` block so its working variables do not leak
+into the shared solutions document.
+
+### Universal differential equations
+
+#### Solution to Exercise 1 {#solution-a04-ex1}
+
+Shortening the training window to `train_time = 15.0` stops the observations
+before the epidemic has run its full course, so the training data visit a
+*smaller* range of infectious proportions. The learned closure therefore matches
+the true force of infection ``\lambda^\star(I)=\beta c\,I`` only up to the new,
+smaller ``I_{\max}``, and diverges above it.
+
+```{julia}
+#| label: fig-sol-a04-ex1
+using OrdinaryDiffEq, Distributions, StableRNGs, Random
+using Lux, DiffEqFlux, SciMLSensitivity
+using Optimization, OptimizationOptimisers, OptimizationOptimJL
+using CairoMakie
+
+a04_result = let
+    N = 1000.0; βc = 0.5; γ = 0.25
+    u0 = [0.99, 0.01, 0.0]; tspan = (0.0, 40.0); δt = 1.0
+    train_time = 15.0                      # shortened window (was 30.0)
+
+    function sir_true!(du, u, p, t)
+        S, I, C = u; λ, ν = p
+        du[1] = -λ*S*I; du[2] = λ*S*I - ν*I; du[3] = λ*S*I
+    end
+    sol_true = solve(ODEProblem(sir_true!, u0, tspan, [βc, γ]), Tsit5(); saveat = δt)
+    ts = 0.0:δt:train_time
+    Ctrue = reduce(hcat, sol_true(ts).u)[3, :]
+    data_rng = StableRNG(20240501)
+    noisy = [rand(data_rng, Poisson(max(c, 0.0))) for c in N .* diff(Ctrue)]
+
+    foi = Lux.Chain(Lux.Dense(1, 5, tanh), Lux.Dense(5, 1, softplus))
+    _, st = Lux.setup(StableRNG(1), foi)
+    unflat(θ) = (layer_1 = (weight = reshape(θ[1:5], 5, 1), bias = θ[6:10]),
+                 layer_2 = (weight = reshape(θ[11:15], 1, 5), bias = θ[16:16]))
+    λθ(I, θ) = foi([I], unflat(θ), st)[1][1]
+    p_init = 0.1 .* randn(StableRNG(2), Float64, 16)
+
+    function sir_ude!(du, u, θ, t)
+        S, I, C = u; λ = λθ(I, θ)
+        du[1] = -λ*S; du[2] = λ*S - γ*I; du[3] = λ*S
+    end
+    prob = ODEProblem(sir_ude!, u0, (0.0, train_time), p_init)
+    predict(θ) = Array(solve(prob, Tsit5(); p = θ, saveat = δt,
+        sensealg = InterpolatingAdjoint(autojacvec = ReverseDiffVJP())))
+    loss(θ) = (μ = max.(N .* diff(predict(θ)[3, :]), 1e-6); sum(μ .- noisy .* log.(μ)))
+
+    optf = OptimizationFunction((θ, _) -> loss(θ), Optimization.AutoZygote())
+    r1 = solve(OptimizationProblem(optf, p_init),
+        OptimizationOptimisers.Adam(0.05); maxiters = 150)
+    θ_hat = solve(OptimizationProblem(optf, r1.u),
+        OptimizationOptimJL.BFGS(); maxiters = 40).u
+
+    Igrid = 0.0:0.005:0.5
+    λ_nn = [λθ(I, θ_hat) for I in Igrid]
+    Imax = maximum(reduce(hcat, sol_true(ts).u)[2, :])
+    inr = Igrid .<= Imax
+    max_err = maximum(abs.(λ_nn[inr] .- βc .* Igrid[inr]))
+
+    fig = Figure(size = (760, 400))
+    ax = Axis(fig[1, 1]; xlabel = "infectious proportion I",
+        ylabel = "force of infection λ",
+        title = "Short window (train_time = 15): matches only up to I ≈ $(round(Imax; digits = 3))")
+    lines!(ax, Igrid, βc .* Igrid; color = :black, linewidth = 2, label = "true βc·I")
+    lines!(ax, Igrid, λ_nn; color = :firebrick, linestyle = :dash, linewidth = 2,
+        label = "neural network")
+    vlines!(ax, [Imax]; color = :gray, linestyle = :dot)
+    axislegend(ax; position = :lt)
+
+    (; Imax = round(Imax; digits = 4), max_err = round(max_err; sigdigits = 3), fig)
+end;
+a04_result.fig
+```
+
+```{julia}
+#| label: sol-a04-ex1-summary
+(training_range_Imax = a04_result.Imax, max_abs_error = a04_result.max_err)
+```
+
+With the shorter window the epidemic is caught near its rise, so ``I_{\max}``
+falls to about ``0.15`` (printed above) — smaller than the ``\approx 0.158``
+reached with the full window. Within that range the closure is still accurate
+(maximum absolute error of order ``10^{-2}``), but the dashed curve peels away
+from the truth immediately past the dotted line. The lesson is unchanged and
+sharpened: **a UDE closure is identified only over the states its training data
+actually visit.** Excluding the peak removes the very observations that pin down
+the closure at large ``I``.
+
+#### Solution to Exercise 2 {#solution-a04-ex2}
+
+The deeper network `Dense(1,8,tanh) → Dense(8,8,tanh) → Dense(8,1,softplus)` has
+``8 + 8 + 64 + 8 + 8 + 1 = 97`` parameters. Hard-coded slices become unwieldy, so
+we write a **generic** flatten/unflatten driven by the parameter shapes.
+
+```{julia}
+#| label: fig-sol-a04-ex2
+a04_deep = let
+    N = 1000.0; βc = 0.5; γ = 0.25
+    u0 = [0.99, 0.01, 0.0]; tspan = (0.0, 40.0); δt = 1.0; train_time = 30.0
+
+    function sir_true!(du, u, p, t)
+        S, I, C = u; λ, ν = p
+        du[1] = -λ*S*I; du[2] = λ*S*I - ν*I; du[3] = λ*S*I
+    end
+    sol_true = solve(ODEProblem(sir_true!, u0, tspan, [βc, γ]), Tsit5(); saveat = δt)
+    ts = 0.0:δt:train_time
+    Ctrue = reduce(hcat, sol_true(ts).u)[3, :]
+    data_rng = StableRNG(20240501)
+    noisy = [rand(data_rng, Poisson(max(c, 0.0))) for c in N .* diff(Ctrue)]
+
+    net = Lux.Chain(Lux.Dense(1, 8, tanh), Lux.Dense(8, 8, tanh), Lux.Dense(8, 1, softplus))
+    ps0, st = Lux.setup(StableRNG(1), net)
+
+    # Generic flatten / unflatten for a Chain of Dense layers.
+    shapes = [(size(l.weight), length(l.bias)) for l in ps0]
+    flatten(ps) = reduce(vcat, [vcat(vec(l.weight), l.bias) for l in ps])
+    function unflat(θ)
+        layers = Pair{Symbol,Any}[]; k = 1
+        for (i, ((wr, wc), nb)) in enumerate(shapes)
+            W = reshape(θ[k:k + wr*wc - 1], wr, wc); k += wr*wc
+            b = θ[k:k + nb - 1]; k += nb
+            push!(layers, Symbol("layer_", i) => (weight = W, bias = b))
+        end
+        (; layers...)
+    end
+    λθ(I, θ) = net([I], unflat(θ), st)[1][1]
+    p_init = 0.1 .* randn(StableRNG(2), Float64, length(flatten(ps0)))
+
+    function sir_ude!(du, u, θ, t)
+        S, I, C = u; λ = λθ(I, θ)
+        du[1] = -λ*S; du[2] = λ*S - γ*I; du[3] = λ*S
+    end
+    prob = ODEProblem(sir_ude!, u0, (0.0, train_time), p_init)
+    predict(θ) = Array(solve(prob, Tsit5(); p = θ, saveat = δt,
+        sensealg = InterpolatingAdjoint(autojacvec = ReverseDiffVJP())))
+    loss(θ) = (μ = max.(N .* diff(predict(θ)[3, :]), 1e-6); sum(μ .- noisy .* log.(μ)))
+
+    optf = OptimizationFunction((θ, _) -> loss(θ), Optimization.AutoZygote())
+    r1 = solve(OptimizationProblem(optf, p_init),
+        OptimizationOptimisers.Adam(0.05); maxiters = 150)
+    θ_hat = solve(OptimizationProblem(optf, r1.u),
+        OptimizationOptimJL.BFGS(); maxiters = 40).u
+
+    Igrid = 0.0:0.005:0.5
+    λ_nn = [λθ(I, θ_hat) for I in Igrid]
+    Imax = maximum(reduce(hcat, sol_true(ts).u)[2, :])
+    inr = Igrid .<= Imax
+    max_err = maximum(abs.(λ_nn[inr] .- βc .* Igrid[inr]))
+
+    fig = Figure(size = (760, 400))
+    ax = Axis(fig[1, 1]; xlabel = "infectious proportion I",
+        ylabel = "force of infection λ",
+        title = "Deeper network (97 parameters)")
+    lines!(ax, Igrid, βc .* Igrid; color = :black, linewidth = 2, label = "true βc·I")
+    lines!(ax, Igrid, λ_nn; color = :seagreen, linestyle = :dash, linewidth = 2,
+        label = "deep network")
+    vlines!(ax, [Imax]; color = :gray, linestyle = :dot)
+    axislegend(ax; position = :lt)
+
+    (; nparams = length(p_init), max_err = round(max_err; sigdigits = 3), fig)
+end;
+a04_deep.fig
+```
+
+```{julia}
+#| label: sol-a04-ex2-summary
+(parameters = a04_deep.nparams, max_abs_error = a04_deep.max_err)
+```
+
+The deeper network has 97 parameters (printed above) and fits the training range
+about as well as the 16-parameter model (maximum absolute error of order
+``10^{-3}``, comparable to the ``\approx 3.8\times10^{-3}`` of the shallow
+network): within the data the extra flexibility yields no meaningful improvement,
+because the true closure is *linear* and the small network already represents it.
+The cost of the extra capacity shows up in the **extrapolation region** past the
+dotted line, where the higher-variance deep network is free to wiggle more and
+tends to depart from the truth faster. This is the bias–variance trade-off:
+adding capacity cannot reduce an already-negligible in-range bias, but it
+increases variance where the data do not constrain the fit. For a closure known
+to be smooth and near-linear, the parsimonious network is preferable.
+
+### Finite-state projection
+
+#### Solution to Exercise 1 {#solution-a05-ex1}
+
+Capping the retained infectious count at `Imax = 15` deletes every state with
+``I > 15``. Any infection event that would push ``I`` past the cap has its rate
+subtracted from the diagonal but no destination inside the retained set, so its
+probability **leaks** out and the total ``\sum\mathbf{p}`` falls below 1.
+
+```{julia}
+#| label: fig-sol-a05-ex1
+using OrdinaryDiffEq, SparseArrays, LinearAlgebra, CairoMakie, Printf
+
+function a05_generator(N, β, γ; Smax = N, Imax = N)
+    index = Dict{Tuple{Int,Int},Int}(); states = Tuple{Int,Int}[]
+    for s in 0:Smax, i in 0:Imax
+        if s + i <= N
+            push!(states, (s, i)); index[(s, i)] = length(states)
+        end
+    end
+    rows = Int[]; cols = Int[]; vals = Float64[]
+    add!(r, c, v) = (push!(rows, r); push!(cols, c); push!(vals, v))
+    for (col, (s, i)) in enumerate(states)
+        a_inf = β*s*i; a_rec = γ*i
+        add!(col, col, -(a_inf + a_rec))
+        a_inf > 0 && haskey(index, (s-1, i+1)) && add!(index[(s-1, i+1)], col, a_inf)
+        a_rec > 0 && haskey(index, (s, i-1))   && add!(index[(s, i-1)],   col, a_rec)
+    end
+    return sparse(rows, cols, vals, length(states), length(states)), states, index
+end
+
+a05_trunc = let
+    Ncap = 100; β = 0.005; γ = 0.25; tspan = (0.0, 40.0)
+    function total_prob(Imax)
+        Q, states, index = a05_generator(Ncap, β, γ; Imax = Imax)
+        p0 = zeros(length(states)); p0[index[(99, 1)]] = 1.0
+        sol = solve(ODEProblem((dp, p, Q, t) -> mul!(dp, Q, p), p0, tspan, Q),
+            Vern7(); abstol = 1e-10, reltol = 1e-8, saveat = 1.0)
+        sol.t, [sum(u) for u in sol.u]
+    end
+
+    fig = Figure(size = (760, 400))
+    ax = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "total probability Σp",
+        title = "Probability leakage under truncation")
+    leaks = NamedTuple[]
+    for (Imax, col) in zip((15, 25, 40, 50), (:firebrick, :orange, :seagreen, :steelblue))
+        t, tp = total_prob(Imax)
+        lines!(ax, t, tp; color = col, linewidth = 2, label = "Imax = $Imax")
+        push!(leaks, (; Imax, final_leak = 1 - minimum(tp)))
+    end
+    hlines!(ax, [1.0]; color = :gray, linestyle = :dot)
+    axislegend(ax; position = :lb)
+    (; leaks, fig)
+end;
+a05_trunc.fig
+```
+
+```{julia}
+#| label: sol-a05-ex1-table
+for r in a05_trunc.leaks
+    @printf("Imax = %2d   →   final leakage = %.3e\n", r.Imax, r.final_leak)
+end
+```
+
+With `Imax = 15` probability starts leaking around ``t\approx 2`` — just as the
+outbreak accelerates and the infectious count climbs toward the cap — and the
+final shortfall is roughly 40%. That timing coincides with the approach to the
+epidemic peak seen in the appendix's marginal plots: leakage is governed by how
+much probability mass reaches ``I \approx I_{\max}``. Loosening the cap moves the
+onset later and shrinks the loss. A short sweep shows that `Imax = 45` still
+leaks ``\approx 1.7\times10^{-4}``, whereas **`Imax = 50` brings the leakage to
+``\approx 9\times10^{-6}``, below the ``10^{-4}`` target**; so retaining
+infectious counts up to about 50 is enough for this scenario.
+
+#### Solution to Exercise 2 {#solution-a05-ex2}
+
+Our kernel only ever `push!`es states satisfying `s + i <= N`, so it allocates
+the **triangular** state space, never the rectangular one. The saving is the
+ratio of the two counts.
+
+```{julia}
+#| label: sol-a05-ex2
+let
+    @printf("%6s %12s %12s %8s\n", "N", "triangular", "rectangular", "ratio")
+    for n in (50, 100, 250, 1000)
+        tri = ((n + 1) * (n + 2)) ÷ 2
+        rect = (n + 1)^2
+        @printf("%6d %12d %12d %8.4f\n", n, tri, rect, tri / rect)
+    end
+end
+```
+
+The triangular count ``(N{+}1)(N{+}2)/2`` is almost exactly **half** the
+rectangular ``(N{+}1)^2``, and the ratio ``\to 1/2`` as ``N\to\infty``. So
+exploiting reachability halves the number of equations — a worthwhile constant
+factor, but it does **not** change the *order* of growth: both counts are
+``\mathcal{O}(N^2)``, so the CME still grows quadratically in ``N`` (and would
+grow cubically if a third species were tracked). A sparse index handler that
+additionally *dropped low-probability states* — keeping only the dynamically
+occupied region and expanding it adaptively (as adaptive-FSP schemes do) — could
+push FSP to larger populations, because at any instant the probability mass
+occupies only a thin band of the triangle. That would attack the constant factor
+much more aggressively, but the fundamental quadratic (or cubic) scaling in the
+number of species is intrinsic to enumerating a joint state space; it is why FSP
+remains a small-population / few-species method.
+
+### Probabilistic numerical integration
+
+#### Solution to Exercise 1 {#solution-a06-ex1}
+
+Fixing the solver tolerance and varying only the output step `δt` reveals a
+subtlety: with an **adaptive** solver, `δt` (via `saveat`) sets where the dense
+output is *sampled*, not the internal step size, which the tolerance controls.
+So the measured error is essentially flat in `δt`.
+
+```{julia}
+#| label: fig-sol-a06-ex1
+using EpiModelingCourse, OrdinaryDiffEq, CairoMakie, Printf
+
+a06_step = let
+    p = BASELINE_PARAMETERS; s0 = BASELINE_INITIAL_STATE
+    u0 = [s0.S, s0.I, s0.R]; tspan = (0.0, 40.0)
+    prob = ODEProblem(EpiModelingCourse.sir_ode!, u0, tspan, p)
+    ref = solve(prob, Vern9(); abstol = 1e-12, reltol = 1e-12, saveat = 0.05)
+    refI(t) = ref(t)[2]
+    dts = [1.0, 0.5, 0.25, 0.1]
+
+    adaptive_err = Float64[]
+    fixed_err = Float64[]
+    for dt in dts
+        a = solve(prob, Tsit5(); abstol = 1e-1, reltol = 1e-1, saveat = dt)
+        push!(adaptive_err, maximum(abs(a.u[k][2] - refI(a.t[k])) for k in eachindex(a.t)))
+        f = solve(prob, Tsit5(); adaptive = false, dt = dt, saveat = dt)
+        push!(fixed_err, maximum(abs(f.u[k][2] - refI(f.t[k])) for k in eachindex(f.t)))
+    end
+
+    fig = Figure(size = (760, 400))
+    ax = Axis(fig[1, 1]; xlabel = "output / step size δt", ylabel = "max |I error|",
+        xscale = log10, yscale = log10, title = "Error vs. δt")
+    scatterlines!(ax, dts, max.(adaptive_err, 1e-14); color = :firebrick, linewidth = 2,
+        label = "adaptive (tol = 1e-1), δt = saveat")
+    scatterlines!(ax, dts, max.(fixed_err, 1e-14); color = :steelblue, linewidth = 2,
+        label = "fixed step, dt = δt")
+    axislegend(ax; position = :rb)
+    (; dts, adaptive_err, fixed_err, fig)
+end;
+a06_step.fig
+```
+
+```{julia}
+#| label: sol-a06-ex1-table
+for (dt, ea, ef) in zip(a06_step.dts, a06_step.adaptive_err, a06_step.fixed_err)
+    @printf("δt = %.2f   adaptive |I err| = %.3e   fixed-step |I err| = %.3e\n", dt, ea, ef)
+end
+```
+
+The **adaptive** curve is nearly flat (``\approx 8.6\times10^{-1}`` throughout):
+the coarse tolerance, not the output grid, fixes the internal steps, so refining
+`δt` only interpolates the same trajectory more densely. Disabling adaptivity
+(`adaptive = false, dt = δt`) restores the textbook picture: the **fixed-step**
+error falls steeply as ``\delta t`` shrinks — roughly a straight line of large
+slope on log–log axes, reflecting `Tsit5`'s high order. A probabilistic solver
+encodes exactly this in its posterior standard deviation: at a genuinely smaller
+step it reports smaller numerical uncertainty. The exercise's pedagogical twist
+is that *output spacing is not step size* — to make ``\delta t`` control accuracy
+you must control the actual integration step.
+
+#### Solution to Exercise 2 {#solution-a06-ex2}
+
+This is a conceptual exercise about the current `ProbNumDiffEq.jl` Gaussian-filter
+API; the package is not executable in the resolved stack (see the appendix's
+reproducibility note), so the discussion is grounded in the deterministic
+refinement behaviour measured above rather than in a live probabilistic solve.
+
+- **(a) Prior order in `IWP(k)`.** The prior is a ``k``-times integrated Wiener
+  process: the state and its first ``k`` derivatives are modelled as a
+  Gauss–Markov process. A higher ``k`` gives the filter a higher-order local
+  model of the solution, so — like a higher-order classical method — its local
+  truncation error shrinks faster as the step shrinks (the fixed-step sweep above
+  is the deterministic analogue of that order effect). Too high an order,
+  however, wastes work and can be poorly conditioned at coarse steps; ``k=2`` or
+  ``k=3`` is the usual sweet spot for smooth, mildly stiff problems like SIR.
+
+- **(b) `EK0` vs `EK1`.** Both are extended Kalman ODE filters. `EK0` linearises
+  the vector field with a *zeroth-order* (constant-Jacobian) approximation — cheap
+  but with a smaller stability region; `EK1` uses the *true Jacobian*, giving it
+  implicit-solver-like stability that handles stiffness far better. For the SIR
+  flow, which is mildly stiff around the peak, `EK1` is the safer choice at a
+  coarse step, at the cost of a Jacobian evaluation per step.
+
+- **(c) `DynamicDiffusion()` vs `FixedDiffusion()`.** The diffusion parameter
+  scales the prior's driving noise and thereby the *magnitude* of the reported
+  uncertainty. `FixedDiffusion` estimates one global scale (a single calibration
+  constant), whereas `DynamicDiffusion` re-estimates it *at every step* from the
+  filter's own residuals, letting the error bar grow through the fast epidemic
+  peak and shrink in the slow tails — matching the time-varying true error seen
+  in the appendix figure.
+
+For the mildly stiff SIR flow at a coarse step, the best-calibrated combination
+is **`EK1` with a moderate prior order (`IWP(3)`) and `DynamicDiffusion()`**:
+`EK1` supplies the stability to keep the mean accurate through the peak, the
+order-3 prior gives a well-behaved local error model, and dynamic diffusion lets
+the reported standard deviation track the error's strong time variation instead
+of averaging it into one number. `EK0` or a fixed diffusion would tend to
+mis-size the uncertainty exactly where it matters most — around the epidemic
+maximum.

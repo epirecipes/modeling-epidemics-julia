@@ -1,0 +1,270 @@
+---
+course-unit: ch04-jump-processes
+status: complete
+---
+
+# Continuous-time Markov chains and jump processes
+
+Jump models are useful when the event itself is the object of interest. Instead
+of moving the SIR state a small distance at every numerical time step, we wait
+for the next infection or recovery and move the integer state by one. This is
+the continuous-time Markov-chain (CTMC) view of the epidemic.
+
+## Learning goals
+
+By the end of this chapter, you should be able to:
+
+- translate SIR transitions into propensities and stoichiometric change vectors;
+- explain the Gillespie direct stochastic simulation algorithm (SSA);
+- construct a current Catalyst reaction network and simulate it with
+  JumpProcesses; and
+- use population conservation and an ODE ensemble comparison as checks on a
+  stochastic implementation.
+
+## Model assumptions and classification
+
+We use the same closed, homogeneously mixing population as in the ODE chapter.
+There are $N=1000$ people, with $S(0)=990$, $I(0)=10$, and $R(0)=0$.
+Each infectious person makes $c=10$ potentially infectious contacts per unit
+time, a contact transmits with probability $\beta=0.05$, and an infectious
+person recovers at rate $\gamma=0.25$. Recovered people do not return to the
+susceptible class; births, deaths, age structure, and imported infections are
+omitted.
+
+This is a **stochastic, continuous-time, discrete-state, population-level**
+model. It is population-level because the state records counts, not identities.
+It is a CTMC because, conditional on the current counts, the future does not
+depend on the earlier path. The two event types are
+
+| event | state change $\boldsymbol{\nu}_j$ | propensity $a_j(S,I,R)$ |
+|---|---|---|
+| infection $S+I\to 2I$ | $(-1,+1,0)$ | $a_1=\kappa SI$ |
+| recovery $I\to R$ | $(0,-1,+1)$ | $a_2=\gamma I$ |
+
+Here $\kappa=\beta c/N$. The division by $N$ makes the total infection
+rate comparable across population sizes: every susceptible has force of
+infection $\beta cI/N$.
+
+## Equations
+
+Let $X(t)=(S(t),I(t),R(t))^\mathsf{T}$ and let $Y_1,Y_2$ be independent
+unit-rate Poisson processes. The random time-change representation is
+
+$$
+ X(t)=X(0)+\boldsymbol{\nu}_1Y_1\!\left(\int_0^t a_1(X(s^-))\,ds\right)
+                 +\boldsymbol{\nu}_2Y_2\!\left(\int_0^t a_2(X(s^-))\,ds\right).
+$$
+
+The left limit $X(s^-)$ matters: the propensity is evaluated immediately
+before an event. Equivalently, if the current state is $x$, the total event
+rate is $a_0(x)=a_1(x)+a_2(x)$. The next waiting time is
+
+$$
+ \tau\sim\operatorname{Exponential}(a_0(x)),
+ \qquad
+ \Pr(J=j\mid x)=\frac{a_j(x)}{a_0(x)}.
+$$
+
+This is the direct Gillespie algorithm [@gillespie1977]. Applying
+$x\leftarrow x+\boldsymbol{\nu}_J$ and repeating gives an exact simulation
+of this CTMC (up to floating-point arithmetic).
+
+Taking expected changes per unit time gives the familiar mean-field equations,
+
+$$
+ \frac{d}{dt}\begin{pmatrix}S\\I\\R\end{pmatrix}
+ =
+ \begin{pmatrix}-\kappa SI\\ \kappa SI-\gamma I\\ \gamma I\end{pmatrix}.
+$$ {#eq-jump-mean-field}
+
+Both the CTMC and Equation @eq-jump-mean-field conserve
+$S+I+R=N$. The equality of their *means* is not exact at finite population
+size because nonlinear terms such as $SI$ require a moment closure:
+$\mathbb{E}[SI]\ne\mathbb{E}[S]\mathbb{E}[I]$.
+
+## Julia implementation
+
+The course environment contains Catalyst 16.2.1 and JumpProcesses 9.29.1.
+The reaction network below is deliberately visible: its species are the
+coordinates of $X$, and its reaction rates are the propensities above.
+Catalyst's current `JumpProblem` constructor creates the compatible
+JumpProcesses representation; `Direct()` selects Gillespie's direct
+aggregator and `SSAStepper()` advances from jump to jump. No fixed numerical
+step is used to define the event process.
+
+```{julia}
+#| label: code-ch04-setup
+using CairoMakie
+using Catalyst
+using JumpProcesses
+using OrdinaryDiffEq
+using StableRNGs
+using Statistics
+
+const N = 1000
+const β = 0.05
+const c = 10.0
+const γ = 0.25
+const κ = β * c / N
+const u₀ = [:S => 990, :I => 10, :R => 0]
+const tspan = (0.0, 40.0)
+const times = collect(0.0:0.2:40.0)
+
+sir_network = @reaction_network begin
+    κ, S + I --> 2I
+    γ, I --> R
+end
+nothing
+```
+
+The symbols `κ` and `γ` in the network are parameters. The initial state is
+integer-valued because a half-person is not a valid CTMC state. We pass
+parameter values by name, which is safer than relying on the order of a
+positional vector.
+
+```{julia}
+#| label: code-ch04-simulate
+jump_parameters = [:κ => κ, :γ => γ]
+jump_problem = JumpProblem(
+    sir_network,
+    u₀,
+    tspan,
+    jump_parameters;
+    aggregator = Direct(),
+    rng = StableRNG(20250711),
+)
+jump_solution = solve(jump_problem, SSAStepper(); saveat = times)
+jump_states = Array(jump_solution(times))
+```
+
+The `JumpProblem` stores the CTMC and the random-number generator. Calling
+`solve` returns a piecewise-constant solution: the state changes at event times
+and remains unchanged between events. `saveat` samples that path for plotting;
+it does not turn the model into a time-stepped approximation.
+
+For comparison, the deterministic right-hand side uses exactly the drift in
+Equation @eq-jump-mean-field:
+
+```{julia}
+#| label: code-ch04-ode-comparison
+function sir_drift!(du, u, p, t)
+    κ, γ = p
+    infection = κ * u[1] * u[2]
+    recovery = γ * u[2]
+    du[1] = -infection
+    du[2] = infection - recovery
+    du[3] = recovery
+    return nothing
+end
+
+ode_problem = ODEProblem(sir_drift!, [990.0, 10.0, 0.0], tspan, (κ, γ))
+ode_solution = solve(ode_problem, Tsit5(); saveat = times)
+ode_states = Array(ode_solution)
+```
+
+The `ODEProblem` uses floating-point counts because it represents expected
+population flow, whereas the Catalyst problem uses integer species counts.
+Keeping the two constructors adjacent makes the code-to-equation mapping
+explicit.
+
+```{julia}
+#| label: fig-ch04-jump-trajectories
+#| fig-cap: "One exact CTMC SIR trajectory and its deterministic mean-field comparison."
+fig = Figure(size = (760, 430))
+ax = Axis(fig[1, 1], xlabel = "time", ylabel = "people",
+    title = "Gillespie SIR path")
+labels = ["S (jump)", "I (jump)", "R (jump)"]
+colors = [:steelblue, :firebrick, :seagreen]
+for j in 1:3
+    stairs!(ax, times, jump_states[j, :]; color = colors[j],
+        linewidth = 2, label = labels[j])
+end
+lines!(ax, times, ode_states[2, :]; color = :black, linestyle = :dash,
+    linewidth = 2, label = "I (ODE)")
+axislegend(ax, position = :rt)
+fig
+```
+
+## Validation
+
+The first check is structural rather than statistical: every reaction changes
+one compartment down and another up. Thus conservation should hold at every
+saved point.
+
+```{julia}
+#| label: code-ch04-conservation
+mass_error = maximum(abs.(vec(sum(jump_states; dims = 1)) .- N))
+minimum_count = minimum(jump_states)
+@assert mass_error == 0
+@assert minimum_count >= 0
+(; mass_error, minimum_count, number_of_events = length(jump_solution.t) - 1)
+```
+
+An individual path is not expected to lie on the ODE curve. A more informative
+check averages independent paths. Each repetition receives a fresh,
+deterministically chosen `StableRNG`, so the calculation is reproducible
+without changing Julia's global random state.
+
+```{julia}
+#| label: code-ch04-ensemble
+function simulate_jump(seed)
+    problem = JumpProblem(
+        sir_network, u₀, tspan, jump_parameters;
+        aggregator = Direct(), rng = StableRNG(seed),
+    )
+    solution = solve(problem, SSAStepper(); saveat = times)
+    return Array(solution(times))
+end
+
+ensemble = cat((simulate_jump(3000 + k) for k in 1:16)...; dims = 3)
+ensemble_mean = dropdims(mean(ensemble; dims = 3), dims = 3)
+infectious_rmse = sqrt(mean((ensemble_mean[2, :] .- ode_states[2, :]).^2))
+@assert maximum(abs.(sum(ensemble; dims = 1) .- N)) == 0
+infectious_rmse
+```
+
+With only 16 paths, the RMSE is a diagnostic rather than a precision estimate.
+Increasing the number of paths narrows Monte Carlo error approximately as
+$1/\sqrt{M}$, but costs proportionally more simulations.
+
+## Interpretation and limitations
+
+The CTMC retains integer counts and event timing, so it can represent
+extinction, early fade-out, and variability in the epidemic peak. Its
+propensities still assume homogeneous mixing and exponential recovery times.
+Real contact networks, latent periods, reporting delays, births, and
+time-varying interventions require additional states or a different model.
+For very large populations, exact SSA can spend most of its time processing
+events; tau-leaping, hybrid jump-ODE models, or an ODE may then be more
+appropriate, with an explicit approximation trade-off.
+
+The [JumpProcesses continuous-time tutorial](https://docs.sciml.ai/JumpProcesses/stable/tutorials/discrete_stochastic_example/)
+and [Catalyst documentation](https://docs.sciml.ai/Catalyst/stable/) document
+the APIs used here. The event formulation follows Gillespie's exact SSA
+[@gillespie1977] and the epidemic interpretation follows the original SIR
+model [@kermack1927].
+
+## Exercises
+
+### Exercise 1 {#ch04-ex1}
+
+Replace the recovery reaction by two sequential stages,
+$I_1\to I_2\to R$, with rates $2\gamma$ for both transitions. Add the
+fourth state to the Julia model, simulate 40 time units with a fixed seed, and
+verify both $S+I_1+I_2+R=N$ and nonnegative integer states. Explain why two
+exponential stages have a less variable infectious duration than one
+exponential stage with mean $1/\gamma$.
+
+### Exercise 2 {#ch04-ex2}
+
+Use the low-level `ConstantRateJump(rate, affect!)` interface from
+JumpProcesses to implement a one-person birth-death toy process, then use the
+same direct-SSA ideas to add a vaccination jump $S\to R$ to SIR. State the
+new propensity, update the ODE comparison, and discuss how a vaccination rate
+that depends on calendar time would change the jump type or simulation setup.
+
+## Companion materials
+
+- [Slides](../slides/chapters/04-jump-processes.html)
+- [Pluto preview](../notebook-exports/chapters/04-jump-processes.html)
+- [Pluto source](../notebooks/chapters/04-jump-processes.jl)

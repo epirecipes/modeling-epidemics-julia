@@ -1,0 +1,325 @@
+---
+course-unit: a04-universal-differential-equations
+status: complete
+---
+
+# Universal differential equations
+
+## Learning goals
+
+A *universal differential equation* (UDE) replaces part of a mechanistic
+model with a trainable universal approximator — here a small neural network —
+and fits the whole hybrid system to data by differentiating through the ODE
+solver [@rackauckas2020]. After working through this appendix you should be
+able to
+
+- explain which part of the SIR model is being replaced by a neural network
+  and why the rest is kept mechanistic;
+- assemble a UDE from a `Lux.jl` network, an `OrdinaryDiffEq` solver, and an
+  adjoint sensitivity method from `SciMLSensitivity.jl`;
+- train the hybrid model with `Optimization.jl` using current, non-deprecated
+  APIs; and
+- validate the fit by recovering the *known* functional form of the force of
+  infection over the range spanned by the training data.
+
+## Model assumptions and classification
+
+We keep the standard SIR bookkeeping but treat the **force of infection** — the
+per-susceptible rate of becoming infected — as an unknown function of the
+infectious proportion. Writing the state as proportions $S, I, R$ with
+$S+I+R=1$ and introducing a cumulative-infection tracker $C$, the model is
+
+- **deterministic** in its dynamics (the stochasticity lives only in the
+  observation model used to generate data);
+- **continuous** in time and in state; and
+- a **population-level** compartmental model.
+
+The neural network $\mathcal{N}_\theta$ supplies the closure for the force of
+infection $\lambda$. This is the "grey-box" philosophy: conservation of
+individuals, the recovery term $\gamma I$, and the flow structure are imposed by
+hand, while the transmission mechanism is *learned*.
+
+We reuse the course baseline scenario, expressed in proportions. The baseline
+frequency-dependent rate $\beta c S I / N$ with $\beta = 0.05$, $c = 10$,
+$N = 1000$ becomes $\beta c\, S I = 0.5\, S I$ once $S$ and $I$ are proportions,
+so the true force of infection is the linear function $\lambda^\star(I) = 0.5\,I$,
+and $\gamma = 0.25$ as usual. The initial condition $S(0)=0.99,\ I(0)=0.01$
+corresponds to the baseline counts $S(0)=990,\ I(0)=10$ with $N=1000$.
+
+## Equations
+
+The data-generating ("true") model closes the force of infection with
+mass action, $\lambda^\star(I) = \beta c\, I$:
+
+$$
+\begin{aligned}
+\frac{dS}{dt} &= -\beta c\, S I, \\
+\frac{dI}{dt} &= \beta c\, S I - \gamma I, \\
+\frac{dC}{dt} &= \beta c\, S I .
+\end{aligned}
+$$ {#eq-a04-true}
+
+The universal differential equation keeps the recovery and flow structure but
+replaces the transmission closure with a neural network
+$\lambda_\theta(I) = \mathcal{N}_\theta(I)$:
+
+$$
+\begin{aligned}
+\frac{dS}{dt} &= -\lambda_\theta(I)\, S, \\
+\frac{dI}{dt} &= \lambda_\theta(I)\, S - \gamma I, \\
+\frac{dC}{dt} &= \lambda_\theta(I)\, S .
+\end{aligned}
+$$ {#eq-a04-ude}
+
+The daily incidence predicted by the model is $N\,\Delta C$, the scaled
+difference of the cumulative tracker between observation times. We compare this
+to noisy case counts $y_k$ with a Poisson negative log-likelihood
+
+$$
+\mathcal{L}(\theta) = \sum_{k} \big[\, \mu_k(\theta) - y_k \log \mu_k(\theta)\,\big],
+\qquad \mu_k(\theta) = N\,[\,C(t_{k+1}) - C(t_k)\,]_\theta ,
+$$ {#eq-a04-loss}
+
+and minimise @eq-a04-loss by gradient descent, with gradients obtained by
+differentiating through the ODE solve.
+
+## Julia implementation
+
+### Setup and synthetic data
+
+We generate reproducible noisy incidence from @eq-a04-true using a fixed
+`StableRNG`, so the observations do not depend on global random state.
+
+```{julia}
+#| label: a04-setup
+using OrdinaryDiffEq, Distributions, StableRNGs, Random
+using Lux, DiffEqFlux, SciMLSensitivity
+using Optimization, OptimizationOptimisers, OptimizationOptimJL
+using CairoMakie
+
+N = 1000.0
+βc = 0.5      # β*c from the course baseline (0.05 * 10)
+γ = 0.25
+u0 = [0.99, 0.01, 0.0]           # S, I, C as proportions
+tspan = (0.0, 40.0)
+δt = 1.0
+train_time = 30.0
+data_rng = StableRNG(20240501)
+
+function sir_true!(du, u, p, t)
+    S, I, C = u
+    λ, ν = p
+    du[1] = -λ * S * I
+    du[2] =  λ * S * I - ν * I
+    du[3] =  λ * S * I
+end
+
+sol_true = solve(ODEProblem(sir_true!, u0, tspan, [βc, γ]), Tsit5(); saveat = δt)
+ts = 0.0:δt:train_time
+Ctrue = reduce(hcat, sol_true(ts).u)[3, :]
+cases = N .* diff(Ctrue)                                  # true new cases/day
+noisy = [rand(data_rng, Poisson(max(c, 0.0))) for c in cases]
+length(noisy), maximum(noisy)
+```
+
+### A neural closure for the force of infection
+
+We use a small `Lux.Chain` with a single hidden layer of five `tanh` units and a
+`softplus` output so that $\lambda_\theta(I) \ge 0$ by construction. `Lux.setup`
+returns the parameters as a nested `NamedTuple` and a (here empty) layer state.
+
+```{julia}
+#| label: a04-network
+foi = Lux.Chain(Lux.Dense(1, 5, tanh), Lux.Dense(5, 1, softplus))
+_, foi_state = Lux.setup(StableRNG(1), foi)
+```
+
+`Optimization.jl` optimises over a flat vector, whereas `Lux` parameters are a
+`NamedTuple`. Production code uses `ComponentArrays.jl` to bridge the two; to
+keep the mapping explicit — and because that package is not a direct course
+dependency — we write the (un)flattening by hand for this fixed architecture.
+The network has $5$ weights and $5$ biases in the first layer and $5$ weights
+and $1$ bias in the second, so $16$ trainable parameters in total.
+
+```{julia}
+#| label: a04-params
+function params_from_vector(θ)
+    W1 = reshape(θ[1:5], 5, 1);  b1 = θ[6:10]
+    W2 = reshape(θ[11:15], 1, 5); b2 = θ[16:16]
+    return (layer_1 = (weight = W1, bias = b1),
+            layer_2 = (weight = W2, bias = b2))
+end
+
+force_of_infection(I, θ) = foi([I], params_from_vector(θ), foi_state)[1][1]
+
+p_init = 0.1 .* randn(StableRNG(2), Float64, 16)
+length(p_init)
+```
+
+### Assembling and training the UDE
+
+The right-hand side implements @eq-a04-ude, calling the neural network for the
+force of infection. `predict` solves the ODE for a candidate parameter vector,
+using an `InterpolatingAdjoint` from `SciMLSensitivity.jl` with a reverse-mode
+vector–Jacobian product so that `Zygote` can backpropagate through the solve.
+
+```{julia}
+#| label: a04-ude
+function sir_ude!(du, u, θ, t)
+    S, I, C = u
+    λ = force_of_infection(I, θ)
+    du[1] = -λ * S
+    du[2] =  λ * S - γ * I
+    du[3] =  λ * S
+end
+
+prob_ude = ODEProblem(sir_ude!, u0, (0.0, train_time), p_init)
+
+function predict(θ)
+    Array(solve(prob_ude, Tsit5(); p = θ, saveat = δt,
+                sensealg = InterpolatingAdjoint(autojacvec = ReverseDiffVJP())))
+end
+
+function loss(θ)
+    pred = predict(θ)
+    μ = max.(N .* diff(pred[3, :]), 1e-6)         # predicted cases/day, kept positive
+    sum(μ .- noisy .* log.(μ))                    # Poisson negative log-likelihood
+end
+```
+
+Training is kept deliberately small so the appendix renders quickly in CI: a
+short run of `Adam` to make rapid early progress, followed by a few `BFGS`
+iterations to polish the fit. A callback records the loss history.
+
+```{julia}
+#| label: a04-train
+losses = Float64[]
+record! = (state, l) -> (push!(losses, l); false)
+
+optf = OptimizationFunction((θ, _) -> loss(θ), Optimization.AutoZygote())
+res_adam = solve(OptimizationProblem(optf, p_init),
+                 OptimizationOptimisers.Adam(0.05);
+                 maxiters = 150, callback = record!)
+res = solve(OptimizationProblem(optf, res_adam.u),
+            OptimizationOptimJL.BFGS();
+            maxiters = 50, callback = record!)
+θ_hat = res.u
+(final_loss = res.objective, iterations = length(losses))
+```
+
+```{julia}
+#| label: fig-a04-loss
+#| fig-cap: "Poisson negative log-likelihood during training (Adam then BFGS)."
+fig = Figure(size = (700, 380))
+ax = Axis(fig[1, 1]; xlabel = "iteration", ylabel = "loss",
+          xscale = log10, title = "Training loss")
+lines!(ax, 1:length(losses), losses; color = :firebrick, linewidth = 2)
+fig
+```
+
+## Validation
+
+Because we generated the data from a *known* closure, we can check the fit in
+the most demanding way: does the trained network recover the true force of
+infection $\lambda^\star(I) = \beta c\, I$ over the range of $I$ seen during
+training? @fig-a04-recovery overlays the two, marking the largest infectious
+proportion in the training window; agreement is expected only up to that bound,
+since the network is unconstrained beyond the data.
+
+```{julia}
+#| label: a04-recovery
+Igrid = 0.0:0.005:0.5
+λ_nn   = [force_of_infection(I, θ_hat) for I in Igrid]
+λ_true = βc .* Igrid
+Imax   = maximum(reduce(hcat, sol_true(ts).u)[2, :])
+in_range = Igrid .<= Imax
+max_abs_error = maximum(abs.(λ_nn[in_range] .- λ_true[in_range]))
+```
+
+```{julia}
+#| label: a04-refit
+sol_fit = solve(ODEProblem(sir_ude!, u0, tspan, θ_hat), Tsit5(); saveat = δt)
+I_true = N .* reduce(hcat, sol_true.u)[2, :]
+I_fit  = N .* reduce(hcat, sol_fit.u)[2, :]
+nothing
+```
+
+```{julia}
+#| label: fig-a04-recovery
+#| fig-cap: "Left: the neural closure recovers the true linear force of infection up to the largest infectious proportion in the training data (dotted line). Right: the fitted UDE reproduces the infectious-count trajectory, including the untrained extrapolation region beyond day 30."
+fig = Figure(size = (960, 380))
+ax1 = Axis(fig[1, 1]; xlabel = "infectious proportion I",
+           ylabel = "force of infection λ", title = "Learned closure")
+lines!(ax1, Igrid, λ_true; color = :black, linewidth = 2, label = "true βc·I")
+lines!(ax1, Igrid, λ_nn; color = :firebrick, linestyle = :dash,
+       linewidth = 2, label = "neural network")
+vlines!(ax1, [Imax]; color = :gray, linestyle = :dot)
+axislegend(ax1; position = :lt)
+
+ax2 = Axis(fig[1, 2]; xlabel = "time (days)", ylabel = "infectious number",
+           title = "Fitted trajectory")
+vspan!(ax2, train_time, tspan[2]; color = (:gray, 0.12))
+lines!(ax2, sol_true.t, I_true; color = :black, linewidth = 2, label = "true I")
+lines!(ax2, sol_fit.t, I_fit; color = :firebrick, linestyle = :dash,
+       linewidth = 2, label = "UDE I")
+axislegend(ax2; position = :rt)
+fig
+```
+
+The `max_abs_error` returned by the `a04-recovery` cell above is small
+(of order $10^{-3}$), confirming that daily incidence alone is sufficient to
+identify the transmission closure over the observed range of $I$.
+
+## Interpretation and limitations
+
+- **Identifiability is local to the data.** The network only sees infectious
+  proportions up to `Imax`; to the right of the dotted line in
+  @fig-a04-recovery the closure is unconstrained and should not be trusted. This
+  is the extrapolation region shaded in the trajectory panel.
+- **Structure matters.** Keeping the recovery term and the flow structure
+  mechanistic is what makes a $16$-parameter network enough. A fully black-box
+  fit would need far more data and offer far less insight.
+- **The prior can be encoded.** We know transmission should increase with $I$;
+  the `softplus` output enforces non-negativity, and a monotonicity penalty or a
+  monotone network could encode the rest.
+- **Cost and conditioning.** Every loss evaluation solves an ODE and every
+  gradient runs an adjoint solve. For stiff systems, or larger networks, the
+  choice of `sensealg` and optimiser becomes performance-critical; the tiny
+  problem here hides that cost.
+- **APIs move quickly.** This implementation uses current `Lux` /
+  `DiffEqFlux` / `Optimization` interfaces. Older tutorials built around
+  `FastChain`, `FastDense`, `initial_params`, or `DiffEqFlux.sciml_train` will
+  not run on the package versions pinned for this course.
+
+Official documentation: the
+[DiffEqFlux.jl manual](https://docs.sciml.ai/DiffEqFlux/stable/),
+[Lux.jl documentation](https://lux.csail.mit.edu/stable/), and the
+[SciMLSensitivity.jl manual](https://docs.sciml.ai/SciMLSensitivity/stable/)
+describe the current UDE workflow and the available adjoint methods.
+
+## Exercises
+
+### Exercise 1 {#a04-ex1}
+
+The learned closure is unconstrained above the largest infectious proportion in
+the training window. Re-run the fit using a *shorter* training window
+(`train_time = 15.0`) so that the epidemic peak is excluded, and re-draw
+@fig-a04-recovery. Over what range of $I$ does the network now match
+$\lambda^\star(I) = \beta c\, I$, and where does it diverge? Explain the result
+in terms of which infectious proportions the training data actually visits.
+
+### Exercise 2 {#a04-ex2}
+
+Replace the single hidden layer with a deeper network
+(`Lux.Chain(Lux.Dense(1, 8, tanh), Lux.Dense(8, 8, tanh), Lux.Dense(8, 1, softplus))`)
+and update `params_from_vector` accordingly (there are now $8 + 8 + 64 + 8 + 8 + 1 = 97$
+parameters — a generic flatten/unflatten helper is cleaner than hard-coded
+slices). Does the extra flexibility improve the fit within the training range,
+and does it change how the network behaves in the extrapolation region? Relate
+your answer to the bias–variance trade-off.
+
+## Companion materials
+
+- [Slides](../slides/appendices/04-universal-differential-equations.html)
+- [Pluto preview](../notebook-exports/appendices/04-universal-differential-equations.html)
+- [Pluto source](../notebooks/appendices/04-universal-differential-equations.jl)

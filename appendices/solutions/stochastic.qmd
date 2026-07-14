@@ -1,0 +1,400 @@
+## Stochastic modeling solutions
+
+These solutions use the shared root environment and keep the checks close to
+the model code.  Seeds make the example output reproducible, but they do not
+turn stochastic results into universal constants.
+
+### Continuous-time Markov chains and jump processes
+
+#### Solution to Exercise 1 {#solution-ch04-ex1}
+
+The two infectious stages use rate $2\gamma$.  Their sum is an Erlang
+distribution with mean $2/(2\gamma)=1/\gamma$, matching the original
+single-stage mean, but variance $2/(2\gamma)^2=1/(2\gamma^2)$, half the
+single exponential variance.
+
+```{julia}
+using Catalyst
+using JumpProcesses
+using StableRNGs
+
+N, β, c, γ = 1000, 0.05, 10.0, 0.25
+κ = β * c / N
+network = @reaction_network begin
+    κ, S + I₁ --> 2I₁
+    2γ, I₁ --> I₂
+    2γ, I₂ --> R
+end
+
+u₀ = [:S => 990, :I₁ => 10, :I₂ => 0, :R => 0]
+problem = JumpProblem(
+    network, u₀, (0.0, 40.0), [:κ => κ, :γ => γ];
+    aggregator = Direct(), rng = StableRNG(20250711),
+)
+solution = solve(problem, SSAStepper(); saveat = 0.2)
+states = Array(solution)
+mass_error = maximum(abs.(vec(sum(states; dims = 1)) .- N))
+nonnegative = minimum(states) >= 0
+integer_valued = all(x -> isapprox(x, round(x)), states)
+@assert mass_error == 0
+@assert nonnegative && integer_valued
+(; mass_error, nonnegative, integer_valued)
+```
+
+The infection propensity remains $\kappa SI_1$; the second infectious
+compartment only changes the recovery path.  The conservation check is exact
+because every reaction removes one individual from one compartment and adds
+one to another.  Compared with one exponential infectious period, the
+two-stage construction reduces unrealistically short and long durations while
+preserving the mean.
+
+#### Solution to Exercise 2 {#solution-ch04-ex2}
+
+For a pure birth--death count $Z$, a `DiscreteProblem` and two
+`ConstantRateJump`s are sufficient.  The death affect function guards the
+boundary; its constant rate is a deliberately simple toy approximation.
+
+```{julia}
+using JumpProcesses
+using StableRNGs
+
+function birth!(integrator)
+    integrator.u[1] += 1
+end
+function death!(integrator)
+    integrator.u[1] = max(integrator.u[1] - 1, 0)
+end
+
+toy = DiscreteProblem([5], (0.0, 20.0), nothing)
+birth_rate(u, p, t) = 0.8
+death_rate(u, p, t) = 0.8
+birth_jump = ConstantRateJump(birth_rate, birth!)
+death_jump = ConstantRateJump(death_rate, death!)
+toy_problem = JumpProblem(
+    toy, Direct(), birth_jump, death_jump;
+    rng = StableRNG(20250712),
+)
+toy_solution = solve(toy_problem, SSAStepper())
+@assert minimum(reduce(vcat, toy_solution.u)) >= 0
+```
+
+To add vaccination to SIR, introduce the transition $S\to R$ with
+propensity $a_{\mathrm{vac}}=\nu S$.  A state-dependent propensity is a
+`VariableRateJump`:
+
+```{julia}
+function infection!(integrator)
+    integrator.u[1] -= 1
+    integrator.u[2] += 1
+end
+function recovery!(integrator)
+    integrator.u[2] -= 1
+    integrator.u[3] += 1
+end
+function vaccinate!(integrator)
+    integrator.u[1] -= 1
+    integrator.u[3] += 1
+end
+
+ν = 0.01
+sir = DiscreteProblem([990, 10, 0], (0.0, 40.0), nothing)
+jumps = (
+    VariableRateJump(
+        (u, p, t) -> κ*u[1]*u[2], infection!;
+        urate = (u, p, t) -> 125.0,
+        rateinterval = (u, p, t) -> 40.0,
+    ),
+    VariableRateJump(
+        (u, p, t) -> γ*u[2], recovery!;
+        urate = (u, p, t) -> 250.0,
+        rateinterval = (u, p, t) -> 40.0,
+    ),
+    VariableRateJump(
+        (u, p, t) -> ν*u[1], vaccinate!;
+        urate = (u, p, t) -> 10.0,
+        rateinterval = (u, p, t) -> 40.0,
+    ),
+)
+vaccinated_problem = JumpProblem(
+    sir, Coevolve(), jumps...;
+    dep_graph = [[1, 2, 3], [1, 2, 3], [1, 2, 3]],
+    rng = StableRNG(20250713),
+)
+vaccinated_solution = solve(vaccinated_problem, SSAStepper(); saveat = 0.2)
+vaccinated_states = Array(vaccinated_solution)
+@assert maximum(abs.(vec(sum(vaccinated_states; dims = 1)) .- 1000)) == 0
+```
+
+The mean-field equations become
+$$
+\dot S=-\kappa SI-\nu S,\quad
+\dot I=\kappa SI-\gamma I,\quad
+\dot R=\gamma I+\nu S.
+$$
+
+If $\nu$ depends on calendar time, the rate is no longer constant.  A
+`VariableRateJump` with a time argument (as above) is appropriate, or the
+process can be simulated in pieces over intervals on which the campaign rate
+is constant.
+
+### Stochastic differential equations
+
+#### Solution to Exercise 1 {#solution-ch05-ex1}
+
+The experiment keeps the model, seed, and output grid fixed while changing the
+Euler--Maruyama step.  Conservation is a property of the reaction-level noise,
+whereas nonnegativity is not guaranteed by any finite `dt`.
+
+```{julia}
+using StochasticDiffEq
+using StableRNGs
+
+N, β, c, γ = 1000.0, 0.05, 10.0, 0.25
+κ = β * c / N
+u₀ = [990.0, 10.0, 0.0]
+
+function f!(du, u, p, t)
+    κ, γ = p
+    a₁ = κ * max(u[1], 0.0) * max(u[2], 0.0)
+    a₂ = γ * max(u[2], 0.0)
+    du[1], du[2], du[3] = -a₁, a₁ - a₂, a₂
+end
+function g!(G, u, p, t)
+    κ, γ = p
+    a₁ = κ * max(u[1], 0.0) * max(u[2], 0.0)
+    a₂ = γ * max(u[2], 0.0)
+    s₁, s₂ = sqrt(a₁), sqrt(a₂)
+    G[1, 1], G[2, 1], G[3, 1] = -s₁, s₁, 0.0
+    G[1, 2], G[2, 2], G[3, 2] = 0.0, -s₂, s₂
+end
+
+function run_sde(dt)
+    problem = SDEProblem(
+        f!, g!, u₀, (0.0, 30.0), (κ, γ);
+        noise_rate_prototype = zeros(3, 2),
+    )
+    solution = solve(
+        problem, LambaEM();
+        dt, adaptive = false, saveat = 0.1,
+        rng = StableRNG(20250711),
+    )
+    states = Array(solution)
+    (
+        dt = dt,
+        conservation_error = maximum(abs.(vec(sum(states; dims = 1)) .- N)),
+        minimum_state = minimum(states),
+    )
+end
+
+results = run_sde.( (0.1, 0.05, 0.01) )
+@assert all(result.conservation_error < 1e-8 for result in results)
+results
+```
+
+Reducing `dt` reduces discretization error and usually makes boundary
+crossing less frequent, but a Gaussian increment has unbounded support for
+every positive step size.  A negative value can therefore still occur.  If
+nonnegativity is essential, use the integer CTMC or a method with an explicit
+nonnegative boundary treatment rather than silently clipping the output.
+
+#### Solution to Exercise 2 {#solution-ch05-ex2}
+
+Independent state noise has a diagonal $3\times3$ diffusion.  The comparison
+below uses the same drift and seed as the reaction-level SDE.
+
+```{julia}
+using StochasticDiffEq
+using StableRNGs
+
+function diagonal_g!(G, u, p, t)
+    κ, γ = p
+    a₁ = κ * max(u[1], 0.0) * max(u[2], 0.0)
+    a₂ = γ * max(u[2], 0.0)
+    fill!(G, 0.0)
+    G[1, 1] = sqrt(a₁)
+    G[2, 2] = sqrt(a₁ + a₂)
+    G[3, 3] = sqrt(a₂)
+end
+
+reaction_problem = SDEProblem(
+    f!, g!, u₀, (0.0, 30.0), (κ, γ);
+    noise_rate_prototype = zeros(3, 2),
+)
+diagonal_problem = SDEProblem(
+    f!, diagonal_g!, u₀, (0.0, 30.0), (κ, γ);
+    noise_rate_prototype = zeros(3, 3),
+)
+reaction_solution = solve(
+    reaction_problem, LambaEM();
+    dt = 0.02, adaptive = false, saveat = 0.1,
+    rng = StableRNG(20250711),
+)
+diagonal_solution = solve(
+    diagonal_problem, LambaEM();
+    dt = 0.02, adaptive = false, saveat = 0.1,
+    rng = StableRNG(20250711),
+)
+reaction_states, diagonal_states = Array(reaction_solution), Array(diagonal_solution)
+reaction_error = maximum(abs.(vec(sum(reaction_states; dims = 1)) .- 1000))
+diagonal_error = maximum(abs.(vec(sum(diagonal_states; dims = 1)) .- 1000))
+(; reaction_error, diagonal_error,
+    infected_difference = maximum(abs.(reaction_states[2, :] .- diagonal_states[2, :])))
+```
+
+For the reaction model $Q=GG^\mathsf{T}$ has
+$$
+Q_{12}=Q_{21}=-a_1,\qquad Q_{23}=Q_{32}=-a_2,\qquad Q_{13}=0.
+$$
+
+The diagonal model sets all off-diagonal covariances to zero.  It also gives
+the total $S+I+R$ a nonzero noise term, so its conservation error is not a
+roundoff diagnostic.  Its infected trajectory is a different stochastic
+model, not merely a noisier numerical solve.
+
+### Agent-based models
+
+#### Solution to Exercise 1 {#solution-ch06-ex1}
+
+The grid model changes the contact assumption: a susceptible samples only
+agents in its Moore neighborhood.  `nearby_agents` excludes the focal agent,
+and `GridSpace` supplies positions through the Agents.jl 7 `@agent` API.
+
+```{julia}
+using Agents
+using Distributions
+using Statistics
+using StableRNGs
+
+@agent struct GridPerson(GridAgent{2})
+    status::Symbol
+    next_status::Symbol
+end
+
+function grid_agent_step!(person, model)
+    person.next_status = person.status
+    if person.status == :S
+        neighbors = collect(nearby_agents(person, model, 1))
+        k = rand(abmrng(model), Poisson(model.c * model.Δt))
+        for _ in 1:k
+            isempty(neighbors) && break
+            contact = rand(abmrng(model), neighbors)
+            if contact.status == :I && rand(abmrng(model)) < model.β
+                person.next_status = :I
+                break
+            end
+        end
+    elseif person.status == :I &&
+           rand(abmrng(model)) < 1 - exp(-model.γ * model.Δt)
+        person.next_status = :R
+    end
+end
+
+function grid_model_step!(model)
+    for person in allagents(model)
+        person.status = person.next_status
+    end
+end
+
+space = GridSpace((20, 20); periodic = false)
+grid_S(model) = count(p.status == :S for p in allagents(model))
+grid_I(model) = count(p.status == :I for p in allagents(model))
+grid_R(model) = count(p.status == :R for p in allagents(model))
+model = StandardABM(
+    GridPerson, space;
+    agent_step! = grid_agent_step!,
+    model_step! = grid_model_step!,
+    properties = (β = 0.05, c = 10.0, γ = 0.25, Δt = 0.1),
+    rng = StableRNG(20250714),
+)
+for id in 1:200
+    position = (rand(abmrng(model), 1:20), rand(abmrng(model), 1:20))
+    status = id <= 5 ? :I : :S
+    add_agent!(position, model; status, next_status = status)
+end
+_, data = run!(
+    model,     200;
+    mdata = [grid_S, grid_I, grid_R],
+    showprogress = false,
+)
+counts = Matrix(data[:, [:grid_S, :grid_I, :grid_R]])'
+@assert maximum(abs.(vec(sum(counts; dims = 1)) .- 200)) == 0
+```
+
+The well-mixed derivation no longer applies: contacts are not uniform over all
+$N$ agents, and the infection probability depends on local occupancy and
+boundary effects.  Conservation still holds because the update changes status
+but never creates or removes an agent.
+
+#### Solution to Exercise 2 {#solution-ch06-ex2}
+
+The physical horizon is held at 30 time units, so each run uses
+`round(Int, 30 / Δt)` updates.  A small seeded ensemble reports the peak
+distribution for each timestep.
+
+```{julia}
+@agent struct Person(NoSpaceAgent)
+    status::Symbol
+    next_status::Symbol
+end
+
+function agent_step!(person, model)
+    person.next_status = person.status
+    if person.status == :S
+        for _ in 1:rand(abmrng(model), Poisson(model.c * model.Δt))
+            contact = random_agent(model)
+            if contact.status == :I && rand(abmrng(model)) < model.β
+                person.next_status = :I
+                break
+            end
+        end
+    elseif person.status == :I &&
+           rand(abmrng(model)) < 1 - exp(-model.γ * model.Δt)
+        person.next_status = :R
+    end
+end
+
+function model_step!(model)
+    for person in allagents(model)
+        person.status = person.next_status
+    end
+end
+
+infected_count(model) = count(p.status == :I for p in allagents(model))
+
+function initialize_gridless(seed, Δt, nsteps)
+    model = StandardABM(
+        Person;
+        agent_step!,
+        model_step!,
+        properties = (β = 0.05, c = 10.0, γ = 0.25, Δt = Δt),
+        rng = StableRNG(seed),
+    )
+    for id in 1:200
+        status = id <= 5 ? :I : :S
+        add_agent!(Person(; id, status, next_status = status), model)
+    end
+    _, data = run!(
+        model, nsteps;
+        mdata = [infected_count],
+        showprogress = false,
+    )
+    return collect(data.infected_count)
+end
+
+summaries = map((0.2, 0.1, 0.05)) do Δt
+    peaks = [
+        maximum(initialize_gridless(5000 + replicate, Δt, round(Int, 30 / Δt)))
+        for replicate in 1:16
+    ]
+    (; Δt, mean_peak = mean(peaks), sd_peak = std(peaks))
+end
+summaries
+```
+
+The output is a distribution over realizations, not a single deterministic
+peak.  Changing $\Delta t$ changes both the numerical update frequency and
+the discrete-time biological interpretation: the contact and recovery
+probabilities are recalculated at a different interval.  Therefore timestep
+sensitivity is not purely a solver error study.  A useful reference is the
+continuous-time SIR ODE peak, but agreement is expected only as the
+well-mixed, small-step approximation becomes appropriate.

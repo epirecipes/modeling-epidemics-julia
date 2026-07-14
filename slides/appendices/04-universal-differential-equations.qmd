@@ -1,0 +1,183 @@
+---
+title: "Universal differential equations"
+subtitle: "Appendix A04 · learning a transmission closure"
+course-unit: a04-universal-differential-equations
+status: complete
+---
+
+## Why this unit matters
+
+- Mechanistic SIR models fix the **functional form** of transmission; data may
+  not agree with that choice.
+- A *universal differential equation* (UDE) keeps the trustworthy bookkeeping
+  and replaces one uncertain term with a trainable **universal approximator**
+  [@rackauckas2020].
+- We differentiate **through** the ODE solver to fit the hybrid model, then ask
+  the sharpest possible question: does the network recover the *known* closure?
+
+::: {.notes}
+The message of the deck is the grey-box philosophy: impose what you trust
+(conservation, recovery, flow structure) and learn only what you do not
+(the force of infection). Emphasise that the appendix is deliberately built
+around a known ground truth so the fit can be validated against it, which is
+rarely possible with real data but ideal for teaching.
+:::
+
+## The grey-box model
+
+Keep the SIR flow, learn the force of infection $\lambda_\theta$:
+
+$$
+\frac{dS}{dt} = -\lambda_\theta(I)\,S,\quad
+\frac{dI}{dt} = \lambda_\theta(I)\,S - \gamma I,\quad
+\frac{dC}{dt} = \lambda_\theta(I)\,S .
+$$
+
+- **Deterministic** dynamics, **continuous** time and state, **population** level.
+- Data are generated from the true mass-action closure
+  $\lambda^\star(I) = \beta c\, I = 0.5\,I$ (course baseline in proportions).
+- $\mathcal{N}_\theta$ supplies *only* the transmission term; $\gamma I$ and the
+  flow structure are imposed by hand.
+
+::: {.notes}
+Stress that $C$ is a cumulative-incidence tracker: daily incidence is
+$N\,\Delta C$, which is what we actually observe. The classification line is the
+same contract every chapter uses — deterministic / continuous / population.
+:::
+
+## Fit by differentiating through the solver
+
+- Loss: Poisson negative log-likelihood of daily incidence
+  $\mu_k(\theta) = N[C(t_{k+1})-C(t_k)]_\theta$ against noisy counts $y_k$.
+- Gradients: reverse-mode adjoint (`InterpolatingAdjoint` +
+  `ReverseDiffVJP`) from `SciMLSensitivity.jl`.
+- Optimiser: a short `Adam` run to make fast progress, then `BFGS` to polish.
+- Network: `Lux.Chain(Dense(1,5,tanh), Dense(5,1,softplus))` — **16 parameters**;
+  `softplus` output guarantees $\lambda_\theta \ge 0$.
+
+```{julia}
+#| label: a04-slide-setup
+#| echo: true
+#| output: false
+using OrdinaryDiffEq, Distributions, StableRNGs, Random
+using Lux, DiffEqFlux, SciMLSensitivity
+using Optimization, OptimizationOptimisers, OptimizationOptimJL
+using CairoMakie
+
+N = 1000.0; βc = 0.5; γ = 0.25
+u0 = [0.99, 0.01, 0.0]; tspan = (0.0, 40.0); δt = 1.0; train_time = 30.0
+
+function sir_true!(du, u, p, t)
+    S, I, C = u; λ, ν = p
+    du[1] = -λ*S*I; du[2] = λ*S*I - ν*I; du[3] = λ*S*I
+end
+sol_true = solve(ODEProblem(sir_true!, u0, tspan, [βc, γ]), Tsit5(); saveat = δt)
+ts = 0.0:δt:train_time
+Ctrue = reduce(hcat, sol_true(ts).u)[3, :]
+data_rng = StableRNG(20240501)
+noisy = [rand(data_rng, Poisson(max(c, 0.0))) for c in N .* diff(Ctrue)]
+
+foi = Lux.Chain(Lux.Dense(1, 5, tanh), Lux.Dense(5, 1, softplus))
+_, foi_state = Lux.setup(StableRNG(1), foi)
+function params_from_vector(θ)
+    (layer_1 = (weight = reshape(θ[1:5], 5, 1),  bias = θ[6:10]),
+     layer_2 = (weight = reshape(θ[11:15], 1, 5), bias = θ[16:16]))
+end
+force_of_infection(I, θ) = foi([I], params_from_vector(θ), foi_state)[1][1]
+p_init = 0.1 .* randn(StableRNG(2), Float64, 16)
+```
+
+::: {.notes}
+This cell mirrors the book chapter kernels exactly so slides, book, and
+notebook stay in sync. It is executed but its output is hidden; only the two
+result cells below are shown to the audience.
+:::
+
+## Training the hybrid model
+
+```{julia}
+#| label: a04-slide-train
+#| echo: true
+function sir_ude!(du, u, θ, t)
+    S, I, C = u; λ = force_of_infection(I, θ)
+    du[1] = -λ*S; du[2] = λ*S - γ*I; du[3] = λ*S
+end
+prob_ude = ODEProblem(sir_ude!, u0, (0.0, train_time), p_init)
+predict(θ) = Array(solve(prob_ude, Tsit5(); p = θ, saveat = δt,
+    sensealg = InterpolatingAdjoint(autojacvec = ReverseDiffVJP())))
+loss(θ) = (μ = max.(N .* diff(predict(θ)[3, :]), 1e-6); sum(μ .- noisy .* log.(μ)))
+
+optf = OptimizationFunction((θ, _) -> loss(θ), Optimization.AutoZygote())
+res_adam = solve(OptimizationProblem(optf, p_init),
+    OptimizationOptimisers.Adam(0.05); maxiters = 120)
+res = solve(OptimizationProblem(optf, res_adam.u),
+    OptimizationOptimJL.BFGS(); maxiters = 40)
+θ_hat = res.u
+round(res.objective; digits = 1)
+```
+
+- A short, deterministic run (fixed `StableRNG` seeds) keeps the deck fast while
+  still converging — the polished loss is reported above.
+
+::: {.notes}
+The deck uses slightly fewer iterations than the book (120 Adam + 40 BFGS vs
+150 + 50) purely so the slides render quickly; the closure still recovers the
+truth to within a few times 1e-3 over the observed range.
+:::
+
+## Validation: recovering the known closure
+
+```{julia}
+#| label: fig-a04-slide-recovery
+#| echo: true
+#| fig-cap: "The 16-parameter network recovers the true linear force of infection up to the largest infectious proportion seen in training (dotted); beyond it the closure is unconstrained."
+Igrid = 0.0:0.005:0.5
+λ_nn = [force_of_infection(I, θ_hat) for I in Igrid]
+Imax = maximum(reduce(hcat, sol_true(ts).u)[2, :])
+in_range = Igrid .<= Imax
+max_abs_error = maximum(abs.(λ_nn[in_range] .- βc .* Igrid[in_range]))
+
+fig = Figure(size = (900, 400))
+ax = Axis(fig[1, 1]; xlabel = "infectious proportion I",
+    ylabel = "force of infection λ",
+    title = "Learned closure (max error ≈ $(round(max_abs_error; sigdigits = 2)))")
+lines!(ax, Igrid, βc .* Igrid; color = :black, linewidth = 2, label = "true βc·I")
+lines!(ax, Igrid, λ_nn; color = :firebrick, linestyle = :dash, linewidth = 2,
+    label = "neural network")
+vlines!(ax, [Imax]; color = :gray, linestyle = :dot)
+axislegend(ax; position = :lt)
+fig
+```
+
+::: {.notes}
+The single most important slide: agreement is expected only up to the dotted
+line because the data never visit larger infectious proportions. This is the
+identifiability-is-local-to-the-data lesson made visual.
+:::
+
+## Key takeaways & caveats
+
+- **Structure buys data efficiency** — 16 parameters suffice *because* recovery
+  and flow are mechanistic; a black box would need far more data.
+- **Identifiability is local** — trust the closure only over the range of $I$
+  the training data actually visit (left of the dotted line).
+- **Encode priors** — `softplus` enforces $\lambda \ge 0$; monotonicity could be
+  added similarly.
+- **Cost & conditioning** — every loss evaluation is an ODE solve, every
+  gradient an adjoint solve; stiff or larger problems need care with `sensealg`.
+- **APIs move fast** — current `Lux` / `DiffEqFlux` / `Optimization`; legacy
+  `FastChain` / `sciml_train` will not run on the pinned stack.
+
+See the [book chapter](../../appendices/04-universal-differential-equations.html)
+for derivations, and the
+[DiffEqFlux](https://docs.sciml.ai/DiffEqFlux/stable/),
+[Lux](https://lux.csail.mit.edu/stable/), and
+[SciMLSensitivity](https://docs.sciml.ai/SciMLSensitivity/stable/) manuals for
+the current UDE workflow.
+
+::: {.notes}
+Close by pointing to the companion Pluto notebook, which pre-trains once and
+lets the audience explore the closure and its extrapolation region interactively
+without waiting for training. The two exercises (shorter training window; deeper
+network) are worked in the solutions appendix.
+:::

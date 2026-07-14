@@ -1,0 +1,113 @@
+---
+title: "Foundations: SIR theory and the Julia workflow"
+course-unit: ch01-foundations
+status: complete
+---
+
+## Why this unit matters
+
+- The conceptual anchor of the course: derive the SIR model of Kermack &
+  McKendrick (1927) from first principles.
+- Read off the two quantities that govern every epidemic: the reproduction
+  number $R_0$ and the epidemic threshold.
+- Solve it with the modern **SciML** stack and verify conservation, the
+  threshold, and the analytic **final-size** relation.
+
+## Assumptions & equations {.smaller}
+
+Closed, well-mixed population; mass-action transmission; constant recovery;
+permanent immunity. Force of infection $\lambda=\beta c I/N$:
+
+$$
+\frac{\mathrm{d}S}{\mathrm{d}t}=-\lambda S,\quad
+\frac{\mathrm{d}I}{\mathrm{d}t}=\lambda S-\gamma I,\quad
+\frac{\mathrm{d}R}{\mathrm{d}t}=\gamma I.
+$$ {#eq-s-ch01-sir}
+
+$$
+R_0=\frac{\beta c}{\gamma},\qquad
+\frac{\mathrm{d}I}{\mathrm{d}t}>0 \iff \frac{S}{N}>\frac{1}{R_0},
+$$ {#eq-s-ch01-r0}
+
+$$
+s_\infty = s_0\exp\!\bigl(-R_0(1-s_\infty)\bigr),\quad s_0=S(0)/N.
+$$ {#eq-s-ch01-finalsize}
+
+## Julia API: solve & analyse
+
+```{julia}
+#| label: s-ch01-solve
+#| echo: true
+using OrdinaryDiffEq, NonlinearSolve
+function sir_ode!(du, u, p, t)
+    S, I, R = u; β, c, γ, N = p
+    λ = β * c * I / N
+    du[1] = -λ * S; du[2] = λ * S - γ * I; du[3] = γ * I; return nothing
+end
+
+u0 = [990.0, 10.0, 0.0]; p = (0.05, 10.0, 0.25, 1000.0); tspan = (0.0, 80.0)
+sol = solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5(); saveat = 0.5)
+β, c, γ, N = p; R₀ = β * c / γ; s₀ = u0[1] / N
+s_inf = solve(NonlinearProblem((s, R0) -> s - s₀ * exp(-R0 * (1 - s)), 0.2, R₀),
+              NewtonRaphson()).u
+(R₀, round(s_inf; digits = 3), round(1 - s_inf; digits = 3))   # R0, s∞, attack rate
+```
+
+## Generated result
+
+```{julia}
+#| label: fig-s-ch01-sir
+#| echo: true
+#| fig-cap: "Baseline SIR ($R_0=2$). The dashed line marks $S/N=1/R_0$; the infectious curve peaks exactly where $S$ crosses it."
+using CairoMakie
+t = sol.t; S = sol[1, :]; I = sol[2, :]; R = sol[3, :]
+fig = Figure(size = (760, 400))
+ax = Axis(fig[1,1]; xlabel = "day", ylabel = "individuals", title = "SIR baseline, R₀ = 2")
+lines!(ax, t, S; color = :steelblue, linewidth = 3, label = "S")
+lines!(ax, t, I; color = :firebrick, linewidth = 3, label = "I")
+lines!(ax, t, R; color = :seagreen,  linewidth = 3, label = "R")
+hlines!(ax, [N / R₀]; color = :black, linestyle = :dash, label = "S = N/R₀")
+axislegend(ax; position = :rc); fig
+```
+
+## Validation
+
+Population conserved; infectious peak sits on the threshold; long-run $S/N$
+matches the analytic $s_\infty$:
+
+```{julia}
+#| label: s-ch01-check
+#| echo: true
+cons = all(u -> isapprox(sum(u), N; atol = 1e-6), sol.u)
+peak = isapprox(S[argmax(I)] / N, 1 / R₀; atol = 0.01)
+sol_long = solve(remake(ODEProblem(sir_ode!, u0, (0.0, 400.0), p)), Tsit5();
+                 reltol = 1e-10, abstol = 1e-10, save_everystep = false)
+fsize = isapprox(sol_long.u[end][1] / N, s_inf; atol = 1e-3)
+(cons, peak, fsize)
+```
+
+All `true`: conservation, threshold, and final size are confirmed.
+
+## Limitations & roadmap
+
+- The deterministic ODE is the population **mean** — no extinction,
+  super-spreading, or small-outbreak noise.
+- Homogeneous mixing ignores age, space, contact structure; exponential
+  infectious periods are a convenience.
+- The book relaxes each assumption in turn: discrete-time & stochastic → jump
+  processes → SDEs → agent-based → observation, inference, control.
+
+::: {.notes}
+Derive the mass-action term from contacts × prevalence × transmission
+probability, and show that summing the equations gives conservation. Explain R₀
+as expected secondary infections in a fully susceptible population, and that the
+peak occurs exactly at S/N = 1/R₀. The final-size relation is transcendental,
+which is why NonlinearSolve is used. Use this chapter to preview the whole book.
+:::
+
+## Learn more
+
+- Book chapter: [Foundations](../../chapters/01-foundations.html)
+- Pluto notebook: [`01-foundations.jl`](../../notebooks/chapters/01-foundations.jl)
+- [OrdinaryDiffEq](https://docs.sciml.ai/OrdinaryDiffEq/stable/) ·
+  [NonlinearSolve](https://docs.sciml.ai/NonlinearSolve/stable/)

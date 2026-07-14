@@ -1,0 +1,493 @@
+## Advanced dynamics solutions
+
+### Delay differential equations
+
+#### Solution to Exercise 1 {#solution-a01-ex1}
+
+The exercise asks for the DDE peak and its timing at $\tau \in \{2, 4, 8\}$
+(holding $\beta$, $c$, $N$ fixed), compared with the exponential-recovery
+ODE at the matching mean infectious period $1/\gamma = \tau$.
+
+```{julia}
+#| label: code-sol-a01-ex1
+using DelayDiffEq
+using OrdinaryDiffEq
+
+function sir_dde!(du, u, h, p, t)
+    S, I, R = u
+    β, c, τ = p
+    N = S + I + R
+    λ = β * c * I / N
+    Sd, Id, Rd = h(p, t - τ)
+    Nd = Sd + Id + Rd
+    λd = β * c * Id / Nd
+    du[1] = -λ * S
+    du[2] = λ * S - λd * Sd
+    du[3] = λd * Sd
+    return nothing
+end
+sir_history(p, t) = [1000.0, 0.0, 0.0]
+
+function sir_ode_a01ex1!(du, u, p, t)
+    S, I, R = u
+    β, c, γrate = p
+    N = S + I + R
+    λ = β * c * I / N
+    du[1] = -λ * S
+    du[2] = λ * S - γrate * I
+    du[3] = γrate * I
+    return nothing
+end
+
+u0 = [990.0, 10.0, 0.0]
+tspan = (0.0, 40.0)
+results = NamedTuple[]
+for τ in (2.0, 4.0, 8.0)
+    p = (0.05, 10.0, τ)
+    sol_dde = solve(DDEProblem(sir_dde!, u0, sir_history, tspan, p; constant_lags = [τ]),
+                     MethodOfSteps(Tsit5()); reltol = 1e-8, abstol = 1e-8)
+    peak_dde, idx_dde = findmax(sol_dde[2, :])
+
+    sol_ode = solve(ODEProblem(sir_ode_a01ex1!, u0, tspan, (0.05, 10.0, 1 / τ)), Tsit5();
+                     reltol = 1e-8, abstol = 1e-8)
+    peak_ode, idx_ode = findmax(sol_ode[2, :])
+
+    push!(results, (τ = τ, dde_peak = round(peak_dde; digits = 1), dde_t = round(sol_dde.t[idx_dde]; digits = 2),
+                     ode_peak = round(peak_ode; digits = 1), ode_t = round(sol_ode.t[idx_ode]; digits = 2)))
+end
+results
+```
+
+At $\tau = 2$ ($\gamma = 0.5$), $R_0 = \beta c / \gamma = 1.0$ exactly, so the
+exponential-recovery ODE cannot grow at all — its "peak" is simply $I(0)=10$
+at $t=0$ — while the fixed-delay DDE still produces a modest outbreak,
+because every one of the initial infections transmits at full strength for
+the entire interval $[0, 2)$ before recovering, rather than a fraction of
+them recovering almost immediately. As $\tau$ grows, both the absolute size
+of the gap between the DDE and ODE peaks and its relative size increase, and
+the DDE peak occurs earlier relative to the ODE peak: the ODE's exponential
+recovery spreads recoveries out over a long right tail, so it takes longer
+for the ODE epidemic to reach its own (smaller) peak, while the fixed-delay
+model concentrates the entire initial cohort's transmission and then removes
+it all at once, producing a sharper and earlier peak. This confirms, more
+sharply for larger $\tau$, the point made in the book chapter: the *shape*
+of the infectious-period distribution, not merely its mean, drives these
+differences.
+
+#### Solution to Exercise 2 {#solution-a01-ex2}
+
+The exercise asks to repeat the two-stage construction for $I(0)=1$ instead
+of $10$, confirm conservation and nonnegativity, and check whether a
+`ContinuousCallback` that would clamp $I$ to zero ever fires.
+
+```{julia}
+#| label: code-sol-a01-ex2
+function si_ode!(du, u, p, t)
+    S, I = u[1], u[2]
+    β, c, _ = p
+    λ = β * c * I / (u[1] + u[2] + u[3])
+    du[1] = -λ * S
+    du[2] = λ * S
+    du[3] = 0.0
+    return nothing
+end
+
+u0_ex2 = [999.0, 1.0, 0.0]
+γ = 0.25
+p_ex2 = (0.05, 10.0, 1 / γ)
+
+sol_si = solve(ODEProblem(si_ode!, u0_ex2, (0.0, p_ex2[3]), p_ex2), Tsit5();
+                reltol = 1e-10, abstol = 1e-10)
+history_from_ode(p, t) = sol_si(t)
+
+fire_count = Ref(0)
+condition(u, t, integrator) = u[2]                     # zero crossing on I
+function affect!(integrator)
+    fire_count[] += 1
+    integrator.u[2] = max(integrator.u[2], 0.0)
+    return nothing
+end
+cb = ContinuousCallback(condition, affect!; save_positions = (true, true))
+
+prob_dde2 = DDEProblem(sir_dde!, sol_si(p_ex2[3]), history_from_ode, (p_ex2[3], 40.0), p_ex2;
+                        constant_lags = [p_ex2[3]])
+sol_dde2 = solve(prob_dde2, MethodOfSteps(Tsit5()); reltol = 1e-8, abstol = 1e-8, callback = cb)
+
+grid = 0.0:0.1:40.0
+states = [t < p_ex2[3] ? sol_si(t) : sol_dde2(t) for t in grid]
+conserved = all(u -> isapprox(sum(u), 1000.0; atol = 1e-6), states)
+nonnegative = all(u -> all(>=(-1e-8), u), states)
+(conserved = conserved, nonnegative = nonnegative, callback_fires = fire_count[])
+```
+
+The two-stage construction with $I(0)=1$ still conserves the population and
+stays nonnegative, and the clamping callback **never fires**. This is
+expected: this DDE is deterministic, and its right-hand side has $I$'s
+derivative bounded below by $-\lambda(t-\tau) S(t-\tau) \ge -N$ whenever
+$I(t)$ itself is already at $0$ — with an exponential-type solution
+structure, $I$ can only approach $0$ asymptotically as the epidemic burns
+out, never overshoot below it in finite time. This is in sharp contrast to
+the stochastic delay differential equation of the next appendix, whose
+diffusion term has no such structural floor and *does* drive $I$ negative
+for some seeds, as Exercise 2 there demonstrates concretely.
+
+### Stochastic delay differential equations
+
+#### Solution to Exercise 1 {#solution-a02-ex1}
+
+The exercise asks to repeat the seed-4 run at `dt` $\in \{0.2, 0.1, 0.05\}$,
+recording the maximum conservation error and minimum state value, and to
+discuss whether decreasing `dt` makes nonnegativity violations more or less
+frequent.
+
+```{julia}
+#| label: code-sol-a02-ex1
+using DelayDiffEq
+using OrdinaryDiffEq
+using StochasticDiffEq
+using SparseArrays
+using Random
+
+function sir_dde!(du, u, h, p, t)
+    S, I, R = u
+    β, c, τ = p
+    N = S + I + R
+    λ = β * c * I / N
+    Sd, Id, Rd = h(p, t - τ)
+    Nd = Sd + Id + Rd
+    λd = β * c * Id / Nd
+    du[1] = -λ * S
+    du[2] = λ * S - λd * Sd
+    du[3] = λd * Sd
+    return nothing
+end
+function sir_delayed_noise!(G, u, h, p, t)
+    S, I, R = u
+    β, c, τ = p
+    N = S + I + R
+    infection = max(β * c * I / N * S, 0.0)
+    Sd, Id, Rd = h(p, t - τ)
+    Nd = Sd + Id + Rd
+    recovery = max(β * c * Id / Nd * Sd, 0.0)
+    G[1, 1] = -sqrt(infection)
+    G[2, 1] = sqrt(infection)
+    G[2, 2] = -sqrt(recovery)
+    G[3, 2] = sqrt(recovery)
+    return nothing
+end
+sir_history(p, t) = [1000.0, 0.0, 0.0]
+u0 = [990.0, 10.0, 0.0]
+γ = 0.25
+p = (0.05, 10.0, 1 / γ)
+tspan = (0.0, 40.0)
+noise_shape() = sparse([1.0 0.0; 1.0 1.0; 0.0 1.0])
+
+seed4_results = NamedTuple[]
+for dt in (0.2, 0.1, 0.05)
+    Random.seed!(4)
+    prob = SDDEProblem(sir_dde!, sir_delayed_noise!, u0, sir_history, tspan, p;
+                        noise_rate_prototype = noise_shape())
+    sol = solve(prob, LambaEM(); dt = dt, adaptive = false)
+    states = Array(sol)
+    push!(seed4_results, (dt = dt,
+                           max_conservation_error = round(maximum(abs.(vec(sum(states; dims = 1)) .- 1000.0)); sigdigits = 3),
+                           min_state = round(minimum(states); digits = 2)))
+end
+seed4_results
+```
+
+At seed 4 specifically, the minimum state does happen to improve as `dt`
+shrinks — but a single seed is not evidence of a general trend, because
+changing `dt` under a *fixed* global seed does not refine the *same*
+Wiener path; it consumes a different number of Gaussian draws from the RNG
+stream and so produces a **different realization altogether**. A fifteen-seed
+ensemble at each step size makes this explicit:
+
+```{julia}
+#| label: code-sol-a02-ex1-ensemble
+ensemble_summary = NamedTuple[]
+for dt in (0.2, 0.1, 0.05)
+    minvals = Float64[]
+    unstable = 0
+    for seed in 1:15
+        Random.seed!(seed)
+        prob = SDDEProblem(sir_dde!, sir_delayed_noise!, u0, sir_history, tspan, p;
+                            noise_rate_prototype = noise_shape())
+        sol = solve(prob, LambaEM(); dt = dt, adaptive = false)
+        if string(sol.retcode) != "Success"
+            unstable += 1
+            continue
+        end
+        push!(minvals, minimum(Array(sol)))
+    end
+    violations = count(<(-1e-6), minvals)
+    push!(ensemble_summary, (dt = dt, n_seeds = 15, violations = violations,
+                              unstable_runs = unstable,
+                              worst_min = round(minimum(minvals); digits = 2)))
+end
+ensemble_summary
+```
+
+Across a fifteen-seed ensemble, the violation *rate* stays roughly constant
+(about two-thirds of seeds) at every step size tested, rather than falling
+as `dt` shrinks — and at the smallest step size one seed even triggers a
+solver instability abort rather than a cleaner trajectory. This is the
+opposite of the usual "smaller step, smaller error" relationship from the
+calculus and numerical methods unit's convergence study, because that
+relationship assumes refining the *same* underlying continuous path. Here,
+each `dt` samples an entirely different discretized Wiener process from the
+same seed, so nonnegativity — which depends on the specific realized noise
+path, not on truncation error — does not improve monotonically with a finer
+grid. The only truly reliable statement across step sizes is the structural
+one: conservation holds to solver tolerance regardless of `dt`, because it
+follows from the noise matrix's construction, not from step-size accuracy.
+
+#### Solution to Exercise 2 {#solution-a02-ex2}
+
+The exercise asks to rerun the seed-1 (caveat) trajectory with a
+`DiscreteCallback` that clamps $I$ to zero whenever it is negative, and to
+compare the corrected and uncorrected conservation errors.
+
+```{julia}
+#| label: code-sol-a02-ex2
+Random.seed!(1)
+prob_uncorrected = SDDEProblem(sir_dde!, sir_delayed_noise!, u0, sir_history, tspan, p;
+                                noise_rate_prototype = noise_shape())
+sol_uncorrected = solve(prob_uncorrected, LambaEM(); dt = 0.1, adaptive = false)
+states_uncorrected = Array(sol_uncorrected)
+
+fire_count = Ref(0)
+clamp_condition(u, t, integrator) = u[2] < 0
+function clamp_affect!(integrator)
+    fire_count[] += 1
+    integrator.u[2] = max(integrator.u[2], 0.0)
+    return nothing
+end
+clamp_cb = DiscreteCallback(clamp_condition, clamp_affect!)
+
+Random.seed!(1)
+prob_clamped = SDDEProblem(sir_dde!, sir_delayed_noise!, u0, sir_history, tspan, p;
+                            noise_rate_prototype = noise_shape())
+sol_clamped = solve(prob_clamped, LambaEM(); dt = 0.1, adaptive = false, callback = clamp_cb)
+states_clamped = Array(sol_clamped)
+
+(
+    uncorrected_min_I = round(minimum(states_uncorrected[2, :]); digits = 2),
+    uncorrected_conservation_error = round(maximum(abs.(vec(sum(states_uncorrected; dims = 1)) .- 1000.0)); sigdigits = 3),
+    clamped_min_I = round(minimum(states_clamped[2, :]); digits = 2),
+    clamped_conservation_error = round(maximum(abs.(vec(sum(states_clamped; dims = 1)) .- 1000.0)); sigdigits = 3),
+    callback_fires = fire_count[],
+)
+```
+
+The clamp callback fires dozens of times and does raise the minimum value
+of $I$ substantially — but it does **not** fully eliminate negative
+excursions (the dense interpolation between clamped grid points can still
+dip below zero), and, critically, it destroys the *conservation* property
+that held to solver tolerance in the uncorrected run: the corrected
+trajectory's conservation error is now many orders of magnitude larger than
+before. This is the concrete mechanism behind the book chapter's claim that
+clamping the current state is an incomplete fix for a **delayed** recovery
+term: the clamp only ever touches $I$ at the moment it fires, but the
+recovery drift and diffusion at every time $t' \in (t, t+\tau)$ continue to
+read the *pre-clamp* history at $t$ through `h(p, t' - \tau)`. Removing mass
+from $I$ without removing the corresponding mass from $S$ or $R$ breaks the
+$S+I+R=N$ identity, and there is no way to repair that within a single
+local correction because the delayed term has already "seen" the
+uncorrected value and will keep depending on it for up to $\tau$ more time
+units.
+
+### Discrete-event simulation
+
+#### Solution to Exercise 1 {#solution-a03-ex1}
+
+The exercise asks for an `EventQueueABM` recovery event whose `timing`
+returns the fixed value $\tau = 1/\gamma = 4$ instead of an exponential
+draw, compared against the deterministic DDE at the same parameters.
+
+```{julia}
+#| label: code-sol-a03-ex1
+using Agents
+using Random
+using DelayDiffEq
+using OrdinaryDiffEq
+
+β = 0.05
+c = 10.0
+γ = 0.25
+N = 1000
+I0 = 10
+tf = 40.0
+τ = 1 / γ
+
+@agent struct QueuePerson(NoSpaceAgent)
+    status::Symbol
+end
+
+function transmit!(agent, model)
+    alter = random_agent(model)
+    if alter.status == :I && (rand(abmrng(model)) ≤ model.β)
+        agent.status = :I
+    end
+    return nothing
+end
+recover!(agent, model) = (agent.status = :R)
+
+transmit_propensity(agent, model) = agent.status == :S ? model.c : 0.0
+recovery_propensity(agent, model) = agent.status == :I ? model.γ : 0.0
+fixed_delay_timing(agent, model, propensity) = agent.status == :I ? model.τ : Inf
+
+infected(x) = count(==(:I), x)
+
+properties = Dict(:β => β, :c => c, :γ => γ, :τ => τ)
+transmit_event = AgentEvent(action! = transmit!, propensity = transmit_propensity)
+recovery_event = AgentEvent(action! = recover!, propensity = recovery_propensity, timing = fixed_delay_timing)
+model = EventQueueABM(QueuePerson, (transmit_event, recovery_event); properties, rng = Xoshiro(20250711))
+for i in 1:N
+    add_agent!(QueuePerson(; id = i, status = i <= I0 ? :I : :S), model)
+end
+data, _ = run!(model, tf; adata = [(:status, infected)])
+
+peak_idx = argmax(data.infected_status)
+eq_peak = data.infected_status[peak_idx]
+eq_peak_t = data.time[peak_idx]
+
+function sir_dde!(du, u, h, p, t)
+    S, I, R = u
+    βp, cp, τp = p
+    Ntot = S + I + R
+    λ = βp * cp * I / Ntot
+    Sd, Id, Rd = h(p, t - τp)
+    Ntotd = Sd + Id + Rd
+    λd = βp * cp * Id / Ntotd
+    du[1] = -λ * S
+    du[2] = λ * S - λd * Sd
+    du[3] = λd * Sd
+    return nothing
+end
+sir_history(p, t) = [1000.0, 0.0, 0.0]
+sol_dde = solve(DDEProblem(sir_dde!, [990.0, 10.0, 0.0], sir_history, (0.0, tf), (β, c, τ);
+                            constant_lags = [τ]),
+                 MethodOfSteps(Tsit5()); reltol = 1e-8, abstol = 1e-8)
+dde_peak, dde_idx = findmax(sol_dde[2, :])
+
+(eq_peak = eq_peak, eq_peak_t = round(eq_peak_t; digits = 2),
+ dde_peak = round(dde_peak; digits = 1), dde_peak_t = round(sol_dde.t[dde_idx]; digits = 2))
+```
+
+The single stochastic `EventQueueABM` realization peaks close to — a bit
+below, as expected for one finite-population sample — the deterministic
+DDE's peak, and at a comparable time. This individual-level construction
+reaches the same fixed-delay assumption **without a history function**: no
+population-level state needs to "remember" what happened $\tau$ time units
+ago, because each infectious agent's own scheduled recovery event already
+carries that information. The DDE's method of steps is a workaround for the
+fact that a population-level ODE has *forgotten* who was infected when; an
+individual-level model like this one never has that problem in the first
+place.
+
+#### Solution to Exercise 2 {#solution-a03-ex2}
+
+The exercise asks to extend the `ConcurrentSim` model with a `Resource`
+representing a limited number of hospital beds, comparing the infectious
+curve and wait times against the unconstrained model.
+
+```{julia}
+#| label: code-sol-a03-ex2
+using ConcurrentSim
+using ResumableFunctions
+using Distributions
+
+mutable struct BedPerson
+    id::Int
+    status::Symbol
+end
+mutable struct BedModel
+    sim::Simulation
+    β::Float64
+    c::Float64
+    γ::Float64
+    beds::Resource
+    Ia::Vector{Int}
+    wait_times::Vector{Float64}
+    people::Vector{BedPerson}
+end
+
+@resumable function live(sim::Simulation, person::BedPerson, m::BedModel, rng)
+    while person.status == :S
+        @yield timeout(sim, rand(rng, Exponential(1 / m.c)))
+        alter = person
+        while alter === person
+            alter = rand(rng, m.people)
+        end
+        if alter.status == :I && rand(rng) < m.β
+            person.status = :I
+            push!(m.Ia, count(pp -> pp.status == :I, m.people))
+        end
+    end
+    if person.status == :I
+        request_time = now(sim)
+        @yield request(m.beds)
+        push!(m.wait_times, now(sim) - request_time)
+        @yield timeout(sim, rand(rng, Exponential(1 / m.γ)))
+        person.status = :R
+        @yield release(m.beds)
+        push!(m.Ia, count(pp -> pp.status == :I, m.people))
+    end
+end
+
+function init_model(S, I, R, β, c, γ, nbeds)
+    sim = Simulation()
+    beds = Resource(sim, nbeds)
+    people = BedPerson[]
+    for i in 1:S
+        push!(people, BedPerson(i, :S))
+    end
+    for i in 1:I
+        push!(people, BedPerson(S + i, :I))
+    end
+    for i in 1:R
+        push!(people, BedPerson(S + I + i, :R))
+    end
+    BedModel(sim, β, c, γ, beds, [I], Float64[], people)
+end
+
+function run_bed_model(nbeds; seed = 20250711)
+    rng = Xoshiro(seed)
+    m = init_model(N - I0, I0, 0, β, c, γ, nbeds)
+    for person in m.people
+        @process live(m.sim, person, m, rng)
+    end
+    run(m.sim, tf)
+    return m
+end
+
+unconstrained = run_bed_model(N)     # beds = N: capacity never binds
+constrained = run_bed_model(50)
+
+(
+    unconstrained_peak_I = maximum(unconstrained.Ia),
+    unconstrained_mean_wait = isempty(unconstrained.wait_times) ? 0.0 :
+        round(sum(unconstrained.wait_times) / length(unconstrained.wait_times); digits = 2),
+    constrained_peak_I = maximum(constrained.Ia),
+    constrained_mean_wait = round(sum(constrained.wait_times) / length(constrained.wait_times); digits = 2),
+    constrained_max_wait = round(maximum(constrained.wait_times); digits = 2),
+    constrained_frac_waited = round(count(>(1e-9), constrained.wait_times) / length(constrained.wait_times); digits = 2),
+)
+```
+
+With only 50 beds, most infectious individuals wait nearly ten time units on
+average (and up to about 26) before a bed frees up — and the epidemic's peak
+infectious count is **substantially larger** than in the unconstrained
+model, even though $\beta$, $c$, and $\gamma$ are unchanged. The mechanism is
+that an individual's `status` is still `:I` (and so can still transmit)
+throughout both the *waiting* period and the treatment `timeout`; a scarce
+bed supply lengthens the effective time each individual spends counted as
+infectious, which is exactly the kind of resource-contention effect a
+`Resource` makes easy to express. `EventQueueABM`, as used in this appendix,
+has propensities and actions attached to individual agents but no concept
+of a shared, capacity-limited object that multiple agents must queue for —
+modeling beds there would require encoding the queue and occupancy
+bookkeeping by hand inside the agent's own state, which is precisely the
+kind of general process/resource abstraction `ConcurrentSim` provides
+natively.

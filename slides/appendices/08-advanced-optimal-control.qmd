@@ -1,0 +1,104 @@
+---
+title: "Advanced optimal control"
+course-unit: a08-advanced-optimal-control
+status: complete
+---
+
+## From a timing decision to a control function
+
+- Chapter 11 chooses one intervention start time.
+- Here $u(t)$ is a bounded, function-valued intervention.
+- Classification: deterministic, continuous-time, continuous-state,
+  population-level, ODE-constrained.
+
+Use normalized states $S,I,C$ with $S(0)=0.99$, $I(0)=0.01$ and $C(0)=0$.
+The horizon is $T=20$, $0\leq u\leq0.5$, and $\int_0^T u(t)\,dt\leq2$.
+
+::: {.notes}
+The support points used by the transcription are numerical degrees of freedom;
+they do not make the mathematical control discrete.
+:::
+
+## Controlled SIR and objective
+
+$$
+\dot S=-(1-u)\beta cSI,\quad
+\dot I=(1-u)\beta cSI-\gamma I,\quad
+\dot C=(1-u)\beta cSI.
+$$
+
+$$
+\min_u C(T)+10^{-3}\int_0^T u(t)^2dt
+\quad\text{s.t.}\quad
+0\le u(t)\le u_{\max},\quad \int_0^T u(t)dt\le B.
+$$
+
+The identity $C(t)=S(0)-S(t)$ is a structural validation.
+
+## Current InfiniteOpt formulation
+
+```{julia}
+using CairoMakie, InfiniteOpt, Ipopt
+T, βc, γ, umax, B = 20.0, 0.5, 0.25, 0.5, 2.0
+model = InfiniteModel(Ipopt.Optimizer)
+set_optimizer_attribute(model, "print_level", 0)
+@infinite_parameter(model, t in [0.0, T], num_supports=15,
+                    derivative_method=OrthogonalCollocation(2))
+@variable(model, S >= 0, Infinite(t), start=0.99)
+@variable(model, I >= 0, Infinite(t), start=0.01)
+@variable(model, C >= 0, Infinite(t), start=0.0)
+@variable(model, 0 <= u <= umax, Infinite(t), start=0.0)
+@constraint(model, S(0.0) == 0.99); @constraint(model, I(0.0) == 0.01)
+@constraint(model, C(0.0) == 0.0)
+@constraint(model, deriv(S,t) == -(1-u)*βc*S*I)
+@constraint(model, deriv(I,t) == (1-u)*βc*S*I - γ*I)
+@constraint(model, deriv(C,t) == (1-u)*βc*S*I)
+@constraint(model, integral(u,t) <= B)
+@objective(model, Min, C(T) + 1e-3*integral(u^2,t))
+constant_over_collocation(u,t)
+optimize!(model)
+```
+
+::: {.notes}
+This is the supported InfiniteOpt 0.6 path in the root environment. Ipopt
+returns a local solution to the collocated nonlinear program.
+:::
+
+## Read the transcription and plot it
+
+```{julia}
+#| fig-cap: "Collocated SIR trajectory and the optimized bounded intervention over time."
+ts = supports(t)
+Ŝ, Î, Ĉ, û = value.(S), value.(I), value.(C), value.(u)
+fig = Figure(size=(850, 350))
+ax1 = Axis(fig[1,1], xlabel="time", ylabel="fraction")
+lines!(ax1, ts, Ŝ, label="S"); lines!(ax1, ts, Î, label="I")
+lines!(ax1, ts, Ĉ, label="C"); axislegend(ax1)
+ax2 = Axis(fig[1,2], xlabel="time", ylabel="u(t)")
+stairs!(ax2, ts, û); hlines!(ax2, [umax], linestyle=:dash)
+fig
+```
+
+Check bounds, nonnegativity, and the incidence identity before interpretation.
+Refining supports is the relevant numerical convergence experiment.
+
+## What SDDP can—and cannot—do here
+
+The historical nonlinear SIR script is **not** a current SDDP model:
+`LinearPolicyGraph` requires affine constraints and objectives. Products such as
+$uSI$ and exponential infection updates violate that restriction.
+
+- Defer nonlinear stochastic SIR control.
+- A defensible SDDP exercise first builds an explicit linear inventory-like
+  approximation and reports what epidemiological nonlinearities were discarded.
+- Do not present that proxy as an exact solution of the controlled SIR problem.
+
+See the [InfiniteOpt quick start](https://infiniteopt.github.io/InfiniteOpt.jl/stable/tutorials/quick_start/),
+[InfiniteOpt docs](https://infiniteopt.github.io/InfiniteOpt.jl/stable/), and
+[SDDP restrictions](https://sddp.dev/stable/).
+
+::: {.notes}
+The limitation is a modeling boundary, not a missing macro. Use a supported
+transcription for the deterministic nonlinear problem and a different method
+when stochastic nonlinear dynamics are essential.
+:::

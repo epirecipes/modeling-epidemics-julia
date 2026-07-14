@@ -1,0 +1,75 @@
+project:
+  type: book
+  output-dir: _site
+  execute-dir: project
+  post-render:
+    - quarto render slides
+  render:
+    - index.qmd
+    - prerequisites/*.qmd
+    - chapters/*.qmd
+    - appendices/*.qmd
+    - resources.qmd
+    - references.qmd
+  resources:
+    - data/**
+    - notebook-exports/**
+    - notebooks/**/*.jl
+
+book:
+  title: "Modeling Epidemics with Julia"
+  page-navigation: true
+  chapters:
+    - index.qmd
+    - part: "Prerequisites"
+      chapters:
+        - prerequisites/01-julia-essentials.qmd
+        - prerequisites/02-probability-and-stochastic-processes.qmd
+        - prerequisites/03-calculus-and-numerical-methods.qmd
+    - part: "Core course"
+      chapters:
+        - chapters/01-foundations.qmd
+        - chapters/02-discrete-time-models.qmd
+        - chapters/03-ordinary-differential-equations.qmd
+        - chapters/04-jump-processes.qmd
+        - chapters/05-stochastic-differential-equations.qmd
+        - chapters/06-agent-based-models.qmd
+        - chapters/07-observation-models.qmd
+        - chapters/08-parameter-estimation.qmd
+        - chapters/09-bayesian-inference.qmd
+        - chapters/10-sensitivity-and-identifiability.qmd
+        - chapters/11-interventions-and-optimization.qmd
+        - chapters/12-data-to-decision-capstone.qmd
+    - resources.qmd
+  appendices:
+    - appendices/01-delay-differential-equations.qmd
+    - appendices/02-stochastic-delay-differential-equations.qmd
+    - appendices/03-discrete-event-simulation.qmd
+    - appendices/04-universal-differential-equations.qmd
+    - appendices/05-finite-state-projection.qmd
+    - appendices/06-probabilistic-numerical-integration.qmd
+    - appendices/07-surrogate-models.qmd
+    - appendices/08-advanced-optimal-control.qmd
+    - appendices/09-model-composition.qmd
+    - appendices/cheat-sheet.qmd
+    - appendices/solutions.qmd
+    - references.qmd
+
+engines: [julia]
+
+julia:
+  exeflags: ["--project=@."]
+
+execute:
+  freeze: auto
+
+bibliography: references.bib
+
+format:
+  html:
+    theme:
+      - cosmo
+      - styles/book.scss
+    code-copy: true
+    code-fold: false
+    toc: true

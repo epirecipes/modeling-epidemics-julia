@@ -1,0 +1,273 @@
+---
+course-unit: ch01-foundations
+status: complete
+---
+
+# Foundations: SIR theory and the Julia workflow {#sec-foundations}
+
+This chapter is the conceptual anchor of the course. We derive the classical
+susceptible–infectious–recovered (SIR) model of @kermack1927 from first
+principles, state its assumptions precisely, and read off the two quantities
+that govern every epidemic it describes: the basic reproduction number $R_0$ and
+the epidemic threshold. We solve the model with the modern SciML stack, verify
+conservation of the population and the analytic final-size relation, and close
+with a roadmap of how the rest of the book relaxes each assumption in turn.
+
+## Learning goals
+
+By the end of this chapter you should be able to:
+
+- derive the SIR equations from mass-action transmission and constant-rate
+  recovery;
+- define $R_0$ and explain the threshold condition for an epidemic to grow;
+- solve the model in Julia with `OrdinaryDiffEq` and the `Tsit5` solver;
+- verify population conservation and compute the final epidemic size with
+  `NonlinearSolve`;
+- situate every later chapter as a controlled relaxation of one SIR assumption.
+
+## Model assumptions and classification
+
+The SIR model partitions a closed population of size $N$ into susceptible $S$,
+infectious $I$, and recovered $R$ individuals. Its assumptions are:
+
+1. **Closed population.** No births, deaths, or migration, so $S+I+R=N$ is
+   fixed.
+2. **Homogeneous mixing.** Every individual contacts others at the same rate
+   $c$, and contacts are drawn uniformly at random from the population.
+3. **Mass-action transmission.** A susceptible individual's hazard of infection
+   is proportional to the prevalence $I/N$ and the per-contact transmission
+   probability $\beta$.
+4. **Constant recovery.** Infectious individuals recover at a constant per-capita
+   rate $\gamma$, so infectious periods are exponentially distributed with mean
+   $1/\gamma$.
+5. **Permanent immunity.** Recovered individuals never return to $S$.
+
+| Property | Classification |
+|---|---|
+| Determinism | Deterministic |
+| Time | Continuous |
+| State | Continuous (population fractions) |
+| Representation | Population (compartmental) |
+
+These choices place the model in the top-left of the modelling landscape:
+deterministic and continuous. Subsequent chapters move along each axis —
+stochastic in @sec-discrete-time-models, discrete-event and individual-based
+later — so it is worth understanding this baseline thoroughly.
+
+## Equations
+
+Consider a small interval $\mathrm{d}t$. Each of the $S$ susceptibles makes
+$c\,\mathrm{d}t$ contacts; a fraction $I/N$ of those are with infectious
+individuals, and each such contact transmits with probability $\beta$. The
+expected number of new infections is therefore $\beta c (I/N) S\,\mathrm{d}t$.
+Meanwhile $\gamma I\,\mathrm{d}t$ individuals recover. Taking $\mathrm{d}t\to 0$
+gives the SIR system, with force of infection $\lambda = \beta c I/N$:
+
+$$
+\frac{\mathrm{d}S}{\mathrm{d}t} = -\beta c \frac{I}{N} S, \qquad
+\frac{\mathrm{d}I}{\mathrm{d}t} = \beta c \frac{I}{N} S - \gamma I, \qquad
+\frac{\mathrm{d}R}{\mathrm{d}t} = \gamma I.
+$$ {#eq-ch01-sir}
+
+Summing the three equations gives $\mathrm{d}(S+I+R)/\mathrm{d}t = 0$, so
+
+$$
+S(t) + I(t) + R(t) = N \quad \text{for all } t.
+$$ {#eq-ch01-conservation}
+
+The infectious compartment grows when $\mathrm{d}I/\mathrm{d}t > 0$, i.e. when
+$\beta c S/N > \gamma$. Defining the **basic reproduction number** — the expected
+number of secondary infections produced by one infectious individual in a wholly
+susceptible population —
+
+$$
+R_0 = \frac{\beta c}{\gamma},
+$$ {#eq-ch01-r0}
+
+the epidemic grows if and only if the susceptible fraction exceeds the
+reciprocal threshold:
+
+$$
+\frac{\mathrm{d}I}{\mathrm{d}t} > 0
+\quad\Longleftrightarrow\quad
+\frac{S}{N} > \frac{1}{R_0}.
+$$ {#eq-ch01-threshold}
+
+At the epidemic peak $S/N = 1/R_0$ exactly. After the epidemic burns out, the
+surviving susceptible fraction $s_\infty = S(\infty)/N$ satisfies the
+transcendental **final-size relation**, obtained by integrating
+$\mathrm{d}S/\mathrm{d}R = -R_0 S/N$ and using $R(\infty)=N-S(\infty)$,
+
+$$
+s_\infty = s_0\,\exp\!\bigl(-R_0 (1 - s_\infty)\bigr),
+\qquad s_0 = \frac{S(0)}{N},
+$$ {#eq-ch01-finalsize}
+
+whose root gives the total attack rate $1 - s_\infty$. (With $s_0 \to 1$ this
+reduces to the familiar textbook form.)
+
+## Julia implementation
+
+The right-hand side maps line by line onto @eq-ch01-sir. We use the course
+baseline scenario and solve with `Tsit5`, a robust non-stiff Runge–Kutta method.
+
+```{julia}
+#| label: ch01-kernel
+using OrdinaryDiffEq
+
+function sir_ode!(du, u, p, t)
+    S, I, R = u
+    β, c, γ, N = p
+    λ = β * c * I / N            # force of infection, eq-ch01-sir
+    du[1] = -λ * S
+    du[2] = λ * S - γ * I
+    du[3] = γ * I
+    return nothing
+end
+
+u0 = [990.0, 10.0, 0.0]         # S(0), I(0), R(0)
+p  = (0.05, 10.0, 0.25, 1000.0) # β, c, γ, N
+tspan = (0.0, 80.0)
+
+prob = ODEProblem(sir_ode!, u0, tspan, p)
+sol = solve(prob, Tsit5(); saveat = 0.5)
+sol.u[end]
+```
+
+The reproduction number and epidemic threshold follow directly from
+@eq-ch01-r0 and @eq-ch01-threshold:
+
+```{julia}
+#| label: ch01-r0
+β, c, γ, N = p
+R₀ = β * c / γ
+threshold_fraction = 1 / R₀
+(R₀, threshold_fraction)
+```
+
+With $R_0 = 2$, the epidemic grows while more than half the population is
+susceptible. We solve the final-size relation @eq-ch01-finalsize with a scalar
+Newton iteration from `NonlinearSolve`:
+
+```{julia}
+#| label: ch01-finalsize
+using NonlinearSolve
+
+s₀ = u0[1] / N                                      # initial susceptible fraction
+finalsize(s, R0) = s - s₀ * exp(-R0 * (1 - s))     # eq-ch01-finalsize
+fs_prob = NonlinearProblem(finalsize, 0.2, R₀)
+s_inf = solve(fs_prob, NewtonRaphson()).u
+attack_rate = 1 - s_inf
+(s_inf, attack_rate)
+```
+
+```{julia}
+#| label: fig-ch01-sir
+#| fig-cap: "Baseline SIR dynamics ($R_0=2$). The dashed line marks the threshold susceptible fraction $S/N = 1/R_0$; the infectious curve peaks exactly where $S$ crosses it, as predicted by @eq-ch01-threshold."
+using CairoMakie
+
+t = sol.t
+S = [u[1] for u in sol.u]
+I = [u[2] for u in sol.u]
+R = [u[3] for u in sol.u]
+
+fig = Figure(size = (720, 440))
+ax = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "number of individuals",
+          title = "SIR baseline: S(0)=990, I(0)=10, R₀=2")
+lines!(ax, t, S; color = :steelblue, linewidth = 3, label = "S")
+lines!(ax, t, I; color = :firebrick, linewidth = 3, label = "I")
+lines!(ax, t, R; color = :seagreen,  linewidth = 3, label = "R")
+hlines!(ax, [threshold_fraction * N]; color = :black, linestyle = :dash,
+        label = "S = N/R₀")
+axislegend(ax; position = :rc)
+fig
+```
+
+## Validation
+
+Three independent checks confirm the numerical solution respects the theory.
+
+**Conservation (@eq-ch01-conservation).** The total across compartments must
+equal $N$ at every saved time:
+
+```{julia}
+#| label: ch01-check-conservation
+totals = [sum(u) for u in sol.u]
+all(x -> isapprox(x, N; atol = 1e-6), totals)
+```
+
+**Threshold (@eq-ch01-threshold).** The infectious peak must coincide with the
+susceptible fraction crossing $1/R_0$. We locate the peak and read off $S/N$
+there:
+
+```{julia}
+#| label: ch01-check-threshold
+peak_index = argmax(I)
+S_over_N_at_peak = S[peak_index] / N
+isapprox(S_over_N_at_peak, threshold_fraction; atol = 0.01)
+```
+
+**Final size (@eq-ch01-finalsize).** Extending the horizon, the simulated
+surviving susceptible fraction must match the analytic root $s_\infty$:
+
+```{julia}
+#| label: ch01-check-finalsize
+prob_long = remake(prob; tspan = (0.0, 400.0))
+sol_long = solve(prob_long, Tsit5(); reltol = 1e-10, abstol = 1e-10, save_everystep = false)
+S_end_fraction = sol_long.u[end][1] / N
+isapprox(S_end_fraction, s_inf; atol = 1e-3)
+```
+
+All three return `true`: population is conserved to machine tolerance, the peak
+sits on the threshold, and the long-run susceptible fraction matches the
+final-size prediction $s_\infty \approx 0.200$ (attack rate $\approx 80\%$).
+
+## Interpretation and limitations
+
+The SIR model compresses an epidemic into three numbers — $R_0$, the peak
+timing, and the final size — that follow from just two parameters, $R_0$ and the
+recovery rate. This parsimony is its strength and its limitation. The
+deterministic ODE describes the *mean* behaviour of a large population and cannot
+represent extinction, super-spreading, or the sampling noise of small outbreaks;
+those require the stochastic models of @sec-discrete-time-models and the jump
+processes that follow. Homogeneous mixing ignores age, space, and contact
+structure, addressed later by agent-based models. Exponential infectious periods
+are a modelling convenience relaxed by the delay models in the appendices.
+
+The rest of the book is organised as a guided relaxation of these assumptions:
+
+- **@sec-discrete-time-models** — discrete-time maps and the stochastic Markov
+  chain; convergence to the ODE as the step shrinks.
+- **@sec-ordinary-differential-equations** — the full `OrdinaryDiffEq` workflow:
+  dense interpolation, callbacks, and event handling.
+- Continuous-time Markov chains and jump processes, stochastic differential
+  equations, agent-based models, observation models, and finally inference,
+  sensitivity, and control — each adding realism the baseline omits.
+
+For the solver API see the
+[OrdinaryDiffEq documentation](https://docs.sciml.ai/OrdinaryDiffEq/stable/) and
+for root-finding the
+[NonlinearSolve documentation](https://docs.sciml.ai/NonlinearSolve/stable/).
+
+## Exercises
+
+### Exercise 1 {#ch01-ex1}
+
+Using the baseline parameters, compute $R_0$ for contact rates
+$c \in \{4, 6, 8, 10\}$ (holding $\beta$ and $\gamma$ fixed). For each, solve the
+final-size relation @eq-ch01-finalsize and tabulate the attack rate. Identify the
+contact rate below which no epidemic occurs and relate it to the condition
+$R_0 = 1$.
+
+### Exercise 2 {#ch01-ex2}
+
+Verify the threshold prediction numerically: solve the baseline model, extract
+the time of the infectious peak, and confirm that $S/N$ at that time equals
+$1/R_0$ to within 1%. Then raise $\gamma$ to $0.5$ (so $R_0 = 1$) and describe
+what happens to the infectious trajectory.
+
+## Companion materials
+
+- [Slides](../slides/chapters/01-foundations.html)
+- [Pluto preview](../notebook-exports/chapters/01-foundations.html)
+- [Pluto source](../notebooks/chapters/01-foundations.jl)

@@ -1,0 +1,54 @@
+name: Full course execution
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1"
+
+concurrency:
+  group: full-course-execution
+  cancel-in-progress: false
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - uses: julia-actions/cache@v2
+
+      - uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: "1.9.28"
+
+      - name: Instantiate Julia environment
+        run: |
+          julia --project=. -e 'using Pkg; Pkg.instantiate()'
+          julia --project=environments/ch08 -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Execute book and slide computations
+        env:
+          QUARTO_PROFILE: full
+        run: quarto render
+
+      - name: Execute and export Pluto notebooks
+        env:
+          PLUTO_EXPORT_TASKS: "2"
+        run: julia --project=. scripts/export_notebooks.jl
+
+      - name: Run validators and tests
+        run: |
+          julia --project=. scripts/check_structure.jl
+          julia --project=. scripts/check_data.jl
+          julia --project=. scripts/check_deprecated_apis.jl
+          julia --project=. scripts/check_editorial_contract.jl
+          julia --project=. scripts/check_pdf_figures.jl
+          julia --project=. scripts/check_artifact_sizes.jl
+          julia --project=. -e 'using Pkg; Pkg.test()'
+
+      - name: Require current generated artifacts
+        run: git diff --exit-code -- _freeze slides/_freeze notebook-exports

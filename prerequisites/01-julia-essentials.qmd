@@ -1,0 +1,249 @@
+---
+course-unit: p01-julia-essentials
+status: complete
+---
+
+# Julia essentials for modelers {#sec-julia-essentials}
+
+This prerequisite equips you with the specific slice of Julia that the rest of
+the course depends on: numeric types, functions with in-place mutation,
+broadcasting, `struct`s and named tuples, multiple dispatch, and reproducible
+random numbers. Rather than surveying the language, we introduce each feature
+through the object we return to in every chapter — the susceptible–infectious–
+recovered (SIR) model of @kermack1927.
+
+## Learning goals
+
+By the end of this unit you should be able to:
+
+- read and write Julia functions that mutate a preallocated array in place, the
+  pattern every SciML solver expects;
+- use broadcasting (`.`) and comprehensions to vectorise scalar operations
+  without writing loops;
+- group model quantities with `struct`s and `NamedTuple`s and access them by
+  field;
+- exploit multiple dispatch to write one function that accepts several
+  parameter representations;
+- produce bit-for-bit reproducible stochastic output with `StableRNGs`;
+- render a figure from code with `CairoMakie`.
+
+## Model assumptions and classification
+
+The running example is the deterministic SIR model. It assumes a closed,
+well-mixed population of fixed size $N$, split into susceptible $S$, infectious
+$I$, and recovered $R$ compartments. Individuals mix homogeneously, each
+contacting others at rate $c$; a contact between a susceptible and an infectious
+individual transmits with probability $\beta$; infectious individuals recover at
+constant rate $\gamma$ and are then permanently immune.
+
+| Property | Classification |
+|---|---|
+| Determinism | Deterministic |
+| Time | Continuous |
+| State | Continuous |
+| Representation | Population (compartmental) |
+
+We do not solve the model here — that is @sec-foundations. In this unit the
+model is a vehicle for the Julia constructs you will reuse throughout.
+
+## Equations
+
+The force of infection is $\lambda(t) = \beta c I(t)/N$, and the compartmental
+rates of change are
+
+$$
+\frac{\mathrm{d}S}{\mathrm{d}t} = -\lambda S, \qquad
+\frac{\mathrm{d}I}{\mathrm{d}t} = \lambda S - \gamma I, \qquad
+\frac{\mathrm{d}R}{\mathrm{d}t} = \gamma I.
+$$ {#eq-p01-sir}
+
+Because the three right-hand sides sum to zero, the total population is a
+conserved quantity:
+
+$$
+\frac{\mathrm{d}}{\mathrm{d}t}\left(S + I + R\right) = 0
+\quad\Longrightarrow\quad S(t) + I(t) + R(t) = N.
+$$ {#eq-p01-conservation}
+
+When we later discretise time we will need to turn a continuous rate $r$ into
+the probability that at least one event occurs in a window of length $\delta t$,
+assuming events follow a Poisson process:
+
+$$
+p(r, \delta t) = 1 - e^{-r\,\delta t}.
+$$ {#eq-p01-rate}
+
+## Julia implementation
+
+We use the course baseline scenario $S(0)=990$, $I(0)=10$, $R(0)=0$, $N=1000$,
+$c=10$, $\beta=0.05$, $\gamma=0.25$.
+
+### Functions and in-place mutation
+
+Every SciML right-hand side has the signature `f(du, u, p, t)`: it *writes* the
+derivatives into a preallocated vector `du` and returns nothing. This avoids
+allocating a fresh array on each of the thousands of evaluations a solver makes.
+Here `u = [S, I, R]` maps directly onto the states in @eq-p01-sir, and `p`
+carries $(\beta, c, \gamma, N)$.
+
+```{julia}
+#| label: p01-kernel
+function sir_ode!(du, u, p, t)
+    S, I, R = u
+    β, c, γ, N = p
+    λ = β * c * I / N            # force of infection, λ = βcI/N
+    du[1] = -λ * S              # dS/dt
+    du[2] = λ * S - γ * I       # dI/dt
+    du[3] = γ * I              # dR/dt
+    return nothing
+end
+
+u0 = [990.0, 10.0, 0.0]        # S, I, R
+p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
+du = zeros(3)
+sir_ode!(du, u0, values(p), 0.0)
+du
+```
+
+The trailing `!` is a Julia convention marking a function that mutates its
+arguments. The `NamedTuple` `p` lets us write `p.β` instead of remembering that
+the transmission probability lives at index 1.
+
+### Broadcasting and comprehensions
+
+The dot syntax applies a scalar function elementwise, fusing all operations into
+a single loop with no temporaries. We use it constantly to evaluate a model over
+a grid. Below we compute @eq-p01-rate for a range of window widths and two
+rates.
+
+```{julia}
+#| label: p01-broadcast
+rate_to_proportion(r, δt) = -expm1(-r * δt)   # numerically stable 1 - exp(-r δt)
+
+δts = 0.0:0.05:2.0
+p_fast = rate_to_proportion.(1.0, δts)   # broadcast over δts
+p_slow = rate_to_proportion.(0.25, δts)
+(first(p_fast), last(p_fast), first(p_slow), last(p_slow))
+```
+
+`expm1(x)` computes $e^x - 1$ accurately for small `x`, avoiding the
+cancellation error of `1 - exp(...)`.
+
+### Structs, named tuples, and multiple dispatch
+
+A `struct` bundles related fields into a new type. Multiple dispatch then lets
+one function name resolve to different methods depending on argument types — the
+mechanism SciML uses everywhere. Here `force_of_infection` accepts either a
+plain `NamedTuple` or a typed `SIRParameters`.
+
+```{julia}
+#| label: p01-dispatch
+struct SIRParameters
+    β::Float64
+    c::Float64
+    γ::Float64
+    N::Float64
+end
+
+force_of_infection(I, p::NamedTuple)     = p.β * p.c * I / p.N
+force_of_infection(I, p::SIRParameters)  = p.β * p.c * I / p.N
+
+params = SIRParameters(0.05, 10.0, 0.25, 1000.0)
+(force_of_infection(10.0, p), force_of_infection(10.0, params))
+```
+
+### Reproducible randomness
+
+Later chapters simulate stochastic epidemics. To make figures reproducible we
+seed a *local* random stream with `StableRNGs`, whose output is fixed across
+Julia versions — unlike the global `Random.default_rng()`.
+
+```{julia}
+#| label: p01-rng
+using StableRNGs
+rng = StableRNG(2024)
+draws = rand(rng, 5)
+```
+
+### A figure from code
+
+We now visualise @eq-p01-rate with `CairoMakie`. The last expression in the cell
+(the `Figure`) is what Quarto renders.
+
+```{julia}
+#| label: fig-p01-rate
+#| fig-cap: "Probability of at least one event in a window of width $\\delta t$ for a Poisson process, for a fast ($r=1$) and slow ($r=0.25$) rate. Both curves rise from 0 and saturate at 1."
+using CairoMakie
+
+fig = Figure(size = (640, 400))
+ax = Axis(fig[1, 1];
+    xlabel = "time step δt",
+    ylabel = "event probability  1 − exp(−r δt)",
+    title  = "Rate-to-proportion conversion")
+lines!(ax, δts, p_fast; linewidth = 3, label = "r = 1.0")
+lines!(ax, δts, p_slow; linewidth = 3, label = "r = 0.25")
+axislegend(ax; position = :rb)
+fig
+```
+
+## Validation
+
+Two structural checks confirm the constructs behave as the mathematics
+requires.
+
+First, the derivatives in @eq-p01-sir must sum to zero, reproducing the
+conservation law @eq-p01-conservation:
+
+```{julia}
+#| label: p01-check-conservation
+sir_ode!(du, u0, values(p), 0.0)
+isapprox(sum(du), 0.0; atol = 1e-12)
+```
+
+Second, `rate_to_proportion` must reduce to its first-order Taylor expansion
+$p \approx r\,\delta t$ as $\delta t \to 0$, and must always return a valid
+probability in $[0, 1]$:
+
+```{julia}
+#| label: p01-check-rate
+small = rate_to_proportion(0.25, 1e-6)
+(isapprox(small, 0.25e-6; rtol = 1e-3), all(0 .<= p_fast .<= 1))
+```
+
+Both cells return `true`, so the in-place kernel conserves population and the
+rate conversion is well behaved.
+
+## Interpretation and limitations
+
+You now have the exact Julia vocabulary the course relies on: in-place kernels,
+broadcasting, typed containers, dispatch, and seeded randomness. This unit is
+deliberately narrow — it is not a full Julia tutorial. It does not cover
+package management beyond `using`, performance profiling, metaprogramming, or
+the type system's parametric machinery. For those, consult the official
+[Julia documentation](https://docs.julialang.org/en/v1/) and the
+[performance tips](https://docs.julialang.org/en/v1/manual/performance-tips/).
+The [CairoMakie documentation](https://docs.makie.org/stable/) covers the
+plotting API in depth.
+
+## Exercises
+
+### Exercise 1 {#p01-ex1}
+
+Write an in-place kernel `sir_incidence!(du, u, p, t)` that extends
+@eq-p01-sir with a fourth state $C$ tracking *cumulative* infections, so that
+$\mathrm{d}C/\mathrm{d}t = \lambda S$. Evaluate the derivative at the baseline
+initial condition and confirm that `du[4]` equals `-du[1]` (new infections leave
+$S$ at exactly the rate they enter $C$).
+
+### Exercise 2 {#p01-ex2}
+
+Using `StableRNG(2024)`, draw 10 000 samples from `rand`, and use broadcasting
+to count how many fall below `rate_to_proportion(0.25, 1.0)`. Compare the
+observed fraction with the target probability and explain why a *local* seeded
+RNG makes this figure reproducible across machines.
+
+## Companion materials
+
+- [Slides](../slides/prerequisites/01-julia-essentials.html)
+- [Pluto preview](../notebook-exports/prerequisites/01-julia-essentials.html)
+- [Pluto source](../notebooks/prerequisites/01-julia-essentials.jl)

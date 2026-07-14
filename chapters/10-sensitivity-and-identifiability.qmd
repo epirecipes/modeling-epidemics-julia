@@ -1,0 +1,316 @@
+---
+course-unit: ch10-sensitivity-and-identifiability
+status: complete
+---
+
+# Sensitivity and identifiability
+
+Sensitivity analysis asks how much a chosen model output changes when an input
+changes. Identifiability asks a different question: can the data, in principle,
+distinguish the parameters or only a combination of them? Keeping those
+questions separate prevents a common mistake in epidemic modeling: treating a
+precise numerical estimate as evidence that every biological parameter is
+learnable.
+
+## Learning goals
+
+By the end of this chapter you should be able to:
+
+- distinguish local, global, and structural identifiability analyses;
+- compute local state sensitivities with the current
+  [SciMLSensitivity.jl API](https://docs.sciml.ai/SciMLSensitivity/stable/);
+- use a small Sobol analysis with
+  [GlobalSensitivity.jl](https://docs.sciml.ai/GlobalSensitivity/stable/);
+- use [StructuralIdentifiability.jl](https://docs.sciml.ai/StructuralIdentifiability/stable/)
+  to expose a parameter combination that observations cannot separate; and
+- validate a sensitivity calculation against conservation and a finite
+  perturbation.
+
+## Model assumptions and classification
+
+We use the homogeneous SIR model from @kermack1927. It is a deterministic,
+continuous-time, continuous-state, population model. Individuals move
+irreversibly from susceptible to infectious to removed; the population is
+closed, well mixed, and has frequency-dependent transmission. The contact
+rate and per-contact transmission probability are kept as separate inputs even
+though the ODE depends on their product.
+
+With $S(0)=990$, $I(0)=10$, $R(0)=0$, $N=1000$, contact rate
+$c=10$, transmission probability $\beta=0.05$, and recovery rate
+$\gamma=0.25$, the initial effective reproduction number is
+$\mathcal{R}_0=\beta c/\gamma=2$. These values are the course baseline.
+
+## Equations
+
+Let $x(t)=(S(t),I(t),R(t))$. The transition rates are
+$q_{\mathrm{inf}}=\beta cSI/N$ and $q_{\mathrm{rec}}=\gamma I$:
+
+$$
+\begin{aligned}
+\frac{\mathrm dS}{\mathrm dt} &= -q_{\mathrm{inf}},\\
+\frac{\mathrm dI}{\mathrm dt} &= q_{\mathrm{inf}}-q_{\mathrm{rec}},\\
+\frac{\mathrm dR}{\mathrm dt} &= q_{\mathrm{rec}}.
+\end{aligned}
+$$ {#eq-sensitivity-sir}
+
+The local sensitivity matrix is
+$J_x(t)=\partial x(t)/\partial\theta$, where
+$\theta=(\beta,c,\gamma)$. If a scalar quantity of interest is
+$z=h(x(t),\theta)$, then a first-order perturbation is
+$\Delta z\approx \nabla_\theta z\,\Delta\theta$. This approximation is
+local: it is informative near one parameter vector, not across an entire
+plausible range.
+
+Structural identifiability is about the observation map, not the solver. If
+only incidence $y=\beta cSI/N$ is observed, the transformation
+$(\beta,c)\mapsto(a\beta,c/a)$ leaves the transmission term unchanged.
+Therefore $\beta$ and $c$ cannot be separated without additional information
+or an informative design.
+
+## Julia implementation
+
+The course module provides the baseline constructors and plotting theme. The
+right-hand side below is written out as a pedagogical three-parameter kernel so
+that the derivative in @eq-sensitivity-sir is visible in the code.
+
+```{julia}
+using CairoMakie
+using GlobalSensitivity
+using ModelingToolkit
+using OrdinaryDiffEq
+using SciMLSensitivity
+using StructuralIdentifiability
+
+course_root = normpath(joinpath(@__DIR__, ".."))
+include(joinpath(course_root, "src", "EpiModelingCourse.jl"))
+using .EpiModelingCourse
+
+baseline = BASELINE_PARAMETERS
+u0 = Float64[
+    BASELINE_INITIAL_STATE.S,
+    BASELINE_INITIAL_STATE.I,
+    BASELINE_INITIAL_STATE.R,
+]
+N = baseline.N
+p0 = [baseline.beta, baseline.contact_rate, baseline.gamma]
+tgrid = collect(0.0:1.0:40.0)
+
+function sir_kernel!(du, u, p, t)
+    β, c, γ = p
+    S, I, R = u
+    incidence = β * c * S * I / N
+    du[1] = -incidence
+    du[2] = incidence - γ * I
+    du[3] = γ * I
+    return nothing
+end
+```
+
+### Local sensitivities
+
+`ODEForwardSensitivityProblem` augments the original ODE with the variational
+equations. `extract_local_sensitivities` returns the state trajectory and a
+Jacobian for each saved time. This is the forward-sensitivity route in
+SciMLSensitivity; adjoint methods are preferable when there are many
+parameters but only a few scalar outputs.
+
+```{julia}
+local_problem = ODEForwardSensitivityProblem(
+    sir_kernel!,
+    u0,
+    (first(tgrid), last(tgrid)),
+    p0,
+)
+local_solution = solve(
+    local_problem,
+    Tsit5();
+    saveat = tgrid,
+    abstol = 1e-9,
+    reltol = 1e-9,
+)
+local_states, local_jacobians = extract_local_sensitivities(
+    local_solution,
+    true,
+)
+final_jacobian = local_jacobians[end]
+final_jacobian
+```
+
+The rows of `final_jacobian` correspond to $S$, $I$, and $R$, and its columns
+correspond to $\beta$, $c$, and $\gamma$. The following figure displays the
+infectious-row sensitivities through time.
+
+```{julia}
+#| label: fig-ch10-local-sensitivity
+#| fig-cap: "Local derivatives of the infectious state with respect to the three SIR inputs."
+fig = Figure(size = (800, 450))
+ax = Axis(
+    fig[1, 1],
+    xlabel = "time",
+    ylabel = "∂I/∂parameter",
+    title = "Local forward sensitivities",
+)
+parameter_labels = ["β", "c", "γ"]
+parameter_colors = [:steelblue, :darkorange, :seagreen]
+for j in 1:3
+    lines!(
+        ax,
+        tgrid,
+        [jacobian[2, j] for jacobian in local_jacobians],
+        label = parameter_labels[j],
+        color = parameter_colors[j],
+    )
+end
+axislegend(ax)
+fig
+```
+
+### Global sensitivity
+
+Local derivatives can miss interactions and changes in ranking away from
+$p_0$. GlobalSensitivity evaluates a scalar output over a specified parameter
+box. Here the output is the peak infectious population. `samples=32` keeps
+the example short; a production analysis needs a convergence study over
+larger designs and, ideally, uncertainty distributions justified by data.
+
+```{julia}
+function peak_infectious(p)
+    problem = ODEProblem(sir_kernel!, u0, (0.0, 40.0), Float64.(p))
+    solution = solve(problem, Tsit5(); saveat = 1.0, abstol = 1e-8, reltol = 1e-8)
+    return maximum(Array(solution)[2, :])
+end
+
+parameter_bounds = [
+    [0.02, 0.08],  # β
+    [5.0, 15.0],   # c
+    [0.15, 0.40],  # γ
+]
+sobol = gsa(peak_infectious, Sobol(), parameter_bounds; samples = 32)
+sobol_first = sobol.S1
+sobol_total = sobol.ST
+sobol_first, sobol_total
+```
+
+`S1` measures the first-order contribution and `ST` includes interactions.
+The plot is a compact way to compare the two summaries rather than treating
+one ranking as universal.
+
+```{julia}
+#| label: fig-ch10-global-sensitivity
+#| fig-cap: "First-order and total Sobol indices for the infectious peak."
+fig = Figure(size = (800, 450))
+ax = Axis(
+    fig[1, 1],
+    xticks = (1:3, ["β", "c", "γ"]),
+    ylabel = "Sobol index",
+    title = "Global sensitivity of the peak",
+)
+barplot!(ax, 1:3, sobol_first, dodge = fill(1, 3), color = :steelblue)
+barplot!(ax, (1:3) .+ 0.35, sobol_total, dodge = fill(1, 3), color = :darkorange)
+Legend(fig[1, 2], [PolyElement(color = :steelblue), PolyElement(color = :darkorange)],
+    ["first order", "total"])
+fig
+```
+
+### Structural identifiability
+
+StructuralIdentifiability uses symbolic differential algebra. We deliberately
+omit the known population scale in this small example to highlight the
+confounding of $\beta$ and $c$ in a mass-action-style observation. The package
+uses ASCII parameter names in this interface, so `b` and `c` stand for
+$\beta$ and $c$.
+
+```{julia}
+@parameters b c g
+@independent_variables t
+@variables S(t) I(t) R(t) y(t)
+D = Differential(t)
+identifiability_system = ODESystem(
+    [
+        D(S) ~ -b * c * S * I,
+        D(I) ~ b * c * S * I - g * I,
+        D(R) ~ g * I,
+    ],
+    t;
+    name = :SIRIdentifiability,
+)
+identifiability = assess_identifiability(
+    identifiability_system;
+    measured_quantities = [y ~ b * c * S * I],
+    funcs_to_check = [b, c, g, b * c],
+)
+identifiability
+```
+
+The expected interpretation is that `b` and `c` are nonidentifiable while
+`b*c` and `g` are identifiable for this observation choice. Adding an
+independent observation, fixing the contact rate from external information,
+or collecting contact-pattern data changes the identification problem; no
+optimizer can recover information absent from the observation map.
+
+## Validation
+
+The forward sensitivity solve should conserve total population, and its
+finite perturbation should agree with the derivative at the scale of the
+chosen perturbation. The checks below are deliberately numerical rather than
+asserting a particular rounded sensitivity value.
+
+```{julia}
+population_error = maximum(abs.(vec(sum(local_states; dims = 1)) .- N))
+
+ε = 1e-5
+perturbed = copy(p0)
+perturbed[1] += ε
+perturbed_solution = solve(
+    ODEProblem(sir_kernel!, u0, (0.0, 40.0), perturbed),
+    Tsit5();
+    saveat = tgrid,
+    abstol = 1e-9,
+    reltol = 1e-9,
+)
+finite_difference = (Array(perturbed_solution)[2, end] - local_states[2, end]) / ε
+sensitivity_difference = abs(finite_difference - final_jacobian[2, 1])
+sensitivity_relative_difference =
+    sensitivity_difference / (1 + abs(final_jacobian[2, 1]))
+
+@assert population_error < 1e-6
+@assert sensitivity_relative_difference < 1e-3
+(population_error = population_error, sensitivity_difference = sensitivity_difference,
+    sensitivity_relative_difference = sensitivity_relative_difference)
+```
+
+## Interpretation and limitations
+
+The local plot describes a neighborhood of the baseline; it is not a
+probability distribution or a causal effect. The Sobol result is conditional
+on the rectangular bounds and the small quasi-random design. Structural
+identifiability is an idealized, noiseless, continuous-observation result,
+whereas practical identifiability also depends on observation times,
+measurement error, initial conditions, and model misspecification. In
+particular, a fit of $\beta c$ does not justify separate biological claims
+about $\beta$ and $c$. The SciMLSensitivity, GlobalSensitivity, and
+StructuralIdentifiability APIs used here are documented in their current
+official links above; the computations intentionally remain small enough to
+inspect and rerun.
+
+## Exercises
+
+### Exercise 1 {#ch10-ex1}
+
+Change `peak_infectious` to return the final removed count instead of the
+infectious peak. Re-run the Sobol calculation with the same bounds, compare
+the first-order and total indices, and explain why the ranking can differ
+between a transient output and a cumulative output.
+
+### Exercise 2 {#ch10-ex2}
+
+Extend `identifiability_system` with an observable `n(t) ~ S + I + R`.
+Assess `[b, c, g, b*c]` again. State which confounding remains, if any, and
+describe one additional data stream that would make the separate contact rate
+credible.
+
+## Companion materials
+
+- [Slides](../slides/chapters/10-sensitivity-and-identifiability.html)
+- [Pluto preview](../notebook-exports/chapters/10-sensitivity-and-identifiability.html)
+- [Pluto source](../notebooks/chapters/10-sensitivity-and-identifiability.jl)

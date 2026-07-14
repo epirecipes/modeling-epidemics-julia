@@ -1,0 +1,59 @@
+name: Course checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: course-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - uses: julia-actions/cache@v2
+
+      - uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: "1.9.28"
+
+      - name: Instantiate Julia environment
+        run: |
+          julia --project=. -e 'using Pkg; Pkg.instantiate()'
+          julia --project=environments/ch08 -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Validate course structure
+        run: julia --project=. scripts/check_structure.jl
+
+      - name: Validate capstone data
+        run: julia --project=. scripts/check_data.jl
+
+      - name: Reject obsolete Julia APIs
+        run: julia --project=. scripts/check_deprecated_apis.jl
+
+      - name: Validate editorial contract
+        run: julia --project=. scripts/check_editorial_contract.jl
+
+      - name: Validate PDF source
+        run: julia --project=. scripts/check_pdf_figures.jl
+
+      - name: Run Julia tests
+        run: julia --project=. -e 'using Pkg; Pkg.test()'
+
+      - name: Render book and slides
+        run: quarto render
+
+      - name: Check generated artifact sizes
+        run: julia --project=. scripts/check_artifact_sizes.jl
+
+      - name: Require current freeze artifacts
+        run: git diff --exit-code -- _freeze slides/_freeze

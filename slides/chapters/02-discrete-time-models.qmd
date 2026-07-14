@@ -1,0 +1,127 @@
+---
+title: "Discrete-time models"
+course-unit: ch02-discrete-time-models
+status: complete
+---
+
+## Why this unit matters
+
+- Epidemic data arrive in discrete intervals; many simulations advance in fixed
+  steps.
+- Two flavours of discrete-time SIR:
+  - a **deterministic function map** (continuous state);
+  - a **stochastic Markov chain** (integer counts).
+- As $\delta t\to0$ the map converges to the continuous ODE — tying discrete and
+  continuous worlds together.
+
+## Equations {.smaller}
+
+Per-step probabilities (@eq-s-ch02-probs) from the SIR rates; the map moves
+expectations, the chain draws binomials:
+
+$$
+p_I = 1-e^{-\beta c I_t \delta t/N},\quad p_R = 1-e^{-\gamma\delta t}.
+$$ {#eq-s-ch02-probs}
+
+$$
+\text{map:}\;\; S_{t+1}=S_t-p_I S_t,\;\; I_{t+1}=I_t+p_I S_t-p_R I_t,\;\; R_{t+1}=R_t+p_R I_t.
+$$ {#eq-s-ch02-map}
+
+$$
+\text{chain:}\;\; Y_t\sim\text{Bin}(S_t,p_I),\;\; Z_t\sim\text{Bin}(I_t,p_R).
+$$ {#eq-s-ch02-chain}
+
+The map is the mean-field expectation of the chain.
+
+## Julia API: two kernels side by side
+
+```{julia}
+#| label: s-ch02-kernels
+#| echo: true
+using Distributions, StableRNGs
+rate_to_proportion(r, δt) = -expm1(-r * δt)
+
+function map_step(state, p, δt)                     # deterministic
+    S, I, R = state; β, c, γ, N = p
+    inf = rate_to_proportion(β * c * I / N, δt) * S
+    rec = rate_to_proportion(γ, δt) * I
+    (S - inf, I + inf - rec, R + rec)
+end
+function chain_step(state, p, δt, rng)              # stochastic
+    S, I, R = state; β, c, γ, N = p
+    Y = rand(rng, Binomial(round(Int, S), rate_to_proportion(β * c * I / N, δt)))
+    Z = rand(rng, Binomial(round(Int, I), rate_to_proportion(γ, δt)))
+    (S - Y, I + Y - Z, R + Z)
+end
+function iterate_model(step, u0, p, δt, n; extra = ())
+    traj = Matrix{Float64}(undef, 3, n + 1); traj[:, 1] .= u0; s = Tuple(float.(u0))
+    for k in 1:n; s = step(s, p, δt, extra...); traj[:, k+1] .= s; end
+    traj
+end
+```
+
+## Generated result: map vs chain
+
+```{julia}
+#| label: fig-s-ch02-compare
+#| echo: true
+#| fig-cap: "Infectious compartment: stochastic chain realisations (grey), their mean (red), and the deterministic map (dashed). The map tracks the stochastic mean."
+using CairoMakie
+u0 = [990, 10, 0]; p = (0.05, 10.0, 0.25, 1000.0); δt = 1.0; n = 40; ts = 0:n
+mapt = iterate_model((s, p, dt) -> map_step(s, p, dt), u0, p, δt, n)
+nsims = 200
+ens = [iterate_model(chain_step, u0, p, δt, n; extra = (StableRNG(seed),)) for seed in 1:nsims]
+chainI = reduce(hcat, (t[2, :] for t in ens)); meanI = vec(sum(chainI; dims = 2)) ./ nsims
+fig = Figure(size = (760, 380)); ax = Axis(fig[1,1]; xlabel = "day", ylabel = "I(t)")
+for j in 1:nsims; lines!(ax, ts, chainI[:, j]; color = (:grey, 0.1)); end
+lines!(ax, ts, meanI; color = :firebrick, linewidth = 3, label = "chain mean")
+lines!(ax, ts, mapt[2, :]; color = :black, linestyle = :dash, linewidth = 3, label = "map")
+axislegend(ax; position = :rt); fig
+```
+
+## Validation: convergence to the ODE
+
+```{julia}
+#| label: s-ch02-check
+#| echo: true
+using OrdinaryDiffEq
+function sir_ode!(du, u, p, t)
+    S, I, R = u; β, c, γ, N = p; λ = β * c * I / N
+    du[1] = -λ * S; du[2] = λ * S - γ * I; du[3] = γ * I; return nothing
+end
+ref = solve(ODEProblem(sir_ode!, float.(u0), (0.0, 40.0), p), Tsit5();
+            reltol = 1e-12, abstol = 1e-12, save_everystep = false).u[end]
+δts = [40.0 / 2^k for k in 5:12]
+errs = map(δts) do dt
+    m = iterate_model((s, p, d) -> map_step(s, p, d), u0, p, dt, round(Int, 40.0 / dt))
+    maximum(abs.(m[:, end] .- ref))
+end
+order = sum(log2(errs[k] / errs[k+1]) for k in 1:length(errs)-1) / (length(errs) - 1)
+cons = all(k -> isapprox(sum(mapt[:, k]), 1000.0; atol = 1e-8), 1:n+1)
+(round(order; digits = 3), isapprox(order, 1.0; atol = 0.1), cons)
+```
+
+First-order convergence and conservation confirmed.
+
+## Limitations & takeaways
+
+- The **chain** is most faithful: integer counts, chance extinction, run-to-run
+  variability shrinking with population size.
+- The **map** is its cheap, smooth mean-field shadow — blind to fluctuations.
+- Both are exact only as $\delta t\to0$; a within-step artefact (no infect *and*
+  recover in one step) vanishes as the step shrinks.
+- **Takeaway:** discrete models bridge data cadence and continuous theory.
+
+::: {.notes}
+Stress that the map is literally the expectation of the chain's update, which is
+why the red mean and dashed map coincide. The convergence study reuses the
+forward-Euler order analysis from the calculus prerequisite. Encourage learners
+to shrink δt in the notebook and watch both the discretisation error and the
+extinction probability change.
+:::
+
+## Learn more
+
+- Book chapter: [Discrete-time models](../../chapters/02-discrete-time-models.html)
+- Pluto notebook: [`02-discrete-time-models.jl`](../../notebooks/chapters/02-discrete-time-models.jl)
+- [Distributions.jl](https://juliastats.org/Distributions.jl/stable/)

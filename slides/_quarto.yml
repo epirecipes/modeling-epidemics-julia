@@ -1,0 +1,24 @@
+project:
+  type: default
+  output-dir: ../_site/slides
+  render:
+    - prerequisites/*.qmd
+    - chapters/*.qmd
+    - appendices/*.qmd
+
+engines: [julia]
+
+julia:
+  exeflags: ["--project=@."]
+
+execute:
+  freeze: auto
+
+format:
+  revealjs:
+    theme:
+      - simple
+      - ../styles/slides.scss
+    slide-number: true
+    code-copy: true
+    transition: fade

@@ -1,0 +1,113 @@
+---
+title: "Calculus and numerical methods"
+course-unit: p03-calculus-and-numerical-methods
+status: complete
+---
+
+## Why this unit matters
+
+- Differential equations change instant-to-instant, but a computer takes
+  **finite steps**.
+- We review the derivative as a rate, build the **forward Euler** integrator,
+  and analyse its error — local vs global.
+- These ideas justify the adaptive solvers used from the ODE chapter onward.
+
+## Equations {.smaller}
+
+A first-order Taylor expansion,
+
+$$
+u(t+\delta t)=u(t)+\delta t\,u'(t)+\tfrac12\delta t^2 u''(\xi),
+$$ {#eq-s-p03-taylor}
+
+dropping the remainder gives the **forward Euler** update
+
+$$
+u_{n+1}=u_n+\delta t\,f(u_n).
+$$ {#eq-s-p03-euler}
+
+Local truncation error is $O(\delta t^2)$; over $T/\delta t$ steps the **global**
+error is one order lower, $O(\delta t)$ — slope 1 on log–log axes.
+
+## Julia API: the integrator
+
+```{julia}
+#| label: s-p03-kernel
+#| echo: true
+function sir_ode!(du, u, p, t)
+    S, I, R = u; β, c, γ, N = p
+    λ = β * c * I / N
+    du[1] = -λ * S; du[2] = λ * S - γ * I; du[3] = γ * I; return nothing
+end
+
+function euler(f, u0, p, δt, tmax)
+    ts = 0.0:δt:tmax
+    us = Matrix{Float64}(undef, length(u0), length(ts)); us[:, 1] .= u0
+    du = similar(u0)
+    for n in 1:length(ts)-1
+        f(du, @view(us[:, n]), p, ts[n])
+        us[:, n+1] .= us[:, n] .+ δt .* du     # u_{n+1} = u_n + δt f(u_n)
+    end
+    collect(ts), us
+end
+
+u0 = [990.0, 10.0, 0.0]; p = (0.05, 10.0, 0.25, 1000.0); tmax = 40.0
+_, us = euler(sir_ode!, u0, p, 0.1, tmax); round.(us[:, end]; digits = 2)
+```
+
+## Generated result: convergence
+
+```{julia}
+#| label: fig-s-p03-convergence
+#| echo: true
+#| fig-cap: "Global error of forward Euler at $t=40$ vs step size. Measured points parallel the slope-1 reference, confirming $O(\\delta t)$ convergence."
+using CairoMakie
+δt_ref = tmax / 2^16; _, us_ref = euler(sir_ode!, u0, p, δt_ref, tmax); u_ref = us_ref[:, end]
+δts = [tmax / 2^k for k in 6:11]
+errs = map(δts) do δt
+    _, u = euler(sir_ode!, u0, p, δt, tmax); maximum(abs.(u[:, end] .- u_ref))
+end
+fig = Figure(size = (720, 400))
+ax = Axis(fig[1,1]; xscale = log10, yscale = log10,
+          xlabel = "δt", ylabel = "global error at t = 40")
+scatter!(ax, δts, errs; markersize = 12, color = :firebrick, label = "measured")
+lines!(ax, δts, errs[1] .* (δts ./ δts[1]); linestyle = :dash, color = :black, label = "slope 1")
+axislegend(ax; position = :rb); fig
+```
+
+## Validation
+
+Empirical order (successive halvings) should be ≈ 1, and Euler preserves the
+conservation law at any step:
+
+```{julia}
+#| label: s-p03-check
+#| echo: true
+orders = [log2(errs[k] / errs[k+1]) for k in 1:length(errs)-1]
+mean_order = sum(orders) / length(orders)
+_, uc = euler(sir_ode!, u0, p, 0.5, tmax)
+cons_ok = all(t -> isapprox(t, 1000.0; atol = 1e-9), vec(sum(uc; dims = 1)))
+(round(mean_order; digits = 3), isapprox(mean_order, 1.0; atol = 0.1), cons_ok)
+```
+
+## Limitations & takeaways
+
+- Accuracy improves only **linearly** — halving the error doubles the cost.
+- Forward Euler is only **conditionally stable**: too-large steps oscillate or
+  diverge on stiff problems.
+- Adaptive higher-order methods (`Tsit5`, …) get far more accuracy per unit work.
+- **Takeaway:** understand order and stability, then let SciML choose the step.
+
+::: {.notes}
+Draw the distinction between local truncation error and accumulated global error
+explicitly; the one-order drop is the crux. Note the reference solution is a very
+fine Euler run, so we measure convergence to Euler's own limit. Mention that this
+motivates adopting Tsit5 and adaptive stepping from the ODE chapter, and invite
+learners to try the midpoint method in the notebook to see order 2.
+:::
+
+## Learn more
+
+- Book chapter: [Calculus and numerical methods](../../prerequisites/03-calculus-and-numerical-methods.html)
+- Pluto notebook: [`03-calculus-and-numerical-methods.jl`](../../notebooks/prerequisites/03-calculus-and-numerical-methods.jl)
+- [OrdinaryDiffEq solvers](https://docs.sciml.ai/OrdinaryDiffEq/stable/)
