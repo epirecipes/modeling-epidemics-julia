@@ -5,6 +5,10 @@ status: complete
 
 # Surrogate and emulator models
 
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
 An epidemic simulator can be accurate and still be too expensive to call inside
 an uncertainty analysis, calibration loop, or optimal-design calculation. A
 **surrogate** (or emulator) is a cheaper function fitted to simulator outputs.

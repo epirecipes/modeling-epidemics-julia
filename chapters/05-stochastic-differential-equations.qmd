@@ -5,6 +5,10 @@ status: complete
 
 # Stochastic differential equations
 
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
 A jump process resolves every infection and recovery. A stochastic differential
 equation (SDE) instead describes continuous-valued fluctuations around a
 drift. This is useful when the population is large enough for a diffusion

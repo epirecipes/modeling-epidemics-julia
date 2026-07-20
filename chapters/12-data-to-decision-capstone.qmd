@@ -5,6 +5,10 @@ status: complete
 
 # Data-to-decision capstone
 
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
 This capstone follows one analysis from a committed data file to a conditional
 intervention comparison. The point is not to make a historical claim from a
 small table. It is to make every transition visible: provenance, model choice,

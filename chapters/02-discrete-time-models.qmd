@@ -5,6 +5,10 @@ status: complete
 
 # Discrete-time models {#sec-discrete-time-models}
 
+::: {.callout-note appearance="simple"}
+**Workshop programme**: taught live on Day 1, Session 3. See the [full schedule](../workshop.qmd).
+:::
+
 Many epidemic data arrive in discrete intervals — daily case counts, weekly
 reports — and many simulations advance in fixed steps. This chapter develops the
 discrete-time SIR model in two flavours: a **deterministic function map** with

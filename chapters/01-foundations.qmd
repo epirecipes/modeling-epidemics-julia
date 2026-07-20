@@ -5,6 +5,10 @@ status: complete
 
 # Foundations: SIR theory and the Julia workflow {#sec-foundations}
 
+::: {.callout-note appearance="simple"}
+**Workshop programme**: taught live on Day 1, Session 2. See the [full schedule](../workshop.qmd).
+:::
+
 This chapter is the conceptual anchor of the course. We derive the classical
 susceptible–infectious–recovered (SIR) model of @kermack1927 from first
 principles, state its assumptions precisely, and read off the two quantities

@@ -5,6 +5,10 @@ status: complete
 
 # Continuous-time Markov chains and jump processes
 
+::: {.callout-note appearance="simple"}
+**Workshop programme**: taught live on Day 2, Session 1. See the [full schedule](../workshop.qmd).
+:::
+
 Jump models are useful when the event itself is the object of interest. Instead
 of moving the SIR state a small distance at every numerical time step, we wait
 for the next infection or recovery and move the integer state by one. This is

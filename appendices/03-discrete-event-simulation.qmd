@@ -5,6 +5,10 @@ status: complete
 
 # Discrete-event simulation {#sec-discrete-event-simulation}
 
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
 The jump-process chapter simulates a continuous-time Markov chain by
 tracking *aggregate counts* and repeatedly asking "what happens next, and to
 how many people?" The agent-based model chapter tracks *individuals*, but

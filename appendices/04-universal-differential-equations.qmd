@@ -5,6 +5,10 @@ status: complete
 
 # Universal differential equations
 
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
 ## Learning goals
 
 A *universal differential equation* (UDE) replaces part of a mechanistic

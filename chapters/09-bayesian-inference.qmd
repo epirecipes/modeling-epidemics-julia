@@ -5,6 +5,10 @@ status: complete
 
 # Bayesian inference
 
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
 ## Learning goals
 
 Chapter 8 treated the parameters as fixed unknowns and summarised uncertainty

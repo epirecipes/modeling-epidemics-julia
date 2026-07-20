@@ -7,6 +7,10 @@ julia:
 
 # Frequentist parameter estimation
 
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
 ## Learning goals
 
 Chapter 7 produced simulated case reports from a known process. We now reverse

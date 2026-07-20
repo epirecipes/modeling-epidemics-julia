@@ -5,6 +5,10 @@ status: complete
 
 # Sensitivity and identifiability
 
+::: {.callout-note appearance="simple"}
+**Workshop programme**: taught live on Day 2, Session 4. See the [full schedule](../workshop.qmd).
+:::
+
 Sensitivity analysis asks how much a chosen model output changes when an input
 changes. Identifiability asks a different question: can the data, in principle,
 distinguish the parameters or only a combination of them? Keeping those

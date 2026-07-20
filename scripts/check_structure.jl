@@ -17,6 +17,8 @@ const REQUIRED_BOOK_HEADINGS = [
     "## Exercises",
     "## Companion materials",
 ]
+const VALID_TRACKS = Set(["workshop", "self-study"])
+const WORKSHOP_TIME_LIMIT_MINUTES = parse(Int, get(ENV, "WORKSHOP_TIME_LIMIT_MINUTES", "1000"))
 
 units = TOML.parsefile(joinpath(ROOT, "course-units.toml"))["units"]
 errors = String[]
@@ -52,7 +54,10 @@ solution_paths = isdir(solution_dir) ? sort(filter(path -> endswith(path, ".qmd"
 length(solution_paths) == 7 || push!(errors, "Expected 7 solution part files, found $(length(solution_paths)).")
 solutions = join(read_required.(solution_paths), "\n")
 resources = read_required(joinpath(ROOT, "resources.qmd"))
+workshop_page = read_required(joinpath(ROOT, "workshop.qmd"))
 seen_ids = Set{String}()
+workshop_slots = Dict{Tuple{Int, Int}, String}()
+workshop_minutes = Int[]
 
 for unit in units
     id = unit["id"]
@@ -65,6 +70,32 @@ for unit in units
     id in seen_ids && push!(errors, "Duplicate teaching unit ID: $id.")
     push!(seen_ids, id)
     overall_status in VALID_STATUSES || push!(errors, "$id has invalid overall status '$overall_status'.")
+
+    track = get(unit, "track", nothing)
+    if isnothing(track)
+        push!(errors, "$id is missing a track field.")
+    elseif !(track in VALID_TRACKS)
+        push!(errors, "$id has invalid track '$track'.")
+    elseif track == "workshop"
+        for key in ("day", "session", "time_minutes")
+            haskey(unit, key) || push!(errors, "$id is a workshop unit but has no '$key'.")
+        end
+        if haskey(unit, "day") && haskey(unit, "session")
+            slot = (unit["day"], unit["session"])
+            if haskey(workshop_slots, slot)
+                push!(errors, "$id and $(workshop_slots[slot]) both claim day $(slot[1]) session $(slot[2]).")
+            else
+                workshop_slots[slot] = id
+            end
+        end
+        haskey(unit, "time_minutes") && push!(workshop_minutes, unit["time_minutes"])
+        occursin("$(section)/$(stem).html", workshop_page) ||
+            push!(errors, "$id is a workshop unit but has no link on workshop.qmd.")
+    else
+        for key in ("day", "session", "time_minutes")
+            haskey(unit, key) && push!(errors, "$id is self-study but has a workshop-only field '$key'.")
+        end
+    end
 
     book_path = joinpath(ROOT, section, "$stem.qmd")
     slide_path = joinpath(ROOT, "slides", section, "$stem.qmd")
@@ -115,6 +146,12 @@ end
 
 solution_matches = collect(eachmatch(r"\{#solution-[a-z0-9]+-ex[0-9]+\}", solutions))
 length(solution_matches) == 48 || push!(errors, "Expected 48 solution anchors, found $(length(solution_matches)).")
+
+total_workshop_minutes = sum(workshop_minutes; init = 0)
+total_workshop_minutes > WORKSHOP_TIME_LIMIT_MINUTES && push!(
+    errors,
+    "Workshop track totals $(total_workshop_minutes) minutes, over the $(WORKSHOP_TIME_LIMIT_MINUTES)-minute budget.",
+)
 
 for source_dir in ("prerequisites", "chapters", "appendices", "slides", "notebooks")
     for (parent, subdirectories, files) in walkdir(joinpath(ROOT, source_dir))

@@ -5,6 +5,10 @@ status: complete
 
 # Finite-state projection
 
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
 ## Learning goals
 
 Stochastic compartmental models are usually studied by simulating many

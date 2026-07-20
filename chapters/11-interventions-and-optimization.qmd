@@ -5,6 +5,10 @@ status: complete
 
 # Interventions and optimization
 
+::: {.callout-note appearance="simple"}
+**Workshop programme**: taught live on Day 3, Session 2. See the [full schedule](../workshop.qmd).
+:::
+
 An intervention model has two layers. First, a **scenario** specifies a
 policy and simulates its consequences. Second, an **optimization** compares
 many admissible policies using an explicit objective and constraints. Keeping

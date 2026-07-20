@@ -5,6 +5,10 @@ status: complete
 
 # Model composition and structured populations
 
+::: {.callout-note appearance="simple"}
+**Workshop programme**: taught live on Day 2, Session 2. See the [full schedule](../workshop.qmd).
+:::
+
 Complex epidemic models are easier to audit when they are assembled from
 named components. A force-of-infection component can be connected to
 susceptible and infectious components, or a reaction network can be reused as

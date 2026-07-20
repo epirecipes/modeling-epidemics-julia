@@ -5,6 +5,10 @@ status: complete
 
 # Probability and stochastic processes {#sec-probability-and-stochastic-processes}
 
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
 Epidemics in finite populations are inherently random: whether the next contact
 transmits, and whether an infectious person recovers today or tomorrow, are
 chance events. This unit builds the probability foundations the course needs —

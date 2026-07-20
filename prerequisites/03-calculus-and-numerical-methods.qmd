@@ -5,6 +5,10 @@ status: complete
 
 # Calculus and numerical methods {#sec-calculus-and-numerical-methods}
 
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
 Differential equations describe how a system changes instant to instant, but a
 computer can only take finite steps. This unit bridges that gap. We review the
 derivative as a rate of change, introduce the forward Euler method as the

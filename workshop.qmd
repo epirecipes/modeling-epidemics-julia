@@ -1,0 +1,87 @@
+# Workshop programme {.unnumbered}
+
+This book is a comprehensive, self-paced course consisting of 24 teaching units. A selection of 10 units is covered during a 3-day workshop. This page outlines the programme, detailing which units are taught in person and the order in which they are presented.
+
+Each unit in the book, whether taught in the workshop or not, includes a complete chapter, a slide deck, an interactive Pluto notebook, and exercises with solutions. Attending the workshop offers in-person instruction, discussion, and debugging assistance for the 10 units. The remaining 14 units are fully developed and available for self-study, allowing you to work through them at your own pace, whether before, during, or after the workshop.
+
+## What the workshop covers
+
+The ten sessions move in the following order: deterministic foundations, then stochastic and structural complexity, then using models against data and decisions.
+
+- **Day 1: deterministic foundations.** A Julia primer, the SIR model derived from first principles, discrete-time models, and the `OrdinaryDiffEq` workflow.
+- **Day 2: stochasticity, structure, and heterogeneity.** Continuous-time jump processes, stochastic differential equations, agent-based models, and global sensitivity analysis.
+- **Day 3: connecting models to data and decisions.** Observation models and simulated data, then interventions and optimisation. 
+
+The workshop deliberately stops before parameter estimation and Bayesian inference ([ch08](chapters/08-parameter-estimation.html), [ch09](chapters/09-bayesian-inference.html)). For those interested in fitting models to data and inference, we recommend having a look at the modelling course ["Model Fitting and Inference for Infectious Disease Dynamics"](https://www.lshtm.ac.uk/study/courses/short-courses/infectious-diseases-dynamics).
+
+## Schedule
+
+::: {.callout-note appearance="simple"}
+Days 1 and 2 run 09:30–17:30; Day 3 runs 09:30–16:00. Each day has a mid-morning or mid-afternoon break and lunch. Day 3 has a longer lunch and a closing block. Ten 90-minute sessions total 15 hours of teaching within 22.5 hours of contact time; the remaining time covers welcome and wrap-up, breaks, and lunch.
+:::
+
+### Day 1: Deterministic foundations
+
+| Time | Session | Unit |
+|---|---|---|
+| 09:30–09:45 | Welcome and environment check | - |
+| 09:45–11:15 | Session 1 | [Julia essentials for modelers](prerequisites/01-julia-essentials.html) |
+| 11:15–11:30 | Break | - |
+| 11:30–13:00 | Session 2 | [Foundations: SIR theory and the Julia workflow](chapters/01-foundations.html) |
+| 13:00–14:00 | Lunch | - |
+| 14:00–15:30 | Session 3 | [Discrete-time models](chapters/02-discrete-time-models.html) |
+| 15:30–15:45 | Break | - |
+| 15:45–17:15 | Session 4 | [Ordinary differential equations](chapters/03-ordinary-differential-equations.html) |
+| 17:15–17:30 | Day wrap-up and self-study pointers | - |
+
+### Day 2: Stochasticity, structure, and heterogeneity
+
+| Time | Session | Unit |
+|---|---|---|
+| 09:30–11:00 | Session 1 | [Continuous-time Markov chains and jump processes](chapters/04-jump-processes.html) |
+| 11:00–11:15 | Break | - |
+| 11:15–12:45 | Session 2 | [Stochastic differential equations](chapters/05-stochastic-differential-equations.html) |
+| 12:45–13:45 | Lunch | - |
+| 13:45–15:15 | Session 3 | [Agent-based models](chapters/06-agent-based-models.html) |
+| 15:15–15:30 | Break | - |
+| 15:30–17:00 | Session 4 | [Sensitivity and identifiability](chapters/10-sensitivity-and-identifiability.html) |
+| 17:00–17:30 | Day wrap-up | - |
+
+### Day 3: Connecting models to data and decisions
+
+| Time | Session | Unit |
+|---|---|---|
+| 09:30–09:45 | Recap | - |
+| 09:45–11:15 | Session 1 | [Observation models and simulated data](chapters/07-observation-models.html) |
+| 11:15–11:30 | Break | - |
+| 11:30–13:00 | Session 2 | [Interventions and optimization](chapters/11-interventions-and-optimization.html) |
+| 13:00–14:30 | Lunch | - |
+| 14:30–16:00 | Self-study map, closing, and extended Q&A | - |
+
+## Self-study
+
+The chapters and appendices listed below are not part of the workshop, but they can be organised as follows:
+
+**Background** : Further material to support the workshop sessions.
+
+- [Probability and stochastic processes](prerequisites/02-probability-and-stochastic-processes.html) : Background for the stochastic sessions.
+- [Calculus and numerical methods](prerequisites/03-calculus-and-numerical-methods.html) : Background for the ODE session.
+
+**Connecting models to data, in depth** : Although we suggest that people interested in parameter estimation and Bayesian inference should look at the "Model Fitting and Inference for Infectious Disease Dynamics" course, the following three chapters provide a more detailed look at the topic.
+
+- [Frequentist parameter estimation](chapters/08-parameter-estimation.html)
+- [Bayesian inference](chapters/09-bayesian-inference.html)
+- [Data-to-decision capstone](chapters/12-data-to-decision-capstone.html)
+
+**Advanced extensions** : Each chapter builds on a taught session.
+
+- [Delay differential equations](appendices/01-delay-differential-equations.html) : Generalises the memoryless recovery assumption used in the Day 1 ODE, Day 2 jump-process, and Day 2 SDE sessions.
+- [Stochastic delay differential equations](appendices/02-stochastic-delay-differential-equations.html) : Recombines that fixed delay with the Day 2 stochastic differential equations session.
+- [Discrete-event simulation](appendices/03-discrete-event-simulation.html) : Combines the Day 2 jump-process and agent-based sessions into one individual-level, continuously-timed simulation.
+- [Universal differential equations](appendices/04-universal-differential-equations.html) and [Surrogate and emulator models](appendices/07-surrogate-models.html) : Scientific machine learning.
+- [Finite-state projection](appendices/05-finite-state-projection.html) : Extends the Day 2 jump-process session by solving directly for the probability distribution instead of simulating trajectories.
+- [Probabilistic numerical integration](appendices/06-probabilistic-numerical-integration.html) : Extends the Day 1 ODE session by quantifying the solver's own numerical uncertainty.
+- [Advanced optimal control](appendices/08-advanced-optimal-control.html) : Extends the Day 3 interventions session.
+- [Model composition and structured populations](appendices/09-model-composition.html) : Extends the Day 2 stochastic differential equations session, composing structured, multi-group populations.
+
+See the [course resources page](resources.qmd) for book, slide, and notebook links grouped by track.

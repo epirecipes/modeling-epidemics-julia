@@ -5,6 +5,10 @@ status: complete
 
 # Agent-based models
 
+::: {.callout-note appearance="simple"}
+**Workshop programme**: taught live on Day 2, Session 3. See the [full schedule](../workshop.qmd).
+:::
+
 An agent-based model (ABM) represents a population as interacting individuals.
 The SIR labels remain familiar, but the model now exposes who contacts whom,
 when an agent changes status, and how an update schedule can affect results.

@@ -5,6 +5,10 @@ status: complete
 
 # Julia essentials for modelers {#sec-julia-essentials}
 
+::: {.callout-note appearance="simple"}
+**Workshop programme**: taught live on Day 1, Session 1. See the [full schedule](../workshop.qmd).
+:::
+
 This prerequisite equips you with the specific slice of Julia that the rest of
 the course depends on: numeric types, functions with in-place mutation,
 broadcasting, `struct`s and named tuples, multiple dispatch, and reproducible

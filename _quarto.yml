@@ -6,6 +6,7 @@ project:
     - quarto render slides
   render:
     - index.qmd
+    - workshop.qmd
     - prerequisites/*.qmd
     - chapters/*.qmd
     - appendices/*.qmd
@@ -21,6 +22,7 @@ book:
   page-navigation: true
   chapters:
     - index.qmd
+    - workshop.qmd
     - part: "Prerequisites"
       chapters:
         - prerequisites/01-julia-essentials.qmd

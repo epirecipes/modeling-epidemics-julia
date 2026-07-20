@@ -5,6 +5,10 @@ status: complete
 
 # Observation models and simulated data
 
+::: {.callout-note appearance="simple"}
+**Workshop programme**: taught live on Day 3, Session 1. See the [full schedule](../workshop.qmd).
+:::
+
 ## Learning goals
 
 Every earlier chapter built a *process model*: a set of rules that generate the

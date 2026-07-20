@@ -5,6 +5,10 @@ status: complete
 
 # Advanced optimal control
 
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
 Optimal control asks for a time-dependent intervention rather than a single
 parameter value. The control is itself a function, so discretizing time and
 discretizing a control are modeling choices. This appendix uses `InfiniteOpt`

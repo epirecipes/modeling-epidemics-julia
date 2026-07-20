@@ -5,6 +5,10 @@ status: complete
 
 # Stochastic delay differential equations {#sec-stochastic-delay-differential-equations}
 
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
 The delay differential equation (DDE) of @sec-delay-differential-equations is
 still deterministic: given the same history, it always produces the same
 trajectory. Real epidemics have finite populations and demographic noise, just

@@ -5,6 +5,10 @@ status: complete
 
 # Probabilistic numerical integration
 
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
 ## Learning goals
 
 Every numerical ODE solve is an approximation, yet a conventional solver returns

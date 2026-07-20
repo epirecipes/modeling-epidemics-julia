@@ -5,6 +5,10 @@ status: complete
 
 # Ordinary differential equations {#sec-ordinary-differential-equations}
 
+::: {.callout-note appearance="simple"}
+**Workshop programme**: taught live on Day 1, Session 4. See the [full schedule](../workshop.qmd).
+:::
+
 Chapter @sec-foundations solved the SIR model to establish the theory; this
 chapter is about the *tools*. We work through the `OrdinaryDiffEq` workflow in
 depth: defining an `ODEProblem`, choosing the `Tsit5` solver, evaluating the

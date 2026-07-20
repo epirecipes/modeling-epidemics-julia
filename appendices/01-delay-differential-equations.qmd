@@ -5,6 +5,10 @@ status: complete
 
 # Delay differential equations {#sec-delay-differential-equations}
 
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
 Every population model so far in this course — the ODE of @sec-foundations,
 the jump process, and the stochastic differential equation — assumes an
 infectious period that is **exponentially distributed**: recovery happens at a

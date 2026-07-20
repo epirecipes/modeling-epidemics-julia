@@ -1,12 +1,23 @@
 /_site/
-.quarto/
 /.cache/
 /notebook-exports/.cache/
 /LocalPreferences.toml
 .DS_Store
+
+# Per-file Quarto execute caches, superseded by the committed _freeze/ and
+# slides/_freeze/. check_structure.jl bans these anywhere under the four
+# source trees, so we keep them out of git as they're regenerated.
+prerequisites/**/*_files/
+chapters/**/*_files/
+appendices/**/*_files/
+slides/**/*_files/
+notebooks/**/*_files/
+prerequisites/*.log
+chapters/*.log
 appendices/*.log
+slides/*.log
 appendices/solutions/*.html
-appendices/solutions/*_files/
+
 *.jl.cov
 *.jl.*.cov
 *.jl.mem
@@ -16,3 +27,5 @@ appendices/solutions/*_files/
 /_pdf/
 /index_files/
 /modeling-epidemics-with-julia.tex
+
+/.quarto/
