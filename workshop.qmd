@@ -29,9 +29,9 @@ Days 1 and 2 run 09:30–17:30; Day 3 runs 09:30–16:00. Each day has a mid-mor
 | 11:15–11:30 | Break | - |
 | 11:30–13:00 | Session 2 | [Foundations: SIR theory and the Julia workflow](chapters/01-foundations.html) |
 | 13:00–14:00 | Lunch | - |
-| 14:00–15:30 | Session 3 | [Discrete-time models](chapters/02-discrete-time-models.html) |
+| 14:00–15:30 | Session 3 | [Ordinary differential equations](chapters/03-ordinary-differential-equations.html) |
 | 15:30–15:45 | Break | - |
-| 15:45–17:15 | Session 4 | [Ordinary differential equations](chapters/03-ordinary-differential-equations.html) |
+| 15:45–17:15 | Session 4 | [Discrete-time models](chapters/02-discrete-time-models.html) |
 | 17:15–17:30 | Day wrap-up and self-study pointers | - |
 
 ### Day 2: Stochasticity, structure, and heterogeneity
@@ -42,9 +42,9 @@ Days 1 and 2 run 09:30–17:30; Day 3 runs 09:30–16:00. Each day has a mid-mor
 | 11:00–11:15 | Break | - |
 | 11:15–12:45 | Session 2 | [Stochastic differential equations](chapters/05-stochastic-differential-equations.html) |
 | 12:45–13:45 | Lunch | - |
-| 13:45–15:15 | Session 3 | [Agent-based models](chapters/06-agent-based-models.html) |
+| 13:45–15:15 | Session 3 | [Sensitivity and identifiability](chapters/10-sensitivity-and-identifiability.html) |
 | 15:15–15:30 | Break | - |
-| 15:30–17:00 | Session 4 | [Sensitivity and identifiability](chapters/10-sensitivity-and-identifiability.html) |
+| 15:30–17:00 | Session 4 | [Observation models and simulated data](chapters/07-observation-models.html) |
 | 17:00–17:30 | Day wrap-up | - |
 
 ### Day 3: Connecting models to data and decisions
@@ -52,9 +52,9 @@ Days 1 and 2 run 09:30–17:30; Day 3 runs 09:30–16:00. Each day has a mid-mor
 | Time | Session | Unit |
 |---|---|---|
 | 09:30–09:45 | Recap | - |
-| 09:45–11:15 | Session 1 | [Observation models and simulated data](chapters/07-observation-models.html) |
+| 09:45–11:15 | Session 1 | [Interventions and optimization](chapters/11-interventions-and-optimization.html) |
 | 11:15–11:30 | Break | - |
-| 11:30–13:00 | Session 2 | [Interventions and optimization](chapters/11-interventions-and-optimization.html) |
+| 11:30–13:00 | Session 2 | [Agent-based models](chapters/06-agent-based-models.html) |
 | 13:00–14:30 | Lunch | - |
 | 14:30–16:00 | Self-study map, closing, and extended Q&A | - |
 
