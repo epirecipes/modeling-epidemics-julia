@@ -22,19 +22,19 @@ Proposed schedule, see the [workshop programme](workshop.qmd) for the full day-b
 - [Pluto preview](notebook-exports/chapters/01-foundations.html)
 - [Pluto source](notebooks/chapters/01-foundations.jl)
 
-### Discrete-time models — Day 1, Session 3
-
-- [Book](chapters/02-discrete-time-models.html)
-- [Slides](slides/chapters/02-discrete-time-models.html)
-- [Pluto preview](notebook-exports/chapters/02-discrete-time-models.html)
-- [Pluto source](notebooks/chapters/02-discrete-time-models.jl)
-
-### Ordinary differential equations — Day 1, Session 4
+### Ordinary differential equations — Day 1, Session 3
 
 - [Book](chapters/03-ordinary-differential-equations.html)
 - [Slides](slides/chapters/03-ordinary-differential-equations.html)
 - [Pluto preview](notebook-exports/chapters/03-ordinary-differential-equations.html)
 - [Pluto source](notebooks/chapters/03-ordinary-differential-equations.jl)
+
+### Discrete-time models — Day 1, Session 4
+
+- [Book](chapters/02-discrete-time-models.html)
+- [Slides](slides/chapters/02-discrete-time-models.html)
+- [Pluto preview](notebook-exports/chapters/02-discrete-time-models.html)
+- [Pluto source](notebooks/chapters/02-discrete-time-models.jl)
 
 ### Continuous-time Markov chains and jump processes — Day 2, Session 1
 
@@ -50,33 +50,33 @@ Proposed schedule, see the [workshop programme](workshop.qmd) for the full day-b
 - [Pluto preview](notebook-exports/chapters/05-stochastic-differential-equations.html)
 - [Pluto source](notebooks/chapters/05-stochastic-differential-equations.jl)
 
-### Agent-based models — Day 2, Session 3
-
-- [Book](chapters/06-agent-based-models.html)
-- [Slides](slides/chapters/06-agent-based-models.html)
-- [Pluto preview](notebook-exports/chapters/06-agent-based-models.html)
-- [Pluto source](notebooks/chapters/06-agent-based-models.jl)
-
-### Sensitivity and identifiability — Day 2, Session 4
+### Sensitivity and identifiability — Day 2, Session 3
 
 - [Book](chapters/10-sensitivity-and-identifiability.html)
 - [Slides](slides/chapters/10-sensitivity-and-identifiability.html)
 - [Pluto preview](notebook-exports/chapters/10-sensitivity-and-identifiability.html)
 - [Pluto source](notebooks/chapters/10-sensitivity-and-identifiability.jl)
 
-### Observation models and simulated data — Day 3, Session 1
+### Observation models and simulated data — Day 2, Session 4
 
 - [Book](chapters/07-observation-models.html)
 - [Slides](slides/chapters/07-observation-models.html)
 - [Pluto preview](notebook-exports/chapters/07-observation-models.html)
 - [Pluto source](notebooks/chapters/07-observation-models.jl)
 
-### Interventions and optimization — Day 3, Session 2
+### Interventions and optimization — Day 3, Session 1
 
 - [Book](chapters/11-interventions-and-optimization.html)
 - [Slides](slides/chapters/11-interventions-and-optimization.html)
 - [Pluto preview](notebook-exports/chapters/11-interventions-and-optimization.html)
 - [Pluto source](notebooks/chapters/11-interventions-and-optimization.jl)
+
+### Agent-based models — Day 3, Session 2
+
+- [Book](chapters/06-agent-based-models.html)
+- [Slides](slides/chapters/06-agent-based-models.html)
+- [Pluto preview](notebook-exports/chapters/06-agent-based-models.html)
+- [Pluto source](notebooks/chapters/06-agent-based-models.jl)
 
 ## Self-study
 
