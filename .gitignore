@@ -12,6 +12,12 @@ chapters/**/*_files/
 appendices/**/*_files/
 slides/**/*_files/
 notebooks/**/*_files/
+# Reveal.js and other resources a single-file render drops beside the freeze.
+# A full render writes them to the output directory instead and deletes these,
+# so check_freeze_drift.jl rejects them if they reach git.
+_freeze/**/libs/
+slides/_freeze/**/libs/
+
 prerequisites/*.log
 chapters/*.log
 appendices/*.log

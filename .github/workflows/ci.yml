@@ -60,4 +60,4 @@ jobs:
         run: julia --project=. scripts/check_artifact_sizes.jl
 
       - name: Require current freeze artifacts
-        run: git diff --exit-code -- _freeze slides/_freeze
+        run: julia --project=. scripts/check_freeze_drift.jl
