@@ -54,5 +54,6 @@ jobs:
           julia --project=. scripts/check_artifact_sizes.jl
           julia --project=. -e 'using Pkg; Pkg.test()'
 
+      # notebook-exports is excluded
       - name: Require current generated artifacts
-        run: git diff --exit-code -- _freeze slides/_freeze notebook-exports
+        run: git diff --exit-code -- _freeze slides/_freeze

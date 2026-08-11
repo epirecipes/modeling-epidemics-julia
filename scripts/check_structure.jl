@@ -113,6 +113,16 @@ for unit in units
     occursin("course_unit = \"$full_id\"", notebook) || push!(errors, "$id notebook metadata has the wrong course-unit.")
     occursin("Pkg.activate", notebook) || push!(errors, "$id notebook does not activate the shared course environment.")
 
+    # The opening callout on every book page is a further copy of the schedule, so it
+    # drifts silently on a reorder unless it is checked against course-units.toml.
+    expected_callout = if track == "workshop" && haskey(unit, "day") && haskey(unit, "session")
+        "**Workshop programme**: taught live on Day $(unit["day"]), Session $(unit["session"])."
+    elseif track == "self-study"
+        "**Self-study**: not taught at the workshop"
+    end
+    isnothing(expected_callout) || occursin(expected_callout, book) ||
+        push!(errors, "$id book callout contradicts course-units.toml; expected \"$expected_callout\".")
+
     if overall_status == "complete" && (book_status != "complete" || slide_status != "complete" || notebook_status != "complete")
         push!(errors, "$id is overall complete but one or more companion artifacts are incomplete.")
     end

@@ -6,7 +6,7 @@ status: complete
 # Sensitivity and identifiability
 
 ::: {.callout-note appearance="simple"}
-**Workshop programme**: taught live on Day 2, Session 4. See the [full schedule](../workshop.qmd).
+**Workshop programme**: taught live on Day 2, Session 3. See the [full schedule](../workshop.qmd).
 :::
 
 Sensitivity analysis asks how much a chosen model output changes when an input
@@ -80,6 +80,7 @@ that the derivative in @eq-sensitivity-sir is visible in the code.
 ```{julia}
 using CairoMakie
 using GlobalSensitivity
+using Logging
 using ModelingToolkit
 using OrdinaryDiffEq
 using SciMLSensitivity
@@ -238,11 +239,14 @@ identifiability_system = ODESystem(
     t;
     name = :SIRIdentifiability,
 )
+# Progress logging carries wall-clock timings that differ on every run.
+Logging.disable_logging(Logging.Info)
 identifiability = assess_identifiability(
     identifiability_system;
     measured_quantities = [y ~ b * c * S * I],
     funcs_to_check = [b, c, g, b * c],
 )
+Logging.disable_logging(Logging.BelowMinLevel)
 identifiability
 ```
 

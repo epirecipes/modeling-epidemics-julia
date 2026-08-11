@@ -1,2 +1,7 @@
+# Discards the freeze so every document re-executes, then records the results.
+project:
+  pre-render:
+    - julia scripts/reset_freeze.jl
+
 execute:
-  freeze: false
+  freeze: auto

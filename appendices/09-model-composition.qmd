@@ -6,7 +6,7 @@ status: complete
 # Model composition and structured populations
 
 ::: {.callout-note appearance="simple"}
-**Workshop programme**: taught live on Day 2, Session 2. See the [full schedule](../workshop.qmd).
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
 :::
 
 Complex epidemic models are easier to audit when they are assembled from
