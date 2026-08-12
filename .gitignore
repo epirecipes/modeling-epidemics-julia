@@ -18,6 +18,11 @@ notebooks/**/*_files/
 _freeze/**/libs/
 slides/_freeze/**/libs/
 
+# Throwaway document CI renders to absorb notebook-worker precompilation.
+/warmup.qmd
+/warmup.html
+/warmup_files/
+
 prerequisites/*.log
 chapters/*.log
 appendices/*.log

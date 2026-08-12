@@ -1,2 +1,5 @@
+# The book profile deletes both freezes and records what it re-executes.
+# `freeze: false` would re-execute the slides too but write nothing back,
+# leaving slides/_freeze empty for the rest of the run.
 execute:
-  freeze: false
+  freeze: auto

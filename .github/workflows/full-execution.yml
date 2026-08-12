@@ -34,6 +34,24 @@ jobs:
           julia --project=. -e 'using Pkg; Pkg.instantiate()'
           julia --project=environments/ch08 -e 'using Pkg; Pkg.instantiate()'
 
+      # Whichever unit executes first otherwise captures the worker's
+      # precompilation output in its own cell. This discards it instead.
+      - name: Warm the notebook worker
+        run: |
+          cat > warmup.qmd <<'QMD'
+          ---
+          title: Warmup
+          ---
+
+          ```{julia}
+          using CairoMakie, DataFrames
+          DataFrame(warm = 1:2)
+          lines(1:10, collect(1.0:10.0))
+          ```
+          QMD
+          quarto render warmup.qmd
+          rm -rf warmup.qmd warmup.html warmup_files _freeze/warmup
+
       - name: Execute book and slide computations
         env:
           QUARTO_PROFILE: full

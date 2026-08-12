@@ -5,13 +5,30 @@
 
 const ROOT = normpath(joinpath(@__DIR__, ".."))
 const TARGETS = ["_freeze", "slides/_freeze"]
-const RTOL = parse(Float64, get(ENV, "FREEZE_DRIFT_RTOL", "1e-6"))
+
+# A macOS and a Linux run of the course agree to about 1e-4 on the noisiest
+# unit.
+const RTOL = parse(Float64, get(ENV, "FREEZE_DRIFT_RTOL", "1e-3"))
 const ATOL = parse(Float64, get(ENV, "FREEZE_DRIFT_ATOL", "1e-9"))
 const REPORTED_LINES = 4
 const LINE_WIDTH = 160
 
+# Training a neural ODE amplifies platform differences: macOS and Linux runs
+# disagree by tens of percent on the fitted error metrics and print different
+# solver warnings. solutions.qmd includes the SciML answers, so it inherits
+# this. Only the presence of these units is checked.
+const NON_REPRODUCIBLE = [
+    "appendices/04-universal-differential-equations",
+    "appendices/solutions",
+]
+
 const BASE64_PAYLOAD = r"base64,\s*[A-Za-z0-9+/=]+"
 const NUMBER = r"[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?"
+
+# Quarto versions differ in how deep a path they record for a unit's figure
+# directory, and `freeze: auto` only rewrites the entry when the unit is
+# re-executed, so a freeze holds a mix of depths. Compare the unit name only.
+const SUPPORTING_ENTRY = r"^(\s*)\"([^\"]*_files)(?:/[^\"]*)?\"(,?)$"
 
 cd(ROOT)
 
@@ -30,7 +47,8 @@ end
 
 function normalized_lines(text)
     payloads_stripped = replace(text, BASE64_PAYLOAD => "base64,<image>")
-    split(replace(payloads_stripped, "\\n" => '\n'), '\n')
+    lines = split(replace(payloads_stripped, "\\n" => '\n'), '\n')
+    replace.(lines, SUPPORTING_ENTRY => s"\1\"\2\"\3")
 end
 
 function skeleton_and_numbers(line)
@@ -71,6 +89,7 @@ errors = String[]
 stray = String[]
 checked = 0
 image_only = 0
+skipped = 0
 
 for path in committed_paths()
     if !is_execute_result(path)
@@ -81,6 +100,11 @@ for path in committed_paths()
 
     if !isfile(joinpath(ROOT, path))
         push!(errors, "$path was not regenerated; the unit no longer renders.")
+        continue
+    end
+
+    if any(unit -> contains(path, unit), NON_REPRODUCIBLE)
+        global skipped += 1
         continue
     end
 
@@ -121,6 +145,7 @@ end
 
 println("Freeze results compared: $(checked)")
 println("Unchanged apart from image bytes: $(image_only)")
+println("Present but not compared: $(skipped) ($(join(NON_REPRODUCIBLE, ", ")))")
 
 if !isempty(errors)
     foreach(error -> println(stderr, "ERROR: ", error), errors)
