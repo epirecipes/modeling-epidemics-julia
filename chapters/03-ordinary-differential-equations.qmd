@@ -9,7 +9,7 @@ status: complete
 **Workshop programme**: taught live on Day 1, Session 3. See the [full schedule](../workshop.qmd).
 :::
 
-Chapter @sec-foundations solved the SIR model to establish the theory; this
+@sec-foundations solved the SIR model to establish the theory; this
 chapter is about the *tools*. We work through the `OrdinaryDiffEq` workflow in
 depth: defining an `ODEProblem`, choosing the `Tsit5` solver, evaluating the
 dense continuous solution with interpolation, and — most importantly — using
@@ -23,8 +23,10 @@ By the end of this chapter you should be able to:
 
 - assemble an `ODEProblem` from a kernel, initial condition, timespan, and
   parameters;
-- solve it with `Tsit5` and control accuracy through `reltol`/`abstol`;
-- evaluate the dense interpolant `sol(t)` at arbitrary times;
+- solve it with `Tsit5` and say what `reltol`/`abstol` control and when to
+  tighten them;
+- evaluate the dense interpolant `sol(t)` at arbitrary times, and say how that
+  differs from indexing the stored solution as `sol[i, :]`;
 - apply a `PresetTimeCallback` to change a parameter mid-simulation (a
   lockdown);
 - use a `ContinuousCallback` to detect an event (the infectious peak) exactly.
@@ -91,16 +93,15 @@ using OrdinaryDiffEq
 
 function sir_ode!(du, u, p, t)
     S, I, R = u
-    β, c, γ, N = p
-    λ = β * c * I / N            # eq-ch03-sir
+    λ = p.β * p.c * I / p.N      # eq-ch03-sir
     du[1] = -λ * S
-    du[2] = λ * S - γ * I
-    du[3] = γ * I
+    du[2] = λ * S - p.γ * I
+    du[3] = p.γ * I
     return nothing
 end
 
 u0 = [990.0, 10.0, 0.0]
-p  = (0.05, 10.0, 0.25, 1000.0)   # β, c, γ, N
+p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
 tspan = (0.0, 80.0)
 
 prob = ODEProblem(sir_ode!, u0, tspan, p)
@@ -108,9 +109,20 @@ sol = solve(prob, Tsit5(); reltol = 1e-8, abstol = 1e-8)
 length(sol.t)     # number of adaptive steps chosen by the solver
 ```
 
-Because `Tsit5` produces a *dense* output, `sol(t)` returns a high-order
-interpolant at any time inside the span — no need to have saved that point. This
-is how we later resample a solution onto a regular observation grid.
+`reltol` and `abstol` are the accuracy request: the solver shrinks its step until
+the estimated local error falls below `abstol + reltol * |u|`. The defaults are
+`reltol = 1e-3`, `abstol = 1e-6`, which is ample for plotting a trajectory —
+@sec-foundations used them. We tighten both to `1e-8` here because this chapter
+locates an event by root-finding and then checks that event time against a
+brute-force scan; the callback can only be as accurate as the trajectory it runs
+on. Tightening tolerances costs solver steps, so ask for the accuracy the
+question needs rather than the smallest number available.
+
+Note also that no `saveat` appears here. Without it the solver stores exactly the
+steps its adaptive controller chose — hence `length(sol.t)` above, which is not a
+round number. That is fine, because `Tsit5` produces a *dense* output: `sol(t)`
+returns a high-order interpolant at any time inside the span, whether or not that
+point was stored.
 
 ```{julia}
 #| label: ch03-interp
@@ -119,12 +131,19 @@ I_on_grid = [sol(t)[2] for t in grid]     # interpolated infectious counts
 (sol(12.5)[2], I_on_grid[13])
 ```
 
+This is the deliberate change of idiom from @sec-foundations. There, `sol[2, :]`
+gave the infectious compartment at the *stored* times; here `sol(t)` evaluates it
+at times we choose. Use `sol[i, :]` when the solver's own grid is what you want,
+and `sol(t)` whenever the grid is yours — a regular observation grid, a finer
+grid for plotting, or a single instant. The interpolant is what makes a
+continuous-time model comparable with daily surveillance data later on.
+
 ### A lockdown via `PresetTimeCallback`
 
-A `PresetTimeCallback` fires the `affect!` function at prescribed times. Here it
-overwrites the mutable parameter vector to enact @eq-ch03-lockdown: $\beta$ drops
-to $0.025$ over days 10–30, then recovers. We use a `Vector` for `p` so the
-callback can mutate it.
+A `PresetTimeCallback` fires an `affect!` function at prescribed times. The
+`affect!` receives the *integrator* — the solver's live state — and changes
+something about the run in flight. Here it replaces the parameters to enact
+@eq-ch03-lockdown: $\beta$ drops to $0.025$ at day 10 and returns at day 30.
 
 ```{julia}
 #| label: ch03-lockdown
@@ -133,16 +152,22 @@ using DiffEqCallbacks
 t1, t2 = 10.0, 30.0
 β_base, β_lock = 0.05, 0.025
 
-function lockdown!(integrator)
-    integrator.p[1] = integrator.t < t2 ? β_lock : β_base
-end
-cb = PresetTimeCallback([t1, t2], lockdown!)
+start_lockdown!(integrator) = (integrator.p = merge(integrator.p, (β = β_lock,)))
+end_lockdown!(integrator)   = (integrator.p = merge(integrator.p, (β = β_base,)))
 
-p_vec = [0.05, 10.0, 0.25, 1000.0]
-prob_lock = ODEProblem(sir_ode!, u0, tspan, p_vec)
+cb = CallbackSet(PresetTimeCallback([t1], start_lockdown!),
+                 PresetTimeCallback([t2], end_lockdown!))
+
+prob_lock = ODEProblem(sir_ode!, u0, tspan, p)
 sol_lock = solve(prob_lock, Tsit5(); callback = cb, reltol = 1e-8, abstol = 1e-8)
 (maximum(sol[2, :]), maximum(sol_lock[2, :]))   # peak I: baseline vs lockdown
 ```
+
+`merge` returns a new `NamedTuple` with `β` replaced and every other field
+carried over, which we assign back to `integrator.p`. The parameters therefore
+stay the same named container used everywhere else in the course — there is no
+need to switch to a mutable vector and index it positionally. `CallbackSet`
+combines callbacks; the solver applies each at its own times.
 
 ### Peak detection via `ContinuousCallback`
 
@@ -154,16 +179,28 @@ the infectious peak exactly, without scanning saved points.
 #| label: ch03-peak
 peak_times = Float64[]
 peak_values = Float64[]
-dIdt(u, p) = p[1] * p[2] * u[2] / p[4] * u[1] - p[3] * u[2]   # eq-ch03-peak
+
+function dIdt(u, p)                          # eq-ch03-peak
+    S, I, R = u
+    λ = p.β * p.c * I / p.N
+    return λ * S - p.γ * I
+end
+
 peak_cb = ContinuousCallback(
-    (u, t, integrator) -> dIdt(u, integrator.p),
-    integrator -> (push!(peak_times, integrator.t);
+    (u, t, integrator) -> dIdt(u, integrator.p),          # condition: root of dI/dt
+    integrator -> (push!(peak_times, integrator.t);       # affect!: record the event
                    push!(peak_values, integrator.u[2])))
 
-solve(ODEProblem(sir_ode!, u0, tspan, collect(p)), Tsit5();
-      callback = peak_cb, reltol = 1e-8, abstol = 1e-8)
+solve(prob, Tsit5(); callback = peak_cb, reltol = 1e-8, abstol = 1e-8)
 (peak_times, peak_values)
 ```
+
+The two functions handed to `ContinuousCallback` have different signatures, and
+this trips people up. The **condition** is given `(u, t, integrator)`, so the
+state arrives directly as `u` and we write `u[2]`. The **affect!** is given only
+the integrator, so the same state is reached as `integrator.u[2]`. Reading `u`
+inside an `affect!`, or `integrator.u` inside a condition, is the usual first
+error.
 
 ```{julia}
 #| label: fig-ch03-lockdown
@@ -213,7 +250,7 @@ a densely sampled solution and satisfy $\mathrm{d}I/\mathrm{d}t \approx 0$:
 dense_t = 0.0:0.01:80.0
 dense_I = [sol(t)[2] for t in dense_t]
 brute_peak_time = dense_t[argmax(dense_I)]
-residual = dIdt(sol(peak_times[1]), collect(p))
+residual = dIdt(sol(peak_times[1]), p)
 (isapprox(peak_times[1], brute_peak_time; atol = 0.05), isapprox(residual, 0.0; atol = 1e-4))
 ```
 

@@ -1,0 +1,520 @@
+---
+title: "Worksheet — Discrete-time models"
+course-unit: ch02-discrete-time-models
+artifact: worksheet
+status: draft
+---
+
+# Worksheet: immunity that does not last
+
+**~45 minutes**
+
+The session stepped an epidemic forward one day at a time, twice over: a
+**deterministic map** that moves the expected number of people each step, and a
+**stochastic chain** that draws a whole number from a binomial distribution
+instead. Both burned through
+the population once and stopped.
+
+Here you add one transition (recovered people become susceptible again) and the
+model stops being an outbreak and becomes a *disease that stays*. You will find
+its endemic level, see how far the one-day step sits from the truth, and then
+watch the stochastic version do something the map cannot: die out.
+
+**How to use this file.** Run cells one at a time with `Ctrl+Shift+Enter`. Cells
+marked `# TODO` have a line or two for you to complete; everything else runs as
+given. Each part ends with `✓` / `✗` lines that check your answer; a `✗` is
+information, not failure, and the collapsed hint below it will get you moving.
+An instructor is circulating; ask early rather than staying stuck.
+
+**Parts A and B are the session.** **Part C** goes further if you get there; not
+reaching it is completely fine. Worked solutions are posted at the end of each
+day. Run `git pull` to collect them.
+
+**Prefer sliders to typing?** The
+[Pluto notebook](../../notebooks/chapters/02-discrete-time-models.jl) for this
+chapter lets you drag $\delta t$ and the ensemble size and watch the map and the
+chain separate. Either order is fine.
+
+**Coming from R?**
+
+| R | Julia | Note |
+|---|---|---|
+| `for (i in 1:10)` | `for i in 1:10 ... end` | no brackets, closed with `end` |
+| `sapply(1:5, f)` | `[f(k) for k in 1:5]` | a comprehension builds a vector |
+| `rbinom(1, n, prob)` | `rand(Binomial(n, prob))` | build the distribution, then draw |
+| `m[2, ]` | `m[2, :]` | row 2 of a matrix, every column |
+
+To type `δ` and `ω`: `\delta`↹ and `\omega`↹. Plain `dt` and `w` work just as
+well if you prefer them; the Greek letters are cosmetic.
+
+---
+
+## Setup
+
+This is the session's deterministic map, given back to you, plus the stepping
+loop that drives it. Run it and check the peak looks familiar: the one-day map
+put about 201 infectious people at the peak, and by two years the epidemic is
+long over with nobody infectious.
+
+Note the shape of `iterate_model`: it takes a `step` function and calls it
+`nsteps` times, so the same loop will run every model in this worksheet.
+
+```{julia}
+#| label: ws-ch02-setup
+using Distributions
+using StableRNGs
+using Statistics
+using CairoMakie
+
+check(name, condition) =
+    println(condition ? "✓ $name" : "✗ $name — not right yet, see the hint")
+
+rate_to_proportion(r, δt) = -expm1(-r * δt)
+
+function sir_map_step(state, p, δt)
+    S, I, R = state
+    infection = rate_to_proportion(p.β * p.c * I / p.N, δt) * S
+    recovery  = rate_to_proportion(p.γ, δt) * I
+    return (S - infection, I + infection - recovery, R + recovery)
+end
+
+function iterate_model(step, u0, p, δt, nsteps; extra = ())
+    traj = Matrix{Float64}(undef, 3, nsteps + 1)
+    traj[:, 1] .= u0
+    state = Tuple(float.(u0))
+    for k in 1:nsteps
+        state = step(state, p, δt, extra...)
+        traj[:, k + 1] .= state
+    end
+    return traj
+end
+
+u0     = [990, 10, 0]
+p      = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0, ω = 0.02)
+δt     = 1.0
+nsteps = 728          # two years, and exactly 104 whole weeks
+ts     = 0:nsteps
+
+sir_traj = iterate_model((s, p, dt) -> sir_map_step(s, p, dt), u0, p, δt, nsteps)
+
+println("R₀ = ", p.β * p.c / p.γ)
+println("peak infectious: ", round(maximum(sir_traj[2, :]), digits = 1))
+println("infectious at two years: ", round(sir_traj[2, end], digits = 1))
+```
+
+The parameters now carry one extra field, `ω = 0.02`: the rate at which immunity
+is lost, or a mean of $1/\omega = 50$ days of protection. Nothing in the setup
+uses it yet.
+
+---
+
+## Part A — immunity that does not last (~15 min)
+
+The session's model had two transitions. Add a third, running backwards:
+
+| transition | who moves | per-step probability |
+|---|---|---|
+| infection | $S \to I$ | $1 - e^{-\beta c I_t \delta t / N}$ |
+| recovery | $I \to R$ | $1 - e^{-\gamma \delta t}$ |
+| **waning** | $R \to S$ | $1 - e^{-\omega \delta t}$ |
+
+Each transition is a *rate* turned into a *proportion of one step* by the same
+`rate_to_proportion` conversion, so the new one needs no new machinery, just
+one more line, and two changes to the state update, because people leaving $R$
+have to arrive somewhere:
+
+$$
+S_{t+1} = S_t - p_I S_t + p_W R_t, \qquad
+R_{t+1} = R_t + p_R I_t - p_W R_t.
+$$
+
+```{julia}
+#| label: ws-ch02-a1
+function sirs_map_step(state, p, δt)
+    S, I, R = state
+    infection = rate_to_proportion(p.β * p.c * I / p.N, δt) * S
+    recovery  = rate_to_proportion(p.γ, δt) * I
+    waning    = 0.0     # TODO: replace 0.0 — how many people lose immunity this step?
+    # TODO: add `waning` to S and subtract it from R in the line below
+    return (S - infection, I + infection - recovery, R + recovery)
+end
+
+sirs_traj = iterate_model((s, p, dt) -> sirs_map_step(s, p, dt), u0, p, δt, nsteps)
+
+# Given: what the continuous-time theory predicts for the endemic state.
+R₀ = p.β * p.c / p.γ
+S_endemic = p.N / R₀
+I_endemic = p.N * (1 - 1 / R₀) / (1 + p.γ / p.ω)
+
+check("population still conserved",
+      all(k -> isapprox(sum(sirs_traj[:, k]), p.N; atol = 1e-8), 1:nsteps+1))
+check("immunity is waning", sirs_traj[1, end] > 300)
+check("the disease is still circulating after two years", sirs_traj[2, end] > 10)
+check("the model has settled down", abs(sirs_traj[2, end] - sirs_traj[2, end-28]) < 0.5)
+check("prevalence lands within 30% of the analytic endemic level",
+      isapprox(sirs_traj[2, end], I_endemic; rtol = 0.3))
+
+(; S_at_two_years = round(sirs_traj[1, end]; digits = 1),
+   I_at_two_years = round(sirs_traj[2, end]; digits = 1),
+   S_endemic = round(S_endemic; digits = 1),
+   I_endemic = round(I_endemic; digits = 1))
+```
+
+The two numbers the checks compare against are handed to you, not derived here.
+Setting all three continuous-time flows to zero (as many people entering each
+compartment as leaving it) gives an *endemic equilibrium*:
+
+$$
+\frac{S^\ast}{N} = \frac{1}{R_0}, \qquad
+I^\ast = N\,\frac{1 - 1/R_0}{1 + \gamma/\omega},
+$$
+
+which is 500 susceptible and about 37 infectious for these parameters. Note that
+$S^\ast$ depends only on $R_0$: the waning rate decides how many people are
+infectious, not how many are susceptible.
+
+::: {.callout-tip collapse="true"}
+## Hint — Part A
+
+```julia
+waning = rate_to_proportion(p.ω, δt) * R
+return (S - infection + waning, I + infection - recovery, R + recovery - waning)
+```
+
+`waning` is a *number of people*, like `infection` and `recovery`: the
+conversion turns the rate `p.ω` into a proportion, and multiplying by `R` turns
+that proportion into a count.
+
+If the conservation check fails, you have added `waning` to $S$ without taking it
+out of $R$. If the disease dies out anyway, `waning` is probably still `0.0`,
+which leaves you with the session's SIR model.
+:::
+
+```{julia}
+#| label: fig-ws-ch02-endemic
+#| fig-cap: "Infectious compartment over two years under the deterministic map, with and without waning immunity. The dotted line is the endemic level predicted by continuous-time theory."
+fig = Figure(size = (720, 400))
+ax  = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "infectious I(t)",
+           title = "One outbreak, or a disease that stays")
+lines!(ax, ts, sir_traj[2, :]; color = :firebrick, linewidth = 3,
+       label = "no waning (SIR)")
+lines!(ax, ts, sirs_traj[2, :]; color = :steelblue, linewidth = 3,
+       label = "waning immunity (SIRS)")
+hlines!(ax, [I_endemic]; color = :black, linestyle = :dot,
+        label = "analytic endemic level")
+axislegend(ax; position = :rt)
+fig
+```
+
+### A1. Interpret
+
+- The first wave is nearly the same shape in both models (the peaks are 209 and
+  201), and they part company properly only afterwards. Why does waning immunity
+  make so little difference early on, and what decides when it starts to matter?
+- After the wave, prevalence drops to a trough and then comes *back up* before
+  settling. What is being refilled during the trough?
+- The plateau sits above the dotted analytic line, at about 45 infectious people
+  against a predicted 37, with susceptibles at 447 rather than 500. The theory is
+  not wrong. What else is different between the two calculations?
+
+> *Your answer here.*
+
+### A2. Refine the step
+
+The last question has a testable answer. The map is an approximation to a
+continuous process that gets better as the step shrinks, so shrink it. The
+horizon stays at two years and only $\delta t$ changes.
+
+```{julia}
+#| label: ws-ch02-a2
+refinement = map([1.0, 0.5, 0.1]) do dt
+    n = round(Int, nsteps / dt)
+    traj = iterate_model((s, p, d) -> sirs_map_step(s, p, d), u0, p, dt, n)
+    (δt = dt, S = round(traj[1, end]; digits = 1), I = round(traj[2, end]; digits = 1))
+end
+
+fine = iterate_model((s, p, d) -> sirs_map_step(s, p, d), u0, p, 0.1, 7280)
+
+check("the refined map lands on the analytic susceptible level",
+      isapprox(fine[1, end] / p.N, 1 / R₀; atol = 0.01))
+check("the one-day step is several percent away from it",
+      abs(sirs_traj[1, end] / p.N - 1 / R₀) > 0.03)
+
+refinement
+```
+
+The session measured this convergence against the ODE at a fixed time and got
+first order. The same error is showing up here in a quantity you would actually
+report (the endemic prevalence), where a 10% bias is not a numerical curiosity.
+
+> *At $\delta t = 1$ day, is the discretisation error large or small compared with
+> the other uncertainties in a model like this? Your answer here.*
+
+---
+
+## Part B — the same model with integer people (~15 min)
+
+The map moves fractions of people: at the trough it held 19.3 infectious
+individuals, and a quantity that shrinks by fractions approaches zero without
+ever arriving. The stochastic chain replaces each of the three flows with a
+binomial draw, so its counts are whole numbers and the disease can genuinely run
+out.
+
+The chain step is given. It is your Part A function with `rand(rng, Binomial(…))`
+around each flow, run 100 times from 100 different seeds. Each run is called a
+*realisation*, and your job is the summary: which realisations died out.
+
+```{julia}
+#| label: ws-ch02-b1
+function sirs_chain_step(state, p, δt, rng)
+    S, I, R = state
+    Y = rand(rng, Binomial(round(Int, S), rate_to_proportion(p.β * p.c * I / p.N, δt)))
+    Z = rand(rng, Binomial(round(Int, I), rate_to_proportion(p.γ, δt)))
+    W = rand(rng, Binomial(round(Int, R), rate_to_proportion(p.ω, δt)))
+    return (S - Y + W, I + Y - Z, R + Z - W)
+end
+
+nsims = 100
+chain_ens = [iterate_model(sirs_chain_step, u0, p, δt, nsteps; extra = (StableRNG(seed),))
+             for seed in 1:nsims]
+chain_I = reduce(hcat, (traj[2, :] for traj in chain_ens))
+chain_mean_I = vec(mean(chain_I; dims = 2))
+
+# TODO: replace `falses(nsims)` — true for each realisation in which I reached 0
+died_out = falses(nsims)
+
+check("every realisation keeps an integer population",
+      all(traj -> all(k -> sum(traj[:, k]) == p.N, 1:nsteps+1), chain_ens))
+check("some realisations died out", count(died_out) >= 3)
+check("but not all of them", 0 < count(died_out) < nsims)
+check("the ensemble mean tracks the map through the first wave",
+      isapprox(maximum(chain_mean_I[1:80]), maximum(sirs_traj[2, 1:80]); rtol = 0.1))
+
+(; fade_out_fraction = count(died_out) / nsims,
+   chain_mean_at_two_years = round(chain_mean_I[end]; digits = 1),
+   map_at_two_years = round(sirs_traj[2, end]; digits = 1))
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part B
+
+```julia
+died_out = [any(iszero, traj[2, :]) for traj in chain_ens]
+```
+
+`traj[2, :]` is the infectious compartment of one realisation across every step,
+and `any(iszero, v)` asks whether that vector ever hit zero. The comprehension
+does it once per realisation, giving one `true`/`false` per run.
+
+`traj[2, end] == 0` gives the same answer in this particular model, because
+$I = 0$ is absorbing: nothing here can reintroduce the disease once it is gone.
+It stops agreeing the moment a model gains importation, so it is worth asking the
+question you actually mean.
+:::
+
+```{julia}
+#| label: fig-ws-ch02-chain
+#| fig-cap: "One hundred stochastic SIRS realisations (thin grey), their ensemble mean (red), and the deterministic map (dashed black). Runs that reach zero infectious stay there."
+fig2 = Figure(size = (720, 440))
+ax2  = Axis(fig2[1, 1]; xlabel = "time (days)", ylabel = "infectious I(t)",
+            title = "Endemic in the mean, extinct in some runs")
+for j in 1:nsims
+    lines!(ax2, ts, chain_I[:, j]; color = (:grey, 0.15), linewidth = 1)
+end
+lines!(ax2, ts, chain_mean_I; color = :firebrick, linewidth = 3, label = "chain mean")
+lines!(ax2, ts, sirs_traj[2, :]; color = :black, linestyle = :dash, linewidth = 3,
+       label = "deterministic map")
+axislegend(ax2; position = :rt)
+fig2
+```
+
+### B1. Interpret
+
+- Most of the extinctions happen between days 57 and 101, not later. What is it
+  about that window that makes the disease vulnerable?
+- The ensemble mean settles a little *below* the map. Given that some runs are
+  sitting at zero forever, is the mean describing a typical realisation?
+- Both models were handed the same $\omega$, and both say the disease is endemic.
+  Which of them can answer "will this disease still be here in five years?"
+
+> *Your answer here.*
+
+### B2. Experiment
+
+Extinction was possible because the trough held only a handful of people. That
+suggests the answer depends on how big the population is: a bigger community
+has a bigger trough. Each run below rescales $N$ and starts with 10 infectious
+people, as before.
+
+```{julia}
+#| label: ws-ch02-b2
+function fade_out_fraction(N, trials)
+    p_N  = merge(p, (N = Float64(N),))
+    u0_N = [N - 10, 10, 0]
+    runs = (iterate_model(sirs_chain_step, u0_N, p_N, δt, nsteps;
+                          extra = (StableRNG(1000 + k),)) for k in 1:trials)
+    return count(traj -> any(iszero, traj[2, :]), runs) / trials
+end
+
+populations = Int[]     # TODO: fill this list — try N = 200, 1000, and 5000
+
+fractions = [fade_out_fraction(N, 50) for N in populations]
+for (N, f) in zip(populations, fractions)
+    println("N = $N → the disease died out in $(round(100f; digits = 0))% of runs")
+end
+
+check("three population sizes tried", length(populations) == 3)
+check("fade-out becomes rarer as the population grows", issorted(fractions; rev = true))
+```
+
+$R_0$ was 2 in every one of those runs. Two communities with the same disease and
+the same contact patterns, and one cannot sustain it at all. What does that mean
+for a national elimination target?
+
+> *Your answer here.*
+
+---
+
+## Part C — from prevalence to reported cases (optional)
+
+*Start this only if you have finished Part B.*
+
+Everything so far plotted $I_t$, the number of people infectious *right now*.
+Surveillance data are not that. A weekly report counts **new cases**, and new
+cases are a flow: the `infection` term inside the step, which the model computes
+and then throws away.
+
+Discrete time is where this is easiest, because the step already has the shape of
+a reporting interval. The loop below keeps each step's infections; you turn the
+daily numbers into weekly totals.
+
+```{julia}
+#| label: ws-ch02-c1
+function iterate_with_incidence(u0, p, δt, nsteps)
+    traj = Matrix{Float64}(undef, 3, nsteps + 1)
+    incidence = Vector{Float64}(undef, nsteps)
+    state = Tuple(float.(u0))
+    traj[:, 1] .= u0
+    for k in 1:nsteps
+        S, I, R = state
+        incidence[k] = rate_to_proportion(p.β * p.c * I / p.N, δt) * S
+        state = sirs_map_step(state, p, δt)
+        traj[:, k + 1] .= state
+    end
+    return traj, incidence
+end
+
+traj_c, daily_cases = iterate_with_incidence(u0, p, δt, nsteps)
+
+nweeks = div(nsteps, 7)
+weekly_cases = Float64[]
+
+for w in 1:nweeks
+    week = daily_cases[(7 * (w - 1) + 1):(7 * w)]   # the seven daily numbers of week w
+    push!(weekly_cases, 0.0)                        # TODO: replace 0.0 — the week's total
+end
+
+check("one total per week, and every week has cases in it",
+      length(weekly_cases) == nweeks && all(>(0), weekly_cases))
+check("no cases lost in the aggregation",
+      isapprox(sum(weekly_cases), sum(daily_cases); rtol = 1e-10))
+check("incidence peaks before prevalence", argmax(daily_cases) < argmax(traj_c[2, :]))
+
+(; total_cases = round(sum(daily_cases); digits = 0),
+   cases_per_person = round(sum(daily_cases) / p.N; digits = 1),
+   incidence_peak_day = argmax(daily_cases) - 1,
+   prevalence_peak_day = argmax(traj_c[2, :]) - 1)
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part C
+
+```julia
+push!(weekly_cases, sum(week))
+```
+
+`week` is already the seven daily numbers (week 1 is `daily_cases[1:7]`, week 2
+is `daily_cases[8:14]`), so all that is left is to add them up. Cases are counts,
+so weeks aggregate by summing; a *prevalence* series would not, which is worth
+keeping in mind whenever you aggregate a time series.
+
+Once it works, the same thing as a one-liner, which is how you would more often
+see it written:
+
+```julia
+weekly_cases = [sum(daily_cases[(7 * (w - 1) + 1):(7 * w)]) for w in 1:nweeks]
+```
+:::
+
+```{julia}
+#| label: fig-ws-ch02-reporting
+#| fig-cap: "Top: daily new infections and prevalence over the first wave; the case peak leads the prevalence peak by four days. Bottom: the same epidemic as 104 weekly case totals, the form surveillance data actually arrive in."
+fig3 = Figure(size = (720, 600))
+
+ax3 = Axis(fig3[1, 1]; xlabel = "time (days)", ylabel = "people",
+           title = "New cases lead prevalence")
+lines!(ax3, 1:120, traj_c[2, 2:121]; color = :steelblue, linewidth = 3,
+       label = "prevalence I(t)")
+lines!(ax3, 1:120, daily_cases[1:120]; color = :firebrick, linewidth = 3,
+       label = "new cases per day")
+vlines!(ax3, [argmax(daily_cases)]; color = :firebrick, linestyle = :dot)
+vlines!(ax3, [argmax(traj_c[2, :])]; color = :steelblue, linestyle = :dot)
+axislegend(ax3; position = :rt)
+
+ax4 = Axis(fig3[2, 1]; xlabel = "week", ylabel = "reported cases",
+           title = "Two years of weekly totals")
+isempty(weekly_cases) ||
+    barplot!(ax4, 1:nweeks, weekly_cases; color = :seagreen, gap = 0.1)
+
+fig3
+```
+
+### C1. Interpret
+
+- Cases peak on day 15 and prevalence on day 19. Which one would a surveillance
+  system see, and what does that mean for judging whether an epidemic has turned?
+- Over two years the model produces about 7.7 cases per person. Nothing is wrong
+  with the arithmetic. Which assumption is doing that, and is 50 days of immunity
+  a reasonable choice?
+- The weekly totals settle at about 70 cases a week. Two years in, would you call
+  this epidemic over?
+
+> *Your answer here.*
+
+::: {.callout-note}
+These weekly totals are still model output, not data: nobody has been missed,
+nobody has been counted twice, and nothing was reported late. The
+observation-model session is where those gaps get added on top of exactly this
+kind of incidence series.
+:::
+
+---
+
+## Finish: render your own report
+
+In a terminal, from the top of the repository:
+
+```bash
+quarto render worksheets/chapters/02-discrete-time-models.qmd
+```
+
+A clean render means every cell ran top to bottom in a fresh session: the same
+command, and the same standard, you would use for a reproducible analysis of your
+own.
+
+---
+
+## Where to look next
+
+Nothing here is assigned. The whole project stays available to you afterwards.
+
+- [The chapter](../../chapters/02-discrete-time-models.qmd) — the map and the
+  binomial chain side by side, and the numerical demonstration that the map
+  converges to the ODE at first order.
+- [The Pluto notebook](../../notebooks/chapters/02-discrete-time-models.jl) —
+  sliders for the step size and the ensemble.
+- [The probability prerequisite](../../prerequisites/02-probability-and-stochastic-processes.qmd)
+  — where $1 - e^{-r\delta t}$ comes from, and what it means for a step to be
+  "too long".
+- The chapter's own exercises, with worked solutions, if you want more practice on
+  the material rather than these variations.

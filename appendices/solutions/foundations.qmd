@@ -13,17 +13,16 @@ new infections *leave* $S$ at exactly the rate they *enter* $C$, we expect
 #| label: sol-p01-ex1
 function sir_incidence!(du, u, p, t)
     S, I, R, C = u
-    β, c, γ, N = p
-    λ = β * c * I / N
+    λ = p.β * p.c * I / p.N
     du[1] = -λ * S
-    du[2] = λ * S - γ * I
-    du[3] = γ * I
+    du[2] = λ * S - p.γ * I
+    du[3] = p.γ * I
     du[4] = λ * S            # cumulative incidence
     return nothing
 end
 
 u0 = [990.0, 10.0, 0.0, 0.0]
-p  = (0.05, 10.0, 0.25, 1000.0)
+p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
 du = zeros(4)
 sir_incidence!(du, u0, p, 0.0)
 (du = du, matches = isapprox(du[4], -du[1]; atol = 1e-12))
@@ -213,7 +212,7 @@ with the contact rate. The threshold $R_0 = 1$ occurs at $c = \gamma/\beta = 5$.
 #| label: sol-ch01-ex1
 using NonlinearSolve, DataFrames
 
-β, γ, N = 0.05, 0.25, 1000.0
+β, γ, N = 0.05, 0.25, 1000.0     # c is the swept quantity, so no parameter tuple here
 s₀ = 990.0 / N
 attack(R0) = 1 - solve(NonlinearProblem((s, r) -> s - s₀ * exp(-r * (1 - s)), 0.2, R0), NewtonRaphson()).u
 
@@ -238,17 +237,19 @@ predicts $S/N = 1/R_0$.
 #| label: sol-ch01-ex2
 using OrdinaryDiffEq
 function sir_ode!(du, u, p, t)
-    S, I, R = u; β, c, γ, N = p; λ = β * c * I / N
-    du[1] = -λ * S; du[2] = λ * S - γ * I; du[3] = γ * I; return nothing
+    S, I, R = u; λ = p.β * p.c * I / p.N
+    du[1] = -λ * S; du[2] = λ * S - p.γ * I; du[3] = p.γ * I; return nothing
 end
 
 u0 = [990.0, 10.0, 0.0]
-sol = solve(ODEProblem(sir_ode!, u0, (0.0, 80.0), (0.05, 10.0, 0.25, 1000.0)), Tsit5(); saveat = 0.1)
-I = sol[2, :]; R0 = 0.05 * 10.0 / 0.25
-peak_ok = isapprox(sol[1, argmax(I)] / 1000.0, 1 / R0; atol = 0.01)
+p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
+sol = solve(ODEProblem(sir_ode!, u0, (0.0, 80.0), p), Tsit5(); saveat = 0.1)
+I = sol[2, :]; R0 = p.β * p.c / p.γ
+peak_ok = isapprox(sol[1, argmax(I)] / p.N, 1 / R0; atol = 0.01)
 
-sol_crit = solve(ODEProblem(sir_ode!, u0, (0.0, 80.0), (0.05, 10.0, 0.5, 1000.0)), Tsit5(); saveat = 0.1)
-(R0 = R0, S_over_N_at_peak = sol[1, argmax(I)] / 1000.0, threshold_ok = peak_ok,
+p_crit = merge(p, (γ = 0.5,))        # R0 = 1
+sol_crit = solve(ODEProblem(sir_ode!, u0, (0.0, 80.0), p_crit), Tsit5(); saveat = 0.1)
+(R0 = R0, S_over_N_at_peak = sol[1, argmax(I)] / p.N, threshold_ok = peak_ok,
  peak_I_baseline = round(maximum(I); digits = 1),
  peak_I_R0eq1 = round(maximum(sol_crit[2, :]); digits = 1))
 ```
@@ -272,15 +273,15 @@ high-accuracy ODE reference at $\delta t = 1$ and $\delta t = 0.25$.
 using Distributions, StableRNGs, OrdinaryDiffEq
 rate_to_proportion(r, δt) = -expm1(-r * δt)
 function map_step(s, p, δt)
-    S, I, R = s; β, c, γ, N = p
-    inf = rate_to_proportion(β * c * I / N, δt) * S
-    rec = rate_to_proportion(γ, δt) * I
+    S, I, R = s
+    inf = rate_to_proportion(p.β * p.c * I / p.N, δt) * S
+    rec = rate_to_proportion(p.γ, δt) * I
     (S - inf, I + inf - rec, R + rec)
 end
 function chain_step(s, p, δt, rng)
-    S, I, R = s; β, c, γ, N = p
-    Y = rand(rng, Binomial(round(Int, S), rate_to_proportion(β * c * I / N, δt)))
-    Z = rand(rng, Binomial(round(Int, I), rate_to_proportion(γ, δt)))
+    S, I, R = s
+    Y = rand(rng, Binomial(round(Int, S), rate_to_proportion(p.β * p.c * I / p.N, δt)))
+    Z = rand(rng, Binomial(round(Int, I), rate_to_proportion(p.γ, δt)))
     (S - Y, I + Y - Z, R + Z)
 end
 function run_traj(step, u0, p, δt, n; extra = ())
@@ -290,10 +291,10 @@ function run_traj(step, u0, p, δt, n; extra = ())
 end
 
 function sir_ode!(du, u, p, t)
-    S, I, R = u; β, c, γ, N = p; λ = β * c * I / N
-    du[1] = -λ * S; du[2] = λ * S - γ * I; du[3] = γ * I; return nothing
+    S, I, R = u; λ = p.β * p.c * I / p.N
+    du[1] = -λ * S; du[2] = λ * S - p.γ * I; du[3] = p.γ * I; return nothing
 end
-p = (0.05, 10.0, 0.25, 1000.0)
+p = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
 ode_peak = maximum(solve(ODEProblem(sir_ode!, [990.0, 10, 0], (0.0, 40.0), p), Tsit5(); saveat = 0.05)[2, :])
 
 function peaks(δt; nsims = 60)
@@ -325,7 +326,7 @@ Extinction probability is the fraction of realisations reaching $I = 0$ before d
 ```{julia}
 #| label: sol-ch02-ex2
 function extinction(c; nsims = 200, δt = 1.0)
-    p = (0.05, c, 0.25, 1000.0); n = round(Int, 40 / δt); extinct = 0
+    p = (β = 0.05, c = c, γ = 0.25, N = 1000.0); n = round(Int, 40 / δt); extinct = 0
     for seed in 1:nsims
         rng = StableRNG(seed); s = (990, 10, 0); faded = false
         for _ in 1:n; s = chain_step(s, p, δt, rng); s[2] == 0 && (faded = true); end
@@ -357,18 +358,21 @@ among detected events).
 #| label: sol-ch03-ex1
 using OrdinaryDiffEq, DiffEqCallbacks, DataFrames
 function sir_ode!(du, u, p, t)
-    S, I, R = u; β, c, γ, N = p; λ = β * c * I / N
-    du[1] = -λ * S; du[2] = λ * S - γ * I; du[3] = γ * I; return nothing
+    S, I, R = u; λ = p.β * p.c * I / p.N
+    du[1] = -λ * S; du[2] = λ * S - p.γ * I; du[3] = p.γ * I; return nothing
 end
 u0 = [990.0, 10.0, 0.0]; tspan = (0.0, 80.0); t1, t2 = 10.0, 30.0
-dIdt(u, p) = p[1] * p[2] * u[2] / p[4] * u[1] - p[3] * u[2]
+p = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
+dIdt(u, p) = (p.β * p.c * u[2] / p.N) * u[1] - p.γ * u[2]
 
 function peak_under(β_lock)
     events = Tuple{Float64,Float64}[]
-    lockdown!(i) = (i.p[1] = i.t < t2 ? β_lock : 0.05)
+    set_β!(i, β) = (i.p = merge(i.p, (β = β,)))
     peak_cb = ContinuousCallback((u, t, i) -> dIdt(u, i.p), i -> push!(events, (i.t, i.u[2])))
-    set = CallbackSet(PresetTimeCallback([t1, t2], lockdown!), peak_cb)
-    solve(ODEProblem(sir_ode!, u0, tspan, [0.05, 10.0, 0.25, 1000.0]), Tsit5();
+    set = CallbackSet(PresetTimeCallback([t1], i -> set_β!(i, β_lock)),
+                      PresetTimeCallback([t2], i -> set_β!(i, 0.05)),
+                      peak_cb)
+    solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5();
           callback = set, reltol = 1e-8, abstol = 1e-8)
     t_peak, I_peak = argmax(e -> e[2], events)
     (t_peak = round(t_peak; digits = 2), I_peak = round(I_peak; digits = 1))
@@ -400,10 +404,10 @@ incidence from the dense interpolant.
 ```{julia}
 #| label: sol-ch03-ex2
 function sir_cumulative!(du, u, p, t)
-    S, I, R, C = u; β, c, γ, N = p; λ = β * c * I / N
-    du[1] = -λ * S; du[2] = λ * S - γ * I; du[3] = γ * I; du[4] = λ * S; return nothing
+    S, I, R, C = u; λ = p.β * p.c * I / p.N
+    du[1] = -λ * S; du[2] = λ * S - p.γ * I; du[3] = p.γ * I; du[4] = λ * S; return nothing
 end
-p = (0.05, 10.0, 0.25, 1000.0)
+p = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
 sol = solve(ODEProblem(sir_cumulative!, [990.0, 10.0, 0.0, 0.0], (0.0, 80.0), p),
             Tsit5(); reltol = 1e-9, abstol = 1e-9)
 

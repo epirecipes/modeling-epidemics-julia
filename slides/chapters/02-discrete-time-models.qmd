@@ -42,15 +42,15 @@ using Distributions, StableRNGs
 rate_to_proportion(r, δt) = -expm1(-r * δt)
 
 function map_step(state, p, δt)                     # deterministic
-    S, I, R = state; β, c, γ, N = p
-    inf = rate_to_proportion(β * c * I / N, δt) * S
-    rec = rate_to_proportion(γ, δt) * I
+    S, I, R = state
+    inf = rate_to_proportion(p.β * p.c * I / p.N, δt) * S
+    rec = rate_to_proportion(p.γ, δt) * I
     (S - inf, I + inf - rec, R + rec)
 end
 function chain_step(state, p, δt, rng)              # stochastic
-    S, I, R = state; β, c, γ, N = p
-    Y = rand(rng, Binomial(round(Int, S), rate_to_proportion(β * c * I / N, δt)))
-    Z = rand(rng, Binomial(round(Int, I), rate_to_proportion(γ, δt)))
+    S, I, R = state
+    Y = rand(rng, Binomial(round(Int, S), rate_to_proportion(p.β * p.c * I / p.N, δt)))
+    Z = rand(rng, Binomial(round(Int, I), rate_to_proportion(p.γ, δt)))
     (S - Y, I + Y - Z, R + Z)
 end
 function iterate_model(step, u0, p, δt, n; extra = ())
@@ -67,7 +67,8 @@ end
 #| echo: true
 #| fig-cap: "Infectious compartment: stochastic chain realisations (grey), their mean (red), and the deterministic map (dashed). The map tracks the stochastic mean."
 using CairoMakie
-u0 = [990, 10, 0]; p = (0.05, 10.0, 0.25, 1000.0); δt = 1.0; n = 40; ts = 0:n
+u0 = [990, 10, 0]; δt = 1.0; n = 40; ts = 0:n
+p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
 mapt = iterate_model((s, p, dt) -> map_step(s, p, dt), u0, p, δt, n)
 nsims = 200
 ens = [iterate_model(chain_step, u0, p, δt, n; extra = (StableRNG(seed),)) for seed in 1:nsims]
@@ -86,8 +87,8 @@ axislegend(ax; position = :rt); fig
 #| echo: true
 using OrdinaryDiffEq
 function sir_ode!(du, u, p, t)
-    S, I, R = u; β, c, γ, N = p; λ = β * c * I / N
-    du[1] = -λ * S; du[2] = λ * S - γ * I; du[3] = γ * I; return nothing
+    S, I, R = u; λ = p.β * p.c * I / p.N
+    du[1] = -λ * S; du[2] = λ * S - p.γ * I; du[3] = p.γ * I; return nothing
 end
 ref = solve(ODEProblem(sir_ode!, float.(u0), (0.0, 40.0), p), Tsit5();
             reltol = 1e-12, abstol = 1e-12, save_everystep = false).u[end]

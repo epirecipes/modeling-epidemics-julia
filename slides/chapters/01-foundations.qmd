@@ -40,14 +40,15 @@ $$ {#eq-s-ch01-finalsize}
 #| echo: true
 using OrdinaryDiffEq, NonlinearSolve
 function sir_ode!(du, u, p, t)
-    S, I, R = u; β, c, γ, N = p
-    λ = β * c * I / N
-    du[1] = -λ * S; du[2] = λ * S - γ * I; du[3] = γ * I; return nothing
+    S, I, R = u                       # state positional, parameters by field
+    λ = p.β * p.c * I / p.N
+    du[1] = -λ * S; du[2] = λ * S - p.γ * I; du[3] = p.γ * I; return nothing
 end
 
-u0 = [990.0, 10.0, 0.0]; p = (0.05, 10.0, 0.25, 1000.0); tspan = (0.0, 80.0)
+u0 = [990.0, 10.0, 0.0]; tspan = (0.0, 80.0)
+p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
 sol = solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5(); saveat = 0.5)
-β, c, γ, N = p; R₀ = β * c / γ; s₀ = u0[1] / N
+R₀ = p.β * p.c / p.γ; s₀ = u0[1] / p.N
 s_inf = solve(NonlinearProblem((s, R0) -> s - s₀ * exp(-R0 * (1 - s)), 0.2, R₀),
               NewtonRaphson()).u
 (R₀, round(s_inf; digits = 3), round(1 - s_inf; digits = 3))   # R0, s∞, attack rate
@@ -66,7 +67,7 @@ ax = Axis(fig[1,1]; xlabel = "day", ylabel = "individuals", title = "SIR baselin
 lines!(ax, t, S; color = :steelblue, linewidth = 3, label = "S")
 lines!(ax, t, I; color = :firebrick, linewidth = 3, label = "I")
 lines!(ax, t, R; color = :seagreen,  linewidth = 3, label = "R")
-hlines!(ax, [N / R₀]; color = :black, linestyle = :dash, label = "S = N/R₀")
+hlines!(ax, [p.N / R₀]; color = :black, linestyle = :dash, label = "S = N/R₀")
 axislegend(ax; position = :rc); fig
 ```
 
@@ -78,11 +79,11 @@ matches the analytic $s_\infty$:
 ```{julia}
 #| label: s-ch01-check
 #| echo: true
-cons = all(u -> isapprox(sum(u), N; atol = 1e-6), sol.u)
-peak = isapprox(S[argmax(I)] / N, 1 / R₀; atol = 0.01)
+cons = all(u -> isapprox(sum(u), p.N; atol = 1e-6), sol.u)
+peak = isapprox(S[argmax(I)] / p.N, 1 / R₀; atol = 0.01)
 sol_long = solve(remake(ODEProblem(sir_ode!, u0, (0.0, 400.0), p)), Tsit5();
                  reltol = 1e-10, abstol = 1e-10, save_everystep = false)
-fsize = isapprox(sol_long.u[end][1] / N, s_inf; atol = 1e-3)
+fsize = isapprox(sol_long.u[end][1] / p.N, s_inf; atol = 1e-3)
 (cons, peak, fsize)
 ```
 

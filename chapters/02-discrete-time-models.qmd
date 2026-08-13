@@ -95,17 +95,15 @@ rate_to_proportion(r, δt) = -expm1(-r * δt)
 
 function sir_map_step(state, p, δt)          # deterministic, eq-ch02-map
     S, I, R = state
-    β, c, γ, N = p
-    infection = rate_to_proportion(β * c * I / N, δt) * S
-    recovery  = rate_to_proportion(γ, δt) * I
+    infection = rate_to_proportion(p.β * p.c * I / p.N, δt) * S
+    recovery  = rate_to_proportion(p.γ, δt) * I
     return (S - infection, I + infection - recovery, R + recovery)
 end
 
 function sir_chain_step(state, p, δt, rng)   # stochastic, eq-ch02-chain
     S, I, R = state
-    β, c, γ, N = p
-    Y = rand(rng, Binomial(round(Int, S), rate_to_proportion(β * c * I / N, δt)))
-    Z = rand(rng, Binomial(round(Int, I), rate_to_proportion(γ, δt)))
+    Y = rand(rng, Binomial(round(Int, S), rate_to_proportion(p.β * p.c * I / p.N, δt)))
+    Z = rand(rng, Binomial(round(Int, I), rate_to_proportion(p.γ, δt)))
     return (S - Y, I + Y - Z, R + Z)
 end
 
@@ -127,7 +125,7 @@ baseline scenario with $\delta t = 1$ day.
 ```{julia}
 #| label: ch02-run
 u0 = [990, 10, 0]
-p  = (0.05, 10.0, 0.25, 1000.0)
+p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
 δt = 1.0
 nsteps = 40
 ts = 0:nsteps
@@ -172,9 +170,8 @@ using OrdinaryDiffEq
 
 function sir_ode!(du, u, p, t)
     S, I, R = u
-    β, c, γ, N = p
-    λ = β * c * I / N
-    du[1] = -λ * S; du[2] = λ * S - γ * I; du[3] = γ * I
+    λ = p.β * p.c * I / p.N
+    du[1] = -λ * S; du[2] = λ * S - p.γ * I; du[3] = p.γ * I
     return nothing
 end
 

@@ -46,11 +46,10 @@ R_0 = \frac{\beta c}{\gamma}, \qquad s_\infty = s_0\, e^{-R_0 (1 - s_\infty)} .
 # ╔═╡ b1e000a2-6224-48e8-b67d-a76532f7fd5c
 function sir_ode!(du, u, p, t)
     S, I, R = u
-    β, c, γ, N = p
-    λ = β * c * I / N
+    λ = p.β * p.c * I / p.N
     du[1] = -λ * S
-    du[2] = λ * S - γ * I
-    du[3] = γ * I
+    du[2] = λ * S - p.γ * I
+    du[3] = p.γ * I
     return nothing
 end
 
@@ -74,10 +73,10 @@ below 1 and the epidemic fails to take off.
 # ╔═╡ 6b88430c-6cc7-4f82-80d4-67abfe108148
 begin
     u0_ch01 = [990.0, 10.0, 0.0]
-    p_ch01 = (β_ui, c_ui, γ_ui, 1000.0)
+    p_ch01 = (β = β_ui, c = c_ui, γ = γ_ui, N = 1000.0)
     sol_ch01 = solve(ODEProblem(sir_ode!, u0_ch01, (0.0, 120.0), p_ch01), Tsit5(); saveat = 0.5)
-    R0_ch01 = β_ui * c_ui / γ_ui
-    s0_ch01 = u0_ch01[1] / 1000.0
+    R0_ch01 = p_ch01.β * p_ch01.c / p_ch01.γ
+    s0_ch01 = u0_ch01[1] / p_ch01.N
     s_inf_ch01 = solve(
         NonlinearProblem((s, R0) -> s - s0_ch01 * exp(-R0 * (1 - s)), 0.2, R0_ch01),
         NewtonRaphson()).u

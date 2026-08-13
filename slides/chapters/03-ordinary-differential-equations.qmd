@@ -36,11 +36,13 @@ which a `ContinuousCallback` locates to solver tolerance.
 #| echo: true
 using OrdinaryDiffEq
 function sir_ode!(du, u, p, t)
-    S, I, R = u; β, c, γ, N = p; λ = β * c * I / N
-    du[1] = -λ * S; du[2] = λ * S - γ * I; du[3] = γ * I; return nothing
+    S, I, R = u; λ = p.β * p.c * I / p.N
+    du[1] = -λ * S; du[2] = λ * S - p.γ * I; du[3] = p.γ * I; return nothing
 end
-u0 = [990.0, 10.0, 0.0]; p = (0.05, 10.0, 0.25, 1000.0); tspan = (0.0, 80.0)
-sol = solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5(); reltol = 1e-8, abstol = 1e-8)
+u0 = [990.0, 10.0, 0.0]; tspan = (0.0, 80.0)
+p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
+prob = ODEProblem(sir_ode!, u0, tspan, p)
+sol = solve(prob, Tsit5(); reltol = 1e-8, abstol = 1e-8)
 (length(sol.t), round(sol(12.5)[2]; digits = 3))   # adaptive steps; dense interpolant
 ```
 
@@ -51,16 +53,16 @@ sol = solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5(); reltol = 1e-8, abstol =
 #| echo: true
 using DiffEqCallbacks
 t1, t2 = 10.0, 30.0; β_lock = 0.025
-lockdown!(integ) = (integ.p[1] = integ.t < t2 ? β_lock : 0.05)
-cb = PresetTimeCallback([t1, t2], lockdown!)
-sol_lock = solve(ODEProblem(sir_ode!, u0, tspan, [0.05, 10.0, 0.25, 1000.0]),
-                 Tsit5(); callback = cb, reltol = 1e-8, abstol = 1e-8)
+set_β!(integ, β) = (integ.p = merge(integ.p, (β = β,)))     # NamedTuple stays a NamedTuple
+cb = CallbackSet(PresetTimeCallback([t1], i -> set_β!(i, β_lock)),
+                 PresetTimeCallback([t2], i -> set_β!(i, 0.05)))
+sol_lock = solve(prob, Tsit5(); callback = cb, reltol = 1e-8, abstol = 1e-8)
 
 peak_t = Float64[]
-dIdt(u, p) = p[1] * p[2] * u[2] / p[4] * u[1] - p[3] * u[2]     # eq-s-ch03-peak
-peak_cb = ContinuousCallback((u, t, i) -> dIdt(u, i.p), i -> push!(peak_t, i.t))
-solve(ODEProblem(sir_ode!, u0, tspan, collect(p)), Tsit5();
-      callback = peak_cb, reltol = 1e-8, abstol = 1e-8)
+dIdt(u, p) = (p.β * p.c * u[2] / p.N) * u[1] - p.γ * u[2]       # eq-s-ch03-peak
+peak_cb = ContinuousCallback((u, t, i) -> dIdt(u, i.p),         # condition sees u
+                             i -> push!(peak_t, i.t))           # affect! sees integrator
+solve(prob, Tsit5(); callback = peak_cb, reltol = 1e-8, abstol = 1e-8)
 (round.(peak_t; digits = 2), round(maximum(sol[2, :]); digits = 1),
  round(maximum(sol_lock[2, :]); digits = 1))
 ```
