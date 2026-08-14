@@ -50,6 +50,9 @@ per session. Later cells run quickly.
 | `list(a = 1, b = 2)` | `(a = 1, b = 2)` | a named tuple; read fields with `p.a` |
 | `TRUE` / `FALSE` | `true` / `false` | lowercase |
 
+The [Julia essentials chapter](../../prerequisites/01-julia-essentials.qmd)
+has the full table.
+
 **The REPL is your other window.** Alongside this document you have a Julia
 prompt. Besides the ordinary `julia>` prompt it has three other modes. Type the
 character at an empty prompt to enter one, `Backspace` to leave:
@@ -79,7 +82,8 @@ Two Julia-specific conventions used throughout the course:
 ## Setup
 
 Run this first. It loads the two packages the worksheet needs and defines the
-`check` helper used by every part.
+`check` helper used by every part. If it fails, a setup step is missing (see
+[Setting up](../../setup.qmd)).
 
 ```{julia}
 #| label: ws-p01-setup

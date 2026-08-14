@@ -46,6 +46,9 @@ Some people find the intuition easier there first. Either order is fine.
 Indexing starts at 1, as in R. A `!` at the end of a name (`sir_ode!`) means the
 function modifies its argument rather than returning a copy.
 
+The [Julia essentials chapter](../../prerequisites/01-julia-essentials.qmd)
+has the full table.
+
 ---
 
 ## Setup

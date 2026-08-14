@@ -115,8 +115,10 @@ First-order convergence and conservation confirmed.
 
 ::: {.notes}
 Stress that the map is literally the expectation of the chain's update, which is
-why the red mean and dashed map coincide. The convergence study reuses the
-forward-Euler order analysis from the calculus prerequisite. Encourage learners
+why the red mean and dashed map coincide. The convergence study measures
+first-order behaviour: halve the step and the error halves. The calculus
+prerequisite derives the same result for forward Euler and is optional
+background. Encourage learners
 to shrink δt in the notebook and watch both the discretisation error and the
 extinction probability change.
 :::

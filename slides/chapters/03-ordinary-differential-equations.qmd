@@ -115,7 +115,8 @@ callback peak matches the maximum.
 ::: {.notes}
 Highlight that dense output means sol(t) is a high-order interpolant, not a saved
 sample, which is how solutions are resampled onto observation grids later. The
-mutable parameter vector is required so the PresetTimeCallback can change β.
+parameters stay a NamedTuple: merge returns a new one with β replaced, which the
+PresetTimeCallback assigns back to integrator.p, so no mutable vector is needed.
 Note that realistic interventions involve uncertainty and feedback, deferred to
 the interventions and control chapter. Invite learners to sweep β_lock in the
 notebook.

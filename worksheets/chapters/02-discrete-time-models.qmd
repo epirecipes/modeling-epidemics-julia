@@ -47,6 +47,9 @@ chain separate. Either order is fine.
 To type `δ` and `ω`: `\delta`↹ and `\omega`↹. Plain `dt` and `w` work just as
 well if you prefer them; the Greek letters are cosmetic.
 
+The [Julia essentials chapter](../../prerequisites/01-julia-essentials.qmd)
+has the full table.
+
 ---
 
 ## Setup

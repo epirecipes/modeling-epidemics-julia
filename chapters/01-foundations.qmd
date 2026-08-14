@@ -142,6 +142,12 @@ unchanged: state positional, parameters by field. `saveat = 0.5` asks the solver
 to store the solution every half day; it does not change how the solver steps,
 only what it keeps.
 
+`ODEProblem` takes four arguments in this order: the kernel, the initial state,
+the time span, and the parameters. The kernel goes in by name, `sir_ode!` with
+no brackets after it, because the solver is handed the function itself and calls
+it many times as it steps. Writing `sir_ode!(du, u0, p, 0.0)` there would call it
+once and pass the result instead, which is the usual first error.
+
 ::: {.callout-note}
 ## Reading a solution object
 
@@ -239,7 +245,9 @@ isapprox(S_over_N_at_peak, threshold_fraction; atol = 0.01)
 ```
 
 **Final size (@eq-ch01-finalsize).** Extending the horizon, the simulated
-surviving susceptible fraction must match the analytic root $s_\infty$:
+surviving susceptible fraction must match the analytic root $s_\infty$. `remake`
+copies an existing problem with one field changed, here the time span, so the
+kernel, initial state and parameters carry over unaltered:
 
 ```{julia}
 #| label: ch01-check-finalsize

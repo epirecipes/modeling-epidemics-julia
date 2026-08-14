@@ -22,8 +22,8 @@ worlds together.
 By the end of this chapter you should be able to:
 
 - write a discrete-time SIR update using the rate-to-proportion conversion;
-- contrast the deterministic map with the binomial Markov chain of
-  @sec-probability-and-stochastic-processes;
+- contrast the deterministic map with the continuous-time ODE of
+  @sec-foundations, and say which of the two the map approximates;
 - run a stochastic ensemble and compare its mean with the deterministic map;
 - demonstrate numerically that the map converges to the ODE as $\delta t \to 0$;
 - verify population conservation in both formulations.
@@ -65,8 +65,7 @@ R_{t+1} &= R_t + p_R I_t.
 \end{aligned}
 $$ {#eq-ch02-map}
 
-The **stochastic chain** replaces those expectations with binomial draws (cf.
-@eq-p02-chain):
+The **stochastic chain** replaces those expectations with binomial draws:
 
 $$
 Y_t \sim \text{Binomial}(S_t, p_I), \quad
@@ -77,6 +76,12 @@ I_{t+1} &= I_t + Y_t - Z_t,\\
 R_{t+1} &= R_t + Z_t.
 \end{aligned}
 $$ {#eq-ch02-chain}
+
+A $\text{Binomial}(n, p)$ counts how many of $n$ independent individuals, each
+with probability $p$, make the move; here $n$ is the number of people at risk
+and $p$ comes from @eq-ch02-probs. The same chain is derived at more length in
+@sec-probability-and-stochastic-processes, which is optional background rather
+than a prerequisite for this chapter.
 
 As $\delta t \to 0$, $p_I \to \tfrac{\beta c I}{N}\delta t$ and
 $p_R \to \gamma\,\delta t$, so the map @eq-ch02-map reduces to a forward-Euler
@@ -215,7 +220,10 @@ chain_ok = all(traj -> all(k -> sum(traj[:, k]) == 1000, 1:nsteps+1), chain_ens)
 ```
 
 **Convergence.** The empirical order of the map-to-ODE error should be close to
-1, matching the forward-Euler analysis of @sec-calculus-and-numerical-methods:
+1. First order means the error falls in proportion to the step: halve $\delta t$
+and the error halves. The same result is derived for the forward-Euler method in
+@sec-calculus-and-numerical-methods, which is optional background rather than a
+prerequisite for this chapter:
 
 ```{julia}
 #| label: ch02-check-order
@@ -258,7 +266,8 @@ sits closer to the ODE reference and why.
 Compute, from the 200-member ensemble, the probability that the epidemic goes
 extinct (reaches $I = 0$) before day 40 for the baseline $R_0 = 2$. Then lower
 the contact rate to $c = 6$ and recompute. Explain the change in terms of the
-reproduction number and demographic stochasticity — a phenomenon the
+reproduction number and of demographic stochasticity, the chance variation that
+comes from moving whole individuals rather than expected fractions, which the
 deterministic map cannot capture.
 
 ## Companion materials
