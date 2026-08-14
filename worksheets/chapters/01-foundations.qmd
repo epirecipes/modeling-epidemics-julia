@@ -1,0 +1,428 @@
+---
+title: "Worksheet — Foundations"
+course-unit: ch01-foundations
+artifact: worksheet
+status: draft
+---
+
+# Worksheet: from equations to an epidemic curve
+
+**~45 minutes**
+
+In the last session you wrote the SIR kernel but never ran it. Here you hand it
+to a solver and get an epidemic curve out, then check that curve against two
+things the theory predicts in advance: that the population is conserved, and
+that the infectious peak arrives exactly when the susceptible fraction falls
+through $1/R_0$. Part B defines $R_0$.
+
+Nothing here changes the model. The ordinary differential equations session is
+where the model starts responding to interventions; today is about getting a
+trustworthy curve and knowing why you trust it.
+
+**How to use this file.** Run cells one at a time with `Ctrl+Shift+Enter`. Cells
+marked `# TODO` have a line or two for you to complete; everything else runs as
+given. Each part ends with `✓` / `✗` lines that check your answer; a `✗` is
+information, not failure, and the collapsed hint below it will get you moving.
+An instructor is circulating; ask early rather than staying stuck.
+
+**Parts A and B are the session.** **Part C** goes further if you get there; not
+reaching it is completely fine. Worked solutions are posted at the end of each
+day. Run `git pull` to collect them.
+
+**Prefer sliders to typing?** The
+[Pluto notebook](../../notebooks/chapters/01-foundations.jl) for this chapter
+lets you drag $\beta$, $c$ and $\gamma$ and watch $R_0$ and the curve respond.
+Some people find the intuition easier there first. Either order is fine.
+
+**Coming from R?**
+
+| R | Julia | Note |
+|---|---|---|
+| `f <- function(x) x^2` | `f(x) = x^2` | or `function f(x) ... end` |
+| `x <- c(1, 2, 3)` | `x = [1.0, 2.0, 3.0]` | `1.0` and `1` are different types |
+| `list(a = 1, b = 2)` | `(a = 1, b = 2)` | a named tuple; read fields with `p.a` |
+| `m[2, ]` | `m[2, :]` | the `:` means "all of this dimension" |
+
+Indexing starts at 1, as in R. A `!` at the end of a name (`sir_ode!`) means the
+function modifies its argument rather than returning a copy.
+
+The [Julia essentials chapter](../../prerequisites/01-julia-essentials.qmd)
+has the full table.
+
+---
+
+## Setup
+
+This is your kernel from the last session, given back so that nobody is held up
+retyping work they have already done. Note the two reading
+conventions it uses, because everything below follows them: the **state** `u` is
+positional (`S, I, R = u`), the **parameters** `p` are read by field (`p.β`).
+
+```{julia}
+#| label: ws-ch01-setup
+using OrdinaryDiffEq
+using NonlinearSolve
+using CairoMakie
+
+check(name, condition) =
+    println(condition ? "✓ $name" : "✗ $name — not right yet, see the hint")
+
+function sir_ode!(du, u, p, t)
+    S, I, R = u
+    λ = p.β * p.c * I / p.N
+    du[1] = -λ * S
+    du[2] = λ * S - p.γ * I
+    du[3] = p.γ * I
+    return nothing
+end
+
+u0    = [990.0, 10.0, 0.0]                          # S(0), I(0), R(0)
+p     = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
+tspan = (0.0, 80.0)
+
+println("kernel ready; R₀ = ", p.β * p.c / p.γ)
+```
+
+---
+
+## Part A — solve it, then read the answer (~15 min)
+
+Solving takes two steps. An `ODEProblem` bundles *what the model is*: the
+kernel, where it starts, how long to run, and the parameters. `solve` then says
+*how to integrate it*: here `Tsit5()`, a general-purpose method that is a good
+default for models like this one.
+
+Read the next cell before running it. The four-argument order is worth
+recognising, because you will write it yourself repeatedly from here on:
+
+```julia
+ODEProblem(kernel, initial_state, timespan, parameters)
+```
+
+The kernel goes in by *name*, with no brackets after it: you are handing the
+solver the function itself, not calling it. `saveat = 0.5` asks the solver to
+store the solution every half day; it does not change how the solver steps
+internally, only what it keeps for you.
+
+```{julia}
+#| label: ws-ch01-a1
+prob = ODEProblem(sir_ode!, u0, tspan, p)
+sol  = solve(prob, Tsit5(); saveat = 0.5)
+
+check("the solver ran", sol.retcode == ReturnCode.Success)
+check("it stored one state every half day", length(sol.t) == 161)
+
+sol.u[end]       # the whole state vector at day 80
+```
+
+Three numbers came back: $S$, $I$ and $R$ at day 80. Almost everyone has been
+infected and recovered, and the epidemic is over.
+
+Now read the result. A solution can be read three ways, and each answers a
+different question:
+
+| Idiom | What it gives you |
+|---|---|
+| `sol.t` | the times that were stored |
+| `sol.u` | a vector of **whole state vectors**, one per stored time |
+| `sol[i, :]` | **compartment `i`** across every stored time |
+
+`sol.u[end]` above used the second. For plotting a single compartment you want
+the third.
+
+```{julia}
+#| label: ws-ch01-a2
+t = sol.t
+S = sol[1, :]
+I = Float64[]     # TODO: replace this — the infectious compartment, all stored times
+R = sol[3, :]
+
+check("one value of I per stored time", length(I) == length(t))
+check("the epidemic took off", !isempty(I) && maximum(I) > u0[2])
+check("nobody is created or destroyed",
+      all(u -> isapprox(sum(u), p.N; atol = 1e-6), sol.u))
+
+isempty(I) || println("peak infectious: ", round(maximum(I), digits = 1),
+                      " on day ", round(t[argmax(I)], digits = 1))
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part A
+
+```julia
+I = sol[2, :]
+```
+
+`I` is the second compartment, so the first index is `2`; the `:` means "every
+stored time". Compare the `S` line directly above it.
+
+The conservation check uses `sol.u` rather than `sol[i, :]` because it needs
+each *whole* state at once: it adds $S+I+R$ at each time and compares with $N$.
+That is the distinction between the second and third rows of the table.
+:::
+
+```{julia}
+#| label: fig-ws-ch01-sir
+#| fig-cap: "Baseline SIR epidemic: susceptible, infectious and recovered over 80 days."
+fig = Figure(size = (720, 400))
+ax  = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "number of individuals")
+lines!(ax, t, S; color = :steelblue, linewidth = 3, label = "S")
+isempty(I) || lines!(ax, t, I; color = :firebrick, linewidth = 3, label = "I")
+lines!(ax, t, R; color = :seagreen, linewidth = 3, label = "R")
+axislegend(ax; position = :rc)
+fig
+```
+
+### A1. Interpret
+
+- `sol.u` is a vector whose elements are themselves vectors, while `sol[2, :]`
+  is a plain vector of numbers. Which shape did the figure need, and why?
+- The conservation check passed to within $10^{-6}$ rather than exactly. Where
+  does that last bit of error come from?
+- Nothing in the kernel says the population is fixed; we never wrote $S+I+R=N$
+  anywhere. So why does it hold?
+
+> *Your answer here.*
+
+---
+
+## Part B — the threshold, and when nothing happens (~15 min)
+
+The basic reproduction number is the average number of secondary infections one
+infectious person produces in a fully susceptible population:
+
+$$
+R_0 = \frac{\beta c}{\gamma}.
+$$
+
+The epidemic grows only while $S/N > 1/R_0$. That makes a sharp, checkable
+prediction: the infectious curve turns over at the *exact moment* the
+susceptible fraction crosses $1/R_0$ — not near it, at it.
+
+```{julia}
+#| label: ws-ch01-b1
+R₀ = 0.0     # TODO: replace 0.0 — compute R₀ from the fields of p
+
+peak_index = isempty(I) ? 1 : argmax(I)
+S_over_N_at_peak = S[peak_index] / p.N
+
+check("R₀ is 2 for the baseline", isapprox(R₀, 2.0; atol = 1e-9))
+check("the peak sits on the threshold",
+      R₀ > 0 && isapprox(S_over_N_at_peak, 1 / R₀; atol = 0.01))
+
+(R₀ = R₀, threshold = R₀ > 0 ? 1 / R₀ : NaN, S_over_N_at_peak = S_over_N_at_peak)
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part B, R₀
+
+```julia
+R₀ = p.β * p.c / p.γ
+```
+
+To type `R₀`: `R\_0`↹. Plain `R0` works just as well if you prefer it; the
+subscript is cosmetic.
+
+If the threshold check fails but `R₀` is right, look at `peak_index`: `argmax`
+returns the *position* of the largest value, which is what you want here, not
+the value itself.
+:::
+
+Now vary the contact rate. Everything else stays at baseline, so $R_0$ scales
+with $c$ and there is some contact rate below which the epidemic never takes
+off.
+
+`p` is a named tuple, which cannot be modified in place. `merge` builds a new
+one with some fields replaced and the rest carried over:
+
+```julia
+merge(p, (c = 4.0,))     # same parameters, but with contact rate 4
+```
+
+(The trailing comma is required: it is what makes `(c = 4.0,)` a one-field
+named tuple rather than a bracketed expression.)
+
+```{julia}
+#| label: ws-ch01-b2
+contact_rates = [4.0, 6.0, 8.0, 10.0]
+results = map(contact_rates) do c_val
+    p_c = p     # TODO: replace p — the baseline parameters with contact rate c_val
+    s   = solve(ODEProblem(sir_ode!, u0, tspan, p_c), Tsit5(); saveat = 0.5)
+    (c = c_val,
+     R₀ = round(p_c.β * p_c.c / p_c.γ; digits = 2),
+     peak_I = round(maximum(s[2, :]); digits = 1),
+     infected_by_80 = round(s[3, end] / p.N; digits = 3))
+end
+
+check("each run used its own contact rate",
+      length(unique(r.R₀ for r in results)) == 4)
+check("c = 4 gives R₀ below 1", results[1].R₀ < 1)
+check("no epidemic at c = 4", results[1].peak_I <= u0[2])
+check("the day-80 total climbs with contact rate",
+      let a = [r.infected_by_80 for r in results]; issorted(a) && allunique(a) end)
+
+results
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part B, the sweep
+
+```julia
+p_c = merge(p, (c = c_val,))
+```
+
+The loop variable is called `c_val` rather than `c` on purpose: `p.c` is already
+the contact rate, and shadowing it inside the loop makes the code much harder to
+read.
+
+If every row comes out with the same `R₀`, `p_c` is still the unmodified `p`:
+`merge` returns a new tuple rather than changing the old one, so its result has
+to be assigned.
+:::
+
+```{julia}
+#| label: fig-ws-ch01-threshold
+#| fig-cap: "Infectious curves across contact rates. Below c = 5 the reproduction number falls under 1 and the initial infections fade without an epidemic."
+fig2 = Figure(size = (720, 400))
+ax2  = Axis(fig2[1, 1]; xlabel = "time (days)", ylabel = "infectious I(t)",
+            title = "Contact rate and the epidemic threshold")
+for c_val in contact_rates
+    s = solve(ODEProblem(sir_ode!, u0, tspan, merge(p, (c = c_val,))), Tsit5();
+              saveat = 0.5)
+    lines!(ax2, s.t, s[2, :]; linewidth = 3, label = "c = $(Int(c_val))")
+end
+axislegend(ax2; position = :rt)
+fig2
+```
+
+### B1. Interpret
+
+- At $c = 4$ the number of infectious people falls from day zero. Some people
+  are still infected along the way, so in what sense is this "no epidemic"?
+- The threshold condition is about $S/N$, not about how many people are
+  infectious. Two outbreaks with very different $I$ can be on opposite sides of
+  it. What does that say about using current case counts to judge whether an
+  epidemic is under control?
+- The same step in contact rate, $\Delta c = 2$, adds about 28 points to
+  `infected_by_80` between $c = 4$ and $c = 6$ but only about 15 between
+  $c = 8$ and $c = 10$, while the *peak* nearly doubles across that upper
+  range. Where on
+  the $R_0$ scale does an intervention buy the most, and does your answer change
+  if what you care about is the peak rather than the total?
+
+> *Your answer here.*
+
+---
+
+## Part C — the final size, without simulating (optional)
+
+*Start this only if you have finished Part B.*
+
+You already know how many had been infected by day 80 at each contact rate: you
+simulated it and read the number off. The total ever infected, however far into
+the future you look, can be obtained directly from $R_0$ without running the
+model at all. The surviving susceptible fraction
+$s_\infty = S(\infty)/N$ satisfies
+
+$$
+s_\infty = s_0 \exp\bigl(-R_0 (1 - s_\infty)\bigr),
+\qquad s_0 = \frac{S(0)}{N},
+$$
+
+which cannot be rearranged for $s_\infty$ in elementary functions: it appears on
+both sides and inside the exponential. (There is a closed form in terms of the
+Lambert $W$ function, which is not much help unless you already have $W$.) In
+practice it is found numerically, by searching for the value that makes the two
+sides equal.
+
+That is a *root-finding* problem, and it uses the same `solve` you have been
+calling all session. Only the problem type changes: `NonlinearProblem` instead
+of `ODEProblem`, and the function you supply returns the **residual**
+(left-hand side minus right-hand side), which the solver drives to zero.
+
+```{julia}
+#| label: ws-ch01-c1
+s₀ = u0[1] / p.N
+
+# The residual takes the unknown and the parameters, mirroring f(du, u, p, t).
+residual(s, R0) = s - s₀ * exp(-R0 * (1 - s))
+# TODO: replace 0.0 with an initial guess for s∞ — anything up to about 0.6 will do
+fs_prob = NonlinearProblem(residual, 0.0, R₀)
+
+s_inf = solve(fs_prob, NewtonRaphson()).u
+attack_rate = 1 - s_inf
+
+check("s∞ is a fraction", 0 < s_inf < 1)
+check("it really is a root", isapprox(residual(s_inf, R₀), 0.0; atol = 1e-8))
+
+# Compare against simulation: run far past the end of the epidemic.
+sol_long = solve(ODEProblem(sir_ode!, u0, (0.0, 400.0), p), Tsit5();
+                 reltol = 1e-10, abstol = 1e-10, save_everystep = false)
+simulated = sol_long.u[end][1] / p.N
+
+check("analytic and simulated agree", isapprox(s_inf, simulated; atol = 1e-3))
+
+(s_infinity = round(s_inf; digits = 4),
+ simulated = round(simulated; digits = 4),
+ attack_rate = round(attack_rate; digits = 4))
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part C
+
+```julia
+fs_prob = NonlinearProblem(residual, 0.2, R₀)
+```
+
+Any guess below about 0.6 lands on the root you want. The residual turns over at
+$s = 1 - \ln(s_0 R_0)/R_0 \approx 0.66$, and from above that point Newton's method
+converges instead to a second root at $s_\infty \approx 1.010$. That is a genuine
+solution of the equation, but it describes a negative attack rate, so it is not
+an epidemic.
+
+Try `0.9` as well as `0.2` and watch the "s∞ is a fraction" check fail. A
+root-finder returns *a* root; nothing in the mathematics says which one you
+meant.
+:::
+
+### C1. Interpret
+
+- Roughly 80% of the population is infected over the epidemic, yet the model
+  stops with 20% still susceptible. Transmission did not run out of people.
+  What did it run out of?
+- The analytic answer needed only $R_0$ and $s_0$. It never asked about
+  $\beta$ and $c$ separately, or about $\gamma$ on its own. What does the
+  simulated curve tell you that the final-size relation cannot?
+
+> *Your answer here.*
+
+---
+
+## Finish: render your own report
+
+In a terminal, from the top of the repository:
+
+```bash
+quarto render worksheets/chapters/01-foundations.qmd
+```
+
+A clean render means every cell ran top to bottom in a fresh session: the same
+command, and the same standard, you would use for a reproducible analysis of
+your own.
+
+---
+
+## Where to look next
+
+Nothing here is assigned. The whole project stays available to you afterwards.
+
+- [The chapter](../../chapters/01-foundations.qmd) — the derivation of the SIR
+  equations from mass-action transmission, the threshold argument in full, and a
+  roadmap of how every later chapter relaxes one of the five assumptions.
+- [The Pluto notebook](../../notebooks/chapters/01-foundations.jl) — sliders for
+  $\beta$, $c$ and $\gamma$, with $R_0$ and the final size recomputing as you
+  drag.
+- The chapter's own exercises, with worked solutions. Exercise 1 covers the same
+  ground as Parts B and C above, so skip it unless you want the comparison.
+  Exercise 2 goes further than this worksheet: it asks what the trajectory does
+  when $\gamma$ is raised to 0.5, putting $R_0$ exactly at 1.

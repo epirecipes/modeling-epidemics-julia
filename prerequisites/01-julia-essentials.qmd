@@ -10,11 +10,47 @@ status: complete
 :::
 
 This prerequisite equips you with the specific slice of Julia that the rest of
-the course depends on: numeric types, functions with in-place mutation,
-broadcasting, `struct`s and named tuples, multiple dispatch, and reproducible
-random numbers. Rather than surveying the language, we introduce each feature
+the course depends on: functions with in-place mutation, broadcasting and
+comprehensions, named tuples for model parameters, multiple dispatch, and
+reproducible random numbers. Rather than surveying the language, we introduce each feature
 through the object we return to in every chapter — the susceptible–infectious–
 recovered (SIR) model of @kermack1927.
+
+Scientific computing has long been split across two languages: a convenient one
+for writing the analysis and a fast one for the parts that turn out to be too
+slow. Julia is designed to be both. It is dynamically typed and interactive like
+R, but compiles to native code, so the model kernels you write in this course
+are the same code that runs inside the solvers — nothing is rewritten in C to
+make it fast enough. That matters here because epidemic models are run
+thousands of times over, in stochastic ensembles, sensitivity sweeps, and
+inference.
+
+::: {.callout-note collapse="true"}
+## Coming from R?
+
+Most of what you know transfers directly. Assignment uses `=` rather than `<-`,
+and indexing starts at 1 as it does in R.
+
+| R | Julia | Note |
+|---|---|---|
+| `f <- function(x) x^2` | `f(x) = x^2` | or `function f(x) ... end` |
+| `x <- c(1, 2, 3)` | `x = [1.0, 2.0, 3.0]` | `1.0` and `1` are different types |
+| `v[1]` | `v[1]` | indexing starts at 1, as in R |
+| `m[2, ]` | `m[2, :]` | row 2, every column; `:` is all of a dimension |
+| `sapply(v, f)` | `f.(v)` | the dot applies `f` elementwise |
+| `sapply(1:5, f)` | `[f(k) for k in 1:5]` | a comprehension builds a vector |
+| `x[x < 0.5]` | `x[x .< 0.5]` | comparisons need the dot too |
+| `for (i in 1:10)` | `for i in 1:10 ... end` | no brackets, closed with `end` |
+| `list(a = 1, b = 2)` | `(a = 1, b = 2)` | a named tuple; read fields with `p.a` |
+| `rbinom(1, n, prob)` | `rand(Binomial(n, prob))` | build the distribution, then draw |
+| `TRUE` / `FALSE` | `true` / `false` | lowercase |
+
+An R named list also translates to a `Dict`, `Dict("a" => 1)`, read with
+`d["a"]`; this course uses named tuples for model parameters because their field
+names are known to the compiler. The official
+[noteworthy differences from R](https://docs.julialang.org/en/v1/manual/noteworthy-differences/#Noteworthy-differences-from-R)
+is the complete list.
+:::
 
 ## Learning goals
 
@@ -24,10 +60,12 @@ By the end of this unit you should be able to:
   pattern every SciML solver expects;
 - use broadcasting (`.`) and comprehensions to vectorise scalar operations
   without writing loops;
-- group model quantities with `struct`s and `NamedTuple`s and access them by
-  field;
-- exploit multiple dispatch to write one function that accepts several
-  parameter representations;
+- group model parameters in a `NamedTuple` and access them by field rather than
+  by position;
+- collect results with a loop and `push!` or into a preallocated array, and
+  build a variant parameter set with `merge`;
+- recognise that Julia resolves a function by the *types* of its arguments, and
+  explain why that is what lets `solve` accept any problem/algorithm pair;
 - produce bit-for-bit reproducible stochastic output with `StableRNGs`;
 - render a figure from code with `CairoMakie`.
 
@@ -82,6 +120,64 @@ $$ {#eq-p01-rate}
 We use the course baseline scenario $S(0)=990$, $I(0)=10$, $R(0)=0$, $N=1000$,
 $c=10$, $\beta=0.05$, $\gamma=0.25$.
 
+### The REPL and its modes
+
+Julia's read–eval–print loop is the interactive prompt you get by running
+`julia`, and it plays the role the console plays in R. What is unusual is that
+it has four modes rather than one. Each is entered by typing a single character
+at an empty `julia>` prompt, and left again with `Backspace`:
+
+| Key | Mode | What it is for |
+|---|---|---|
+| — | Julia | evaluating expressions; the default |
+| `?` | help | `?expm1` prints a function's docstring, signatures, and examples |
+| `]` | package | `]st` shows the active environment, `]instantiate` installs it |
+| `;` | shell | run `ls`, `cd`, or `git status` without leaving Julia |
+
+```
+julia> 2 + 2
+4
+
+help?> expm1
+  expm1(x)
+
+  Accurately compute exp(x) - 1.
+
+(EpiModelingCourse) pkg> st StableRNGs
+Status `~/modeling-epidemics-julia/Project.toml`
+  [860ef19b] StableRNGs v1.0.3
+
+shell> ls prerequisites
+01-julia-essentials.qmd
+```
+
+The prompt in package mode names the *active environment*, and that name is the
+first thing to check when a package appears to be missing: the course's packages
+are declared in the repository's `Project.toml`, so Julia must be started from
+the repository root, or with `julia --project=.`, for `using CairoMakie` to
+resolve.
+
+The first `using CairoMakie` in a fresh session takes a minute or more while
+Julia compiles the plotting stack, and once per session after that it is fast.
+[Setting up](../setup.qmd) covers this and the rest of the installation.
+
+Help mode is worth building a habit around. Every function used in this course
+carries a docstring, so `?` answers most "what arguments does this take"
+questions faster than a web search, and it works offline on the exact version
+you have installed.
+
+::: {.callout-tip}
+## Typing Greek letters
+
+The course writes parameters as `β`, `γ`, and `λ` so the code matches the
+equations. These are ordinary variable names, entered at any Julia prompt or in
+an editor with a backslash-name and Tab: `\beta`⇥ gives `β`, `\gamma`⇥ gives
+`γ`, `\lambda`⇥ gives `λ`, and `\delta`⇥ gives `δ`. Subscripts work the same
+way, and the next chapter uses them for $R_0$ and $s_0$: `R\_0`⇥ gives `R₀` and
+`s\_0`⇥ gives `s₀`. ASCII names such as `beta` and `R0` work identically — the
+choice is cosmetic.
+:::
+
 ### Functions and in-place mutation
 
 Every SciML right-hand side has the signature `f(du, u, p, t)`: it *writes* the
@@ -94,24 +190,30 @@ carries $(\beta, c, \gamma, N)$.
 #| label: p01-kernel
 function sir_ode!(du, u, p, t)
     S, I, R = u
-    β, c, γ, N = p
-    λ = β * c * I / N            # force of infection, λ = βcI/N
+    λ = p.β * p.c * I / p.N     # force of infection, λ = βcI/N
     du[1] = -λ * S              # dS/dt
-    du[2] = λ * S - γ * I       # dI/dt
-    du[3] = γ * I              # dR/dt
+    du[2] = λ * S - p.γ * I     # dI/dt
+    du[3] = p.γ * I             # dR/dt
     return nothing
 end
 
 u0 = [990.0, 10.0, 0.0]        # S, I, R
 p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
 du = zeros(3)
-sir_ode!(du, u0, values(p), 0.0)
+sir_ode!(du, u0, p, 0.0)
 du
 ```
 
 The trailing `!` is a Julia convention marking a function that mutates its
-arguments. The `NamedTuple` `p` lets us write `p.β` instead of remembering that
-the transmission probability lives at index 1.
+arguments.
+
+Note the two containers are read in different ways, and this is the convention
+the whole course follows. The state `u` is a plain vector whose order is fixed
+by @eq-p01-sir, so we destructure it positionally: `S, I, R = u`. The parameters
+`p` are a `NamedTuple`, read by field: `p.β`, never `p[1]`. Parameter lists grow
+and get reordered as models gain features, and a positional read fails silently
+when that happens — the code still runs and every number is wrong. A field name
+either resolves or errors.
 
 ### Broadcasting and comprehensions
 
@@ -133,28 +235,146 @@ p_slow = rate_to_proportion.(0.25, δts)
 `expm1(x)` computes $e^x - 1$ accurately for small `x`, avoiding the
 cancellation error of `1 - exp(...)`.
 
-### Structs, named tuples, and multiple dispatch
+A *comprehension* is the other way to build a vector from an expression. Where
+broadcasting applies one function elementwise, a comprehension can evaluate an
+arbitrary expression per element, so it is what we reach for when the body is
+more than a single call:
 
-A `struct` bundles related fields into a new type. Multiple dispatch then lets
-one function name resolve to different methods depending on argument types — the
-mechanism SciML uses everywhere. Here `force_of_infection` accepts either a
-plain `NamedTuple` or a typed `SIRParameters`.
+```{julia}
+#| label: p01-comprehension
+prevalences = [10.0, 100.0, 500.0]
+[p.β * p.c * I / p.N for I in prevalences]     # λ at three prevalences
+```
+
+Read it right to left: *for each* `I` *in* `prevalences`, evaluate the
+expression, and collect the results into a vector. We use comprehensions
+throughout the course to sweep a parameter or to pull one compartment out of a
+solved model.
+
+### Building and updating containers
+
+Broadcasting and comprehensions cover the case where one expression is applied
+to every element. When the body is longer, or when a result has to be assembled
+along the way, we write the loop out and collect as we go. An empty typed array
+grows with `push!`:
+
+```{julia}
+#| label: p01-loop
+contact_rates = [4.0, 6.0, 8.0, 10.0]
+reproduction_numbers = Float64[]
+
+for c_val in contact_rates
+    push!(reproduction_numbers, p.β * c_val / p.γ)   # R₀ = βc/γ
+end
+
+reproduction_numbers
+```
+
+`Float64[]` is an empty vector whose element type is fixed when it is created.
+Plain `[]` gives a `Vector{Any}`, which the compiler cannot specialise on, so the
+element type is always worth naming. The loop variable is `c_val` rather than
+`c`, because `p.c` is already the contact rate and shadowing it makes the body
+harder to read.
+
+When the number of results is known in advance, allocate the array once and fill
+it by index. Later chapters store whole trajectories this way, one row per
+compartment and one column per scenario or time step:
+
+```{julia}
+#| label: p01-preallocate
+prevalences = [10.0, 100.0, 500.0]
+derivatives = Matrix{Float64}(undef, 3, length(prevalences))
+
+for (k, I) in enumerate(prevalences)
+    sir_ode!(du, [p.N - I, I, 0.0], p, 0.0)
+    derivatives[:, k] .= du
+end
+
+derivatives
+```
+
+`undef` leaves the memory uninitialised, so every entry has to be written before
+it is read. `enumerate` pairs each element with its position, which is where the
+index `k` comes from. The `.=` copies into the existing column instead of
+replacing it, the same in-place idea as `du[1] = ...` above. Reading back,
+`derivatives[:, k]` is column `k`, and `derivatives[2, :]` is
+$\mathrm{d}I/\mathrm{d}t$ at all three prevalences: this row slicing is how the
+course pulls one compartment out of a stored trajectory.
+
+A `NamedTuple` cannot be modified in place, so a scenario that changes one
+parameter is built with `merge`, which returns a new tuple with the named fields
+replaced and the rest carried over:
+
+```{julia}
+#| label: p01-merge
+p_low = merge(p, (c = 4.0,))
+(baseline_c = p.c, low_c = p_low.c, β_carried_over = p_low.β == p.β)
+```
+
+The trailing comma in `(c = 4.0,)` is what makes it a one-field named tuple;
+without it the brackets are ordinary grouping and `merge` has nothing to merge.
+This is how the course varies one parameter at a time, including from inside a
+solver callback (@sec-ordinary-differential-equations).
+
+`map` applies a function to each element and collects the results, like a
+comprehension with a function in place of the expression. A `do` block writes
+the function body after the collection, which keeps a multi-line body readable:
+
+```{julia}
+#| label: p01-map-do
+sweep = map(contact_rates) do c_val
+    p_c = merge(p, (c = c_val,))
+    (c = c_val, R₀ = p_c.β * p_c.c / p_c.γ)
+end
+```
+
+Each iteration returns a small `NamedTuple`, so `sweep` is a vector of rows,
+which is the shape a parameter sweep is usually reported in.
+
+The validation cells in every unit ask a question of a whole collection at once.
+`all`, `any` and `count` take the test first and the collection second:
+
+```{julia}
+#| label: p01-predicates
+(any(>(1), reproduction_numbers),
+ count(>(1), reproduction_numbers),
+ all(v -> isapprox(sum(v), 0.0; atol = 1e-12), eachcol(derivatives)))
+```
+
+`>(1)` builds the function "is greater than 1", and `v -> isapprox(...)` is an
+anonymous function, written inline because it is needed once. `eachcol` walks
+the columns of the matrix, so the third check reads as "the derivatives conserve
+population at every prevalence".
+
+### Multiple dispatch
+
+Multiple dispatch lets one function name resolve to different *methods*
+depending on the types of its arguments. A method is one concrete
+implementation; the function is the name they share. Here `force_of_infection`
+accepts either the number infectious or a whole state vector, from which it
+reads $I$ itself:
 
 ```{julia}
 #| label: p01-dispatch
-struct SIRParameters
-    β::Float64
-    c::Float64
-    γ::Float64
-    N::Float64
-end
+force_of_infection(I::Number, p)         = p.β * p.c * I / p.N
+force_of_infection(u::AbstractVector, p) = force_of_infection(u[2], p)
 
-force_of_infection(I, p::NamedTuple)     = p.β * p.c * I / p.N
-force_of_infection(I, p::SIRParameters)  = p.β * p.c * I / p.N
-
-params = SIRParameters(0.05, 10.0, 0.25, 1000.0)
-(force_of_infection(10.0, p), force_of_infection(10.0, params))
+(force_of_infection(10.0, p), force_of_infection(u0, p))
 ```
+
+`Number` and `AbstractVector` are *abstract* types — categories rather than
+concrete containers — so the second method accepts any vector-like argument, not
+just the `Vector{Float64}` we happen to pass. Note what dispatch replaces: there
+is no `if` inspecting what was passed in, and no extra argument saying which form
+the caller used.
+
+You will not often write dispatch in this course, but you will rely on it in
+every chapter. When the next chapters call `solve(prob, Tsit5())`, no glue code
+connects that problem to that algorithm: `solve` resolves to a method chosen by
+the types of *both* arguments. This is why swapping `Tsit5()` for a stiff solver,
+or handing the same `ODEProblem` to a sensitivity or inference package, needs no
+change to the kernel you wrote. Independently written SciML packages compose
+because each adds methods rather than editing anyone else's.
 
 ### Reproducible randomness
 
@@ -200,7 +420,7 @@ conservation law @eq-p01-conservation:
 
 ```{julia}
 #| label: p01-check-conservation
-sir_ode!(du, u0, values(p), 0.0)
+sir_ode!(du, u0, p, 0.0)
 isapprox(sum(du), 0.0; atol = 1e-12)
 ```
 
@@ -219,11 +439,13 @@ rate conversion is well behaved.
 
 ## Interpretation and limitations
 
-You now have the exact Julia vocabulary the course relies on: in-place kernels,
-broadcasting, typed containers, dispatch, and seeded randomness. This unit is
-deliberately narrow — it is not a full Julia tutorial. It does not cover
-package management beyond `using`, performance profiling, metaprogramming, or
-the type system's parametric machinery. For those, consult the official
+You now have the exact Julia vocabulary the course relies on: the REPL, in-place
+kernels, broadcasting and comprehensions, loops that collect into arrays, named
+tuples read by field and updated with `merge`, dispatch, and seeded randomness.
+This unit is deliberately narrow: it is not a full Julia tutorial. It does not
+cover package management beyond activating and
+instantiating the course environment, performance profiling, metaprogramming,
+user-defined `struct`s, or the type system's parametric machinery. For those, consult the official
 [Julia documentation](https://docs.julialang.org/en/v1/) and the
 [performance tips](https://docs.julialang.org/en/v1/manual/performance-tips/).
 The [CairoMakie documentation](https://docs.makie.org/stable/) covers the

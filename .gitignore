@@ -12,6 +12,10 @@ chapters/**/*_files/
 appendices/**/*_files/
 slides/**/*_files/
 notebooks/**/*_files/
+# Worksheets are outside the book's render list, so participants render them
+# one at a time and the output lands beside the source.
+worksheets/**/*_files/
+worksheets/**/*.html
 # Reveal.js and other resources a single-file render drops beside the freeze.
 # A full render writes them to the output directory instead and deletes these,
 # so check_freeze_drift.jl rejects them if they reach git.

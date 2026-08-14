@@ -4,15 +4,41 @@ course-unit: p01-julia-essentials
 status: complete
 ---
 
+## Why Julia
+
+- Scientific computing is usually split across **two languages** — a convenient
+  one to write the analysis, a fast one for the parts that are too slow.
+- Julia is interactive and dynamically typed like R, but **compiles to native
+  code**: the model kernel you write is the code that runs inside the solver.
+- Epidemic models are run thousands of times over — ensembles, sensitivity
+  sweeps, inference — so this is not an abstract concern.
+
 ## Why this unit matters
 
 - The course reuses one object throughout: the SIR model of Kermack & McKendrick (1927).
 - Before solving it we need a precise slice of Julia:
+  - the **REPL** and its modes;
   - **in-place kernels** `f(du, u, p, t)` — the SciML calling convention;
   - **broadcasting** and comprehensions to evaluate models on a grid;
-  - **structs / named tuples** and **multiple dispatch** to organise parameters;
+  - **named tuples** for parameters, read by field, and **multiple dispatch**;
   - **reproducible randomness** with `StableRNGs`.
 - Goal: the vocabulary, not a language tour.
+
+## The REPL has four modes {.smaller}
+
+Type one character at an empty prompt; `Backspace` returns.
+
+| Key | Mode | For |
+|---|---|---|
+| — | Julia | evaluating expressions (default) |
+| `?` | help | `?expm1` — docstring, signatures, examples |
+| `]` | package | `]st`, `]instantiate` — and it names the active environment |
+| `;` | shell | `ls`, `cd`, `git status` without leaving Julia |
+
+- The package prompt names the **active environment** — check it first when a
+  package seems missing. Start Julia with `--project=.` from the repo root.
+- Greek letters are ordinary names: `\beta`⇥ → `β`, `\gamma`⇥ → `γ`,
+  `\lambda`⇥ → `λ`. ASCII works identically.
 
 ## The running model {.smaller}
 
@@ -37,19 +63,20 @@ $p(r,\delta t)=1-e^{-r\,\delta t}$.
 #| label: s-p01-kernel
 #| echo: true
 function sir_ode!(du, u, p, t)
-    S, I, R = u
-    β, c, γ, N = p
-    λ = β * c * I / N              # force of infection
+    S, I, R = u                    # state: positional
+    λ = p.β * p.c * I / p.N        # parameters: by field
     du[1] = -λ * S                # dS/dt
-    du[2] = λ * S - γ * I         # dI/dt
-    du[3] = γ * I                 # dR/dt
+    du[2] = λ * S - p.γ * I       # dI/dt
+    du[3] = p.γ * I               # dR/dt
     return nothing
 end
 
 u0 = [990.0, 10.0, 0.0]
 p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
-du = zeros(3); sir_ode!(du, u0, values(p), 0.0); du
+du = zeros(3); sir_ode!(du, u0, p, 0.0); du
 ```
+
+State is read by position, parameters by name — `p.β`, never `p[1]`.
 
 ## Broadcasting & a figure from code
 
@@ -73,16 +100,17 @@ axislegend(ax; position = :rb); fig
 #| label: s-p01-dispatch
 #| echo: true
 using StableRNGs
-struct SIRParameters; β::Float64; c::Float64; γ::Float64; N::Float64; end
-foi(I, p::NamedTuple)    = p.β * p.c * I / p.N
-foi(I, p::SIRParameters) = p.β * p.c * I / p.N
+foi(I::Number, p)         = p.β * p.c * I / p.N
+foi(u::AbstractVector, p) = foi(u[2], p)      # read I from the state
 
-params = SIRParameters(0.05, 10.0, 0.25, 1000.0)
 rng = StableRNG(2024)               # local, version-stable stream
-(foi(10.0, p), foi(10.0, params), rand(rng, 3))
+(foi(10.0, p), foi(u0, p), rand(rng, 3))
 ```
 
-One function name, two methods — the mechanism SciML relies on everywhere.
+One name, two methods, no `if` inspecting the arguments. You will rarely *write*
+dispatch here — but it is why `solve(prob, Tsit5())` needs no glue: the method is
+chosen by the types of both arguments, so swapping in a stiff solver, a
+sensitivity package, or an inference package leaves your kernel untouched.
 
 ## Validation
 
@@ -92,7 +120,7 @@ must stay a valid probability and match its Taylor limit $p\approx r\,\delta t$:
 ```{julia}
 #| label: s-p01-check
 #| echo: true
-sir_ode!(du, u0, values(p), 0.0)
+sir_ode!(du, u0, p, 0.0)
 conserved = isapprox(sum(du), 0.0; atol = 1e-12)
 taylor    = isapprox(rate_to_proportion(0.25, 1e-6), 0.25e-6; rtol = 1e-3)
 (conserved, taylor)
@@ -103,17 +131,30 @@ Both `true`: the kernel conserves population and the conversion is well behaved.
 ## Limitations & takeaways
 
 - **Scope:** this is not a full Julia course — no package management beyond
-  `using`, no profiling, metaprogramming, or parametric types.
+  `using`, no profiling, metaprogramming, user-defined `struct`s, or parametric
+  types.
 - **Takeaways:**
   - write mutating kernels with the `f(du, u, p, t)` signature;
   - broadcast with `.` and fuse operations; use `expm1` for stability;
-  - group parameters in typed containers and dispatch on them;
+  - state by position (`S, I, R = u`), parameters by field (`p.β`);
+  - dispatch is why `solve` composes with any problem/algorithm pair;
   - seed a *local* `StableRNG` for bit-reproducible figures.
 - Next: we actually *solve* the model in **Foundations**.
 
 ::: {.notes}
+Demonstrate the four REPL modes live rather than reading the table — enter and
+leave each one, and show `?expm1` in particular, since help mode answers most
+"what arguments does this take" questions faster than a web search and works
+offline. Point out the environment name in the package prompt; a package that
+appears to be missing is almost always Julia started outside the project.
 Emphasise that the `!` suffix is a convention, not syntax, and that in-place
 kernels avoid per-evaluation allocations across the thousands of solver calls.
+Spend a moment on the two reading conventions — state destructured positionally,
+parameters read by field — because every chapter from here follows it, and a
+reordered positional parameter tuple is the failure that still runs and returns
+wrong numbers. On dispatch, resist the urge to teach the type system: the point
+participants need is that `solve(prob, Tsit5())` works without glue code, which
+is what makes the solver swap in later chapters a one-word change.
 Stress that `StableRNG` output is fixed across Julia versions, unlike the global
 default RNG, which is why every stochastic figure in the course is reproducible.
 Point listeners to the book for the full narrative and to the Pluto notebook to

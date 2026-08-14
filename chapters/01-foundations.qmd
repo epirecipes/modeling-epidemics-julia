@@ -121,30 +121,56 @@ using OrdinaryDiffEq
 
 function sir_ode!(du, u, p, t)
     S, I, R = u
-    β, c, γ, N = p
-    λ = β * c * I / N            # force of infection, eq-ch01-sir
+    λ = p.β * p.c * I / p.N      # force of infection, eq-ch01-sir
     du[1] = -λ * S
-    du[2] = λ * S - γ * I
-    du[3] = γ * I
+    du[2] = λ * S - p.γ * I
+    du[3] = p.γ * I
     return nothing
 end
 
 u0 = [990.0, 10.0, 0.0]         # S(0), I(0), R(0)
-p  = (0.05, 10.0, 0.25, 1000.0) # β, c, γ, N
+p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
 tspan = (0.0, 80.0)
 
 prob = ODEProblem(sir_ode!, u0, tspan, p)
 sol = solve(prob, Tsit5(); saveat = 0.5)
-sol.u[end]
+sol.u[end]                      # the state vector at the final saved time
 ```
+
+This is the kernel and the parameter convention of @sec-julia-essentials,
+unchanged: state positional, parameters by field. `saveat = 0.5` asks the solver
+to store the solution every half day; it does not change how the solver steps,
+only what it keeps.
+
+`ODEProblem` takes four arguments in this order: the kernel, the initial state,
+the time span, and the parameters. The kernel goes in by name, `sir_ode!` with
+no brackets after it, because the solver is handed the function itself and calls
+it many times as it steps. Writing `sir_ode!(du, u0, p, 0.0)` there would call it
+once and pass the result instead, which is the usual first error.
+
+::: {.callout-note}
+## Reading a solution object
+
+`solve` returns a `sol` that can be read three ways, and the course uses each for
+a different job:
+
+| Idiom | What it gives | Used for |
+|---|---|---|
+| `sol.t`, `sol.u` | what was **stored**: times, and a vector of state vectors | whole states — `sol.u[end]`, `sum(u) for u in sol.u` |
+| `sol[i, :]` | component `i` across all stored times | pulling one compartment out to plot |
+| `sol(t)` | the **interpolant**, evaluated anywhere in the span | arbitrary times and regular grids (@sec-ordinary-differential-equations) |
+
+`sol[2, :]` and `[u[2] for u in sol.u]` return the identical vector; we prefer
+the first. The important distinction is that both see only *stored* points,
+whereas `sol(t)` does not.
+:::
 
 The reproduction number and epidemic threshold follow directly from
 @eq-ch01-r0 and @eq-ch01-threshold:
 
 ```{julia}
 #| label: ch01-r0
-β, c, γ, N = p
-R₀ = β * c / γ
+R₀ = p.β * p.c / p.γ
 threshold_fraction = 1 / R₀
 (R₀, threshold_fraction)
 ```
@@ -157,7 +183,7 @@ Newton iteration from `NonlinearSolve`:
 #| label: ch01-finalsize
 using NonlinearSolve
 
-s₀ = u0[1] / N                                      # initial susceptible fraction
+s₀ = u0[1] / p.N                                   # initial susceptible fraction
 finalsize(s, R0) = s - s₀ * exp(-R0 * (1 - s))     # eq-ch01-finalsize
 fs_prob = NonlinearProblem(finalsize, 0.2, R₀)
 s_inf = solve(fs_prob, NewtonRaphson()).u
@@ -165,15 +191,22 @@ attack_rate = 1 - s_inf
 (s_inf, attack_rate)
 ```
 
+`NonlinearProblem` mirrors `ODEProblem`: the residual function takes the unknown
+and the parameters, `(s, R0)`, and we supply an initial guess `0.2` and the
+parameter `R₀`. The root is the value of `s` that drives the residual to zero, so
+writing @eq-ch01-finalsize as "left-hand side minus right-hand side" is all that
+is required. `solve` is the same function as for the ODE — a different problem
+type simply selects a different method.
+
 ```{julia}
 #| label: fig-ch01-sir
 #| fig-cap: "Baseline SIR dynamics ($R_0=2$). The dashed line marks the threshold susceptible fraction $S/N = 1/R_0$; the infectious curve peaks exactly where $S$ crosses it, as predicted by @eq-ch01-threshold."
 using CairoMakie
 
 t = sol.t
-S = [u[1] for u in sol.u]
-I = [u[2] for u in sol.u]
-R = [u[3] for u in sol.u]
+S = sol[1, :]
+I = sol[2, :]
+R = sol[3, :]
 
 fig = Figure(size = (720, 440))
 ax = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "number of individuals",
@@ -181,7 +214,7 @@ ax = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "number of individuals",
 lines!(ax, t, S; color = :steelblue, linewidth = 3, label = "S")
 lines!(ax, t, I; color = :firebrick, linewidth = 3, label = "I")
 lines!(ax, t, R; color = :seagreen,  linewidth = 3, label = "R")
-hlines!(ax, [threshold_fraction * N]; color = :black, linestyle = :dash,
+hlines!(ax, [threshold_fraction * p.N]; color = :black, linestyle = :dash,
         label = "S = N/R₀")
 axislegend(ax; position = :rc)
 fig
@@ -196,8 +229,8 @@ equal $N$ at every saved time:
 
 ```{julia}
 #| label: ch01-check-conservation
-totals = [sum(u) for u in sol.u]
-all(x -> isapprox(x, N; atol = 1e-6), totals)
+totals = [sum(u) for u in sol.u]        # whole states, so sol.u rather than sol[i, :]
+all(x -> isapprox(x, p.N; atol = 1e-6), totals)
 ```
 
 **Threshold (@eq-ch01-threshold).** The infectious peak must coincide with the
@@ -207,18 +240,20 @@ there:
 ```{julia}
 #| label: ch01-check-threshold
 peak_index = argmax(I)
-S_over_N_at_peak = S[peak_index] / N
+S_over_N_at_peak = S[peak_index] / p.N
 isapprox(S_over_N_at_peak, threshold_fraction; atol = 0.01)
 ```
 
 **Final size (@eq-ch01-finalsize).** Extending the horizon, the simulated
-surviving susceptible fraction must match the analytic root $s_\infty$:
+surviving susceptible fraction must match the analytic root $s_\infty$. `remake`
+copies an existing problem with one field changed, here the time span, so the
+kernel, initial state and parameters carry over unaltered:
 
 ```{julia}
 #| label: ch01-check-finalsize
 prob_long = remake(prob; tspan = (0.0, 400.0))
 sol_long = solve(prob_long, Tsit5(); reltol = 1e-10, abstol = 1e-10, save_everystep = false)
-S_end_fraction = sol_long.u[end][1] / N
+S_end_fraction = sol_long.u[end][1] / p.N
 isapprox(S_end_fraction, s_inf; atol = 1e-3)
 ```
 

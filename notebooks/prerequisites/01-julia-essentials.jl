@@ -45,12 +45,11 @@ discrete step we convert a rate to a probability with
 
 # ╔═╡ 1496a1de-cd77-428f-b283-2542157c5265
 function sir_ode!(du, u, p, t)
-    S, I, R = u
-    β, c, γ, N = p
-    λ = β * c * I / N            # force of infection
+    S, I, R = u                  # state: positional
+    λ = p.β * p.c * I / p.N      # parameters: by field
     du[1] = -λ * S              # dS/dt
-    du[2] = λ * S - γ * I       # dI/dt
-    du[3] = γ * I              # dR/dt
+    du[2] = λ * S - p.γ * I     # dI/dt
+    du[3] = p.γ * I             # dR/dt
     return nothing
 end
 
@@ -77,12 +76,12 @@ initial number infected. The reactive output recomputes the reproduction number
 
 # ╔═╡ d99acdeb-7b39-47a9-8593-3ba7c32b62a6
 begin
-    p_ui = (β_ui, c_ui, 0.25, 1000.0)
+    p_ui = (β = β_ui, c = c_ui, γ = 0.25, N = 1000.0)
     u_ui = [1000.0 - I0_ui, float(I0_ui), 0.0]
     du_ui = zeros(3)
     sir_ode!(du_ui, u_ui, p_ui, 0.0)
-    (R0 = β_ui * c_ui / 0.25,
-     force_of_infection = β_ui * c_ui * I0_ui / 1000.0,
+    (R0 = p_ui.β * p_ui.c / p_ui.γ,
+     force_of_infection = p_ui.β * p_ui.c * I0_ui / p_ui.N,
      dSdt = du_ui[1], dIdt = du_ui[2], dRdt = du_ui[3])
 end
 
@@ -134,7 +133,7 @@ rate conversion must match its Taylor limit ``p \approx r\,\delta t`` as
 # ╔═╡ db4704f3-5963-4861-b56a-94fb4acb5a68
 let
     du = zeros(3)
-    sir_ode!(du, [990.0, 10.0, 0.0], (0.05, 10.0, 0.25, 1000.0), 0.0)
+    sir_ode!(du, [990.0, 10.0, 0.0], (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0), 0.0)
     (conserved = isapprox(sum(du), 0.0; atol = 1e-12),
      taylor = isapprox(rate_to_proportion(0.25, 1e-6), 0.25e-6; rtol = 1e-3))
 end
@@ -145,6 +144,8 @@ md"""
 
 - In-place kernels `f(du, u, p, t)` write derivatives into `du` and return
   `nothing` — the SciML convention reused everywhere.
+- State is read by position (`S, I, R = u`), parameters by field (`p.β`) — the
+  convention every later chapter follows.
 - Broadcasting (`.`) evaluates a scalar function on a whole grid without a loop.
 - `expm1` avoids cancellation error in ``1 - e^{-x}``.
 - Seed a local `StableRNG` for reproducible stochastic figures.

@@ -49,18 +49,16 @@ rate_to_proportion(r, δt) = -expm1(-r * δt)
 # ╔═╡ b34d43be-7024-40f0-9382-73fa40b5dbbc
 function map_step(state, p, δt)
     S, I, R = state
-    β, c, γ, N = p
-    inf = rate_to_proportion(β * c * I / N, δt) * S
-    rec = rate_to_proportion(γ, δt) * I
+    inf = rate_to_proportion(p.β * p.c * I / p.N, δt) * S
+    rec = rate_to_proportion(p.γ, δt) * I
     return (S - inf, I + inf - rec, R + rec)
 end
 
 # ╔═╡ 31a272f9-1e6b-4d63-bd9c-7b9ff5b0117c
 function chain_step(state, p, δt, rng)
     S, I, R = state
-    β, c, γ, N = p
-    Y = rand(rng, Binomial(round(Int, S), rate_to_proportion(β * c * I / N, δt)))
-    Z = rand(rng, Binomial(round(Int, I), rate_to_proportion(γ, δt)))
+    Y = rand(rng, Binomial(round(Int, S), rate_to_proportion(p.β * p.c * I / p.N, δt)))
+    Z = rand(rng, Binomial(round(Int, I), rate_to_proportion(p.γ, δt)))
     return (S - Y, I + Y - Z, R + Z)
 end
 
@@ -95,14 +93,14 @@ Horizon fixed at 40 days; seeds `1:nsims` keep the ensemble reproducible.
 # ╔═╡ 50496868-d2a8-4641-8216-417dd62fb286
 begin
     u0_ch02 = [990, 10, 0]
-    p_ch02 = (0.05, c_ui, 0.25, 1000.0)
+    p_ch02 = (β = 0.05, c = c_ui, γ = 0.25, N = 1000.0)
     nsteps_ch02 = round(Int, 40 / δt_ui)
     map_traj = iterate_model((s, p, dt) -> map_step(s, p, dt), u0_ch02, p_ch02, δt_ui, nsteps_ch02)
     chain_ens = [iterate_model(chain_step, u0_ch02, p_ch02, δt_ui, nsteps_ch02;
                                extra = (StableRNG(s),)) for s in 1:nsims_ui]
     chain_I = reduce(hcat, (t[2, :] for t in chain_ens))
     chain_mean_I = vec(sum(chain_I; dims = 2)) ./ nsims_ui
-    (R0 = 0.05 * c_ui / 0.25, steps = nsteps_ch02,
+    (R0 = p_ch02.β * p_ch02.c / p_ch02.γ, steps = nsteps_ch02,
      map_peak = round(maximum(map_traj[2, :]); digits = 1),
      chain_mean_peak = round(maximum(chain_mean_I); digits = 1))
 end

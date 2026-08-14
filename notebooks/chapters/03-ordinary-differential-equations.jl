@@ -45,11 +45,10 @@ The peak solves ``dI/dt = \lambda(t) S - \gamma I = 0``.
 # ╔═╡ 36abb1f0-ab30-4b9c-9aee-7c9bf7199149
 function sir_ode!(du, u, p, t)
     S, I, R = u
-    β, c, γ, N = p
-    λ = β * c * I / N
+    λ = p.β * p.c * I / p.N
     du[1] = -λ * S
-    du[2] = λ * S - γ * I
-    du[3] = γ * I
+    du[2] = λ * S - p.γ * I
+    du[3] = p.γ * I
     return nothing
 end
 
@@ -73,23 +72,22 @@ The baseline (no intervention) curve is shown for comparison.
 # ╔═╡ 7a104907-389f-4367-bf1e-fa812c66d358
 begin
     u0_ch03 = [990.0, 10.0, 0.0]
-    p_ch03 = (0.05, 10.0, 0.25, 1000.0)
+    p_ch03 = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
     tspan_ch03 = (0.0, 80.0)
     t2_ui = t1_ui + window_ui
+    prob_ch03 = ODEProblem(sir_ode!, u0_ch03, tspan_ch03, p_ch03)
 
-    sol_base = solve(ODEProblem(sir_ode!, u0_ch03, tspan_ch03, collect(p_ch03)), Tsit5();
-                     reltol = 1e-8, abstol = 1e-8)
+    sol_base = solve(prob_ch03, Tsit5(); reltol = 1e-8, abstol = 1e-8)
 
-    lockdown!(integ) = (integ.p[1] = integ.t < t2_ui ? βlock_ui : 0.05)
-    cb = PresetTimeCallback([t1_ui, t2_ui], lockdown!)
-    sol_lock = solve(ODEProblem(sir_ode!, u0_ch03, tspan_ch03, [0.05, 10.0, 0.25, 1000.0]),
-                     Tsit5(); callback = cb, reltol = 1e-8, abstol = 1e-8)
+    set_β!(integ, β) = (integ.p = merge(integ.p, (β = β,)))
+    cb = CallbackSet(PresetTimeCallback([t1_ui], i -> set_β!(i, βlock_ui)),
+                     PresetTimeCallback([t2_ui], i -> set_β!(i, 0.05)))
+    sol_lock = solve(prob_ch03, Tsit5(); callback = cb, reltol = 1e-8, abstol = 1e-8)
 
     peak_t = Float64[]
-    dIdt(u, p) = p[1] * p[2] * u[2] / p[4] * u[1] - p[3] * u[2]
+    dIdt(u, p) = (p.β * p.c * u[2] / p.N) * u[1] - p.γ * u[2]
     peak_cb = ContinuousCallback((u, t, i) -> dIdt(u, i.p), i -> push!(peak_t, i.t))
-    solve(ODEProblem(sir_ode!, u0_ch03, tspan_ch03, collect(p_ch03)), Tsit5();
-          callback = peak_cb, reltol = 1e-8, abstol = 1e-8)
+    solve(prob_ch03, Tsit5(); callback = peak_cb, reltol = 1e-8, abstol = 1e-8)
 
     (window = (t1_ui, t2_ui),
      baseline_peak = round(maximum(sol_base[2, :]); digits = 1),

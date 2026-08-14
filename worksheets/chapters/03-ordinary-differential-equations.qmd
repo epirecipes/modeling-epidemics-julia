@@ -1,0 +1,321 @@
+---
+title: "Worksheet — Ordinary differential equations"
+course-unit: ch03-ordinary-differential-equations
+artifact: worksheet
+status: draft
+---
+
+# Worksheet: events that change an epidemic
+
+**~45 minutes**
+
+The session showed you a **lockdown**: a callback that changes a *parameter* at
+scheduled times. Here you will build the other two members of the same family:
+a **vaccination pulse**, which changes the *state*, and a **capacity-triggered
+lockdown**, which fires when the epidemic itself crosses a threshold rather than
+at a time you picked in advance.
+
+**How to use this file.** Run cells one at a time with `Ctrl+Shift+Enter`. Cells
+marked `# TODO` have a line or two for you to complete; everything else runs as
+given. Each part ends with `✓` / `✗` lines that check your answer; a `✗` is
+information, not failure, and the collapsed hint below it will get you moving.
+An instructor is circulating, so ask early rather than staying stuck.
+
+**Parts A and B are the session.** **Part C** goes further if you get there;
+not reaching it is completely fine. Worked solutions are posted at the end of
+each day. Run `git pull` to collect them.
+
+**Prefer sliders to typing?** The
+[Pluto notebook](../../notebooks/chapters/03-ordinary-differential-equations.jl)
+for this chapter lets you drag the lockdown parameters and watch the curve
+respond. Some people find it easier to get the intuition there first and then
+come back here. Either order is fine.
+
+**Coming from R?**
+
+| R | Julia | Note |
+|---|---|---|
+| `f <- function(x) x^2` | `f(x) = x^2` | or `function f(x) ... end` |
+| `x <- c(1, 2, 3)` | `x = [1.0, 2.0, 3.0]` | `1.0` and `1` are different types |
+| `sapply(v, f)` | `f.(v)` | the dot applies `f` elementwise |
+
+Indexing starts at 1, as in R. A `!` at the end of a name (`sir_ode!`) means the
+function modifies its argument rather than returning a copy.
+
+The [Julia essentials chapter](../../prerequisites/01-julia-essentials.qmd)
+has the full table.
+
+---
+
+## Setup
+
+This is the model from the session, given so you can get straight to the new
+material. Run it and check the output looks familiar.
+
+```{julia}
+#| label: ws-ch03-setup
+using OrdinaryDiffEq
+using DiffEqCallbacks
+using CairoMakie
+
+check(name, condition) =
+    println(condition ? "✓ $name" : "✗ $name — not right yet, see the hint")
+
+function sir_ode!(du, u, p, t)
+    S, I, R = u
+    λ = p.β * p.c * I / p.N
+    du[1] = -λ * S
+    du[2] = λ * S - p.γ * I
+    du[3] = p.γ * I
+    return nothing
+end
+
+u0    = [990.0, 10.0, 0.0]
+p     = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
+tspan = (0.0, 80.0)
+tt    = 0.0:0.25:80.0
+
+sol = solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5(); reltol = 1e-8, abstol = 1e-8)
+
+println("peak infectious: ", round(maximum(sol[2, :]), digits = 1))
+println("final size (R at day 80): ", round(sol(80.0)[3], digits = 1))
+```
+
+---
+
+## Part A — a vaccination pulse (~15 min)
+
+The lockdown in the session changed a **parameter**:
+`integrator.p = merge(integrator.p, (β = β_lock,))`.
+
+A vaccination campaign is different. It does not change how transmission works.
+It moves people. On the day of the campaign, some fraction of the susceptibles
+becomes immune immediately. That is a change to the **state**,
+`integrator.u`, not to the parameters.
+
+Susceptibles who are vaccinated move straight to $R$:
+
+$$
+S \rightarrow S - fS, \qquad R \rightarrow R + fS
+$$
+
+for a coverage fraction $f$, applied once on day $t_v$.
+
+```{julia}
+#| label: ws-ch03-a1
+t_vax = 10.0     # day of the campaign
+f_vax = 0.30     # fraction of susceptibles reached
+vaccinated = Float64[]     # record of how many the campaign reached
+
+function vaccinate!(integrator)
+    moved = 0.0        # TODO: replace 0.0 — how many people does the campaign reach?
+    # TODO: remove them from S (integrator.u[1])
+    # TODO: add them to R (integrator.u[3])
+    push!(vaccinated, moved)
+end
+
+vax_cb  = PresetTimeCallback([t_vax], vaccinate!)
+sol_vax = solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5();
+                callback = vax_cb, reltol = 1e-8, abstol = 1e-8)
+
+# R now holds recovered and vaccinated people alike, so the number ever infected
+# is no longer just R(80) — subtract the people the campaign put there.
+ever_infected = sol_vax(80.0)[3] - sum(vaccinated)
+baseline_infected = sol(80.0)[3]
+peak_vax = maximum(sol_vax(t)[2] for t in tt)
+peak_base = maximum(sol(t)[2] for t in tt)
+
+check("population still conserved",
+      all(u -> isapprox(sum(u), 1000.0; atol = 1e-6), sol_vax.u))
+check("the campaign moved people out of S", sum(vaccinated) > 1.0)
+check("the peak is lower", peak_vax < 0.8 * peak_base)
+check("fewer people were ever infected", ever_infected < baseline_infected - 50)
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part A
+
+```julia
+moved = f_vax * integrator.u[1]
+integrator.u[1] -= moved
+integrator.u[3] += moved
+```
+
+If the conservation check fails, you have probably added people to $R$ without
+taking them out of $S$. A campaign moves people, it does not create them.
+:::
+
+### A1. Interpret
+
+After the campaign, $R$ holds vaccinated people as well as recovered ones, which
+is why the code above subtracts `sum(vaccinated)` before reporting how many were
+ever infected.
+
+- What would you have concluded about the campaign if you had reported $R(80)$
+  directly instead?
+- `moved` is a number of people, not a rate. How does that show up in the shape
+  of the curve at day 10?
+
+> *Your answer here.*
+
+```{julia}
+#| label: fig-ws-ch03-vax
+#| fig-cap: "Infectious curve with and without a vaccination pulse on day 10."
+fig = Figure(size = (720, 400))
+ax  = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "infectious I(t)")
+vlines!(ax, [t_vax]; color = :black, linestyle = :dot, label = "campaign")
+lines!(ax, tt, [sol(t)[2] for t in tt]; color = :firebrick, linewidth = 3,
+       label = "no vaccination")
+lines!(ax, tt, [sol_vax(t)[2] for t in tt]; color = :seagreen, linewidth = 3,
+       linestyle = :dash, label = "vaccination on day $(Int(t_vax))")
+axislegend(ax; position = :rt)
+fig
+```
+
+---
+
+## Part B — when should the campaign happen? (~15 min)
+
+The loop below runs the campaign on three different days and reports the final
+size, the total number of people ever infected.
+
+```{julia}
+#| label: ws-ch03-b1
+function ever_infected_with_vaccination(day)
+    moved_by_campaign = Float64[]
+    # `affect!` is defined inside this function so that it can see
+    # `moved_by_campaign` — each call gets a fresh, separate record.
+    affect!(integrator) = begin
+        moved = f_vax * integrator.u[1]
+        integrator.u[1] -= moved
+        integrator.u[3] += moved
+        push!(moved_by_campaign, moved)
+    end
+    s = solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5();
+              callback = PresetTimeCallback([day], affect!),
+              reltol = 1e-8, abstol = 1e-8)
+    return s(80.0)[3] - sum(moved_by_campaign)
+end
+
+campaign_days = Float64[]   # TODO: fill this list — try days 5, 20, and 40
+
+for d in campaign_days
+    println("campaign on day $d → $(round(ever_infected_with_vaccination(d), digits = 1)) ever infected")
+end
+
+check("three days tried", length(campaign_days) == 3)
+```
+
+### B1. Interpret
+
+- Which campaign day gives the smallest final size?
+- The same 30% coverage produces very different results depending on timing. Why?
+  Think about how many susceptibles are left to protect on each of those days.
+
+> *Your answer here.*
+
+::: {.callout-note}
+We are comparing three timings we chose by hand. The interventions and
+optimization session is where an optimizer searches the timings for you. Today is
+about expressing the event; choosing between events comes later.
+:::
+
+---
+
+## Part C — a lockdown that triggers itself (optional)
+
+*Start this only if you have finished Part B.*
+
+The session's lockdown and your vaccination pulse both happened on a day fixed in
+advance. Real policy often responds to the epidemic instead: *impose restrictions
+when hospital occupancy crosses a threshold*.
+
+That needs a `ContinuousCallback`, which watches a quantity you define and fires
+the moment it crosses zero. The session used one to find the epidemic peak by
+watching $\mathrm{d}I/\mathrm{d}t$. Here you watch the gap between infectious
+numbers and a capacity limit:
+
+$$
+\text{condition} = I(t) - \text{capacity}.
+$$
+
+When that hits zero, transmission drops, and unlike the scheduled lockdown we did
+not have to know in advance when it would happen. In code the condition is handed
+three arguments, `(u, t, integrator)`; here only `u` is needed.
+
+```{julia}
+#| label: ws-ch03-c1
+capacity = 100.0
+trigger_day = Float64[]
+
+# TODO: replace 0.0 — the gap between infectious numbers and capacity
+capacity_condition(u, t, integrator) = 0.0
+
+function impose_restrictions!(integrator)
+    integrator.p = merge(integrator.p, (β = 0.02,))     # β drops
+    push!(trigger_day, integrator.t)
+end
+
+cap_cb  = ContinuousCallback(capacity_condition, impose_restrictions!)
+sol_cap = solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5();
+                callback = cap_cb, reltol = 1e-8, abstol = 1e-8)
+
+check("the trigger fired", !isempty(trigger_day))
+check("restrictions kept I near capacity",
+      maximum(sol_cap(t)[2] for t in tt) < 1.1 * capacity)
+
+isempty(trigger_day) || println("restrictions imposed on day ",
+                                round(trigger_day[1], digits = 2))
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part C
+
+The condition is just `u[2] - capacity`. `ContinuousCallback` root-finds it, so
+you get the crossing time to solver accuracy rather than to the nearest saved
+point.
+
+Watch the two spellings of the state. A *condition* is handed the state directly,
+so it uses `u[2]`. An *affect!* is handed the whole integrator and reaches inside
+it, so Part A wrote `integrator.u[1]`. Writing `integrator.u[2]` here would work
+too, but `u` is already right there.
+:::
+
+### C1. Interpret
+
+Compare this with Part A. Both reduce the epidemic, but one required you to name
+a date and the other did not.
+
+- What does the triggered version need you to know in advance that the scheduled
+  version does not, and vice versa?
+- The restrictions here never lift. What would you need to add for them to?
+
+> *Your answer here.*
+
+---
+
+## Finish: render your own report
+
+In a terminal:
+
+```bash
+quarto render worksheets/chapters/03-ordinary-differential-equations.qmd
+```
+
+A clean render means every cell ran top to bottom in a fresh session: the same
+command, and the same standard, you would use for a reproducible analysis of your
+own.
+
+---
+
+## Where to look next
+
+Nothing here is assigned. The whole project stays available to you afterwards.
+
+- [The chapter](../../chapters/03-ordinary-differential-equations.qmd) — the
+  lockdown example in full, plus dense interpolation `sol(t)` and using
+  `ContinuousCallback` to locate the epidemic peak exactly.
+- [The Pluto notebook](../../notebooks/chapters/03-ordinary-differential-equations.jl)
+  — sliders for the lockdown's strength, start day, and duration.
+- The chapter's own exercises, with worked solutions, if you want more practice on
+  the material rather than these variations.

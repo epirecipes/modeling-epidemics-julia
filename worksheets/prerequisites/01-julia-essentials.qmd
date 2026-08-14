@@ -1,0 +1,367 @@
+---
+title: "Worksheet — Julia essentials"
+course-unit: p01-julia-essentials
+artifact: worksheet
+status: draft
+---
+
+# Worksheet: your first Julia model code
+
+**~45 minutes**
+
+This is the first worksheet of the workshop and it assumes you have never
+written Julia before. Everything here uses the SIR model exactly as the session
+presented it. Nothing new is asked of you epidemiologically. What is new is the
+Julia: writing a model kernel (the function that computes the rates of change),
+broadcasting a calculation over a grid, drawing a figure, and generating random
+numbers you can reproduce.
+
+You will not *solve* anything today. Turning these ingredients into an epidemic
+curve is the next two sessions' job; this one is about writing the code they
+will need.
+
+**How to use this file.** Run cells one at a time with `Ctrl+Shift+Enter`. Cells
+marked `# TODO` have a line or two for you to complete; everything else runs as
+given. Each part ends with `✓` / `✗` lines that check your answer; a `✗` is
+information, not failure, and the collapsed hint below it will get you moving.
+An instructor is circulating; ask early rather than staying stuck.
+
+**Parts A and B are the session.** **Part C** goes further if you get there; not
+reaching it is completely fine. Worked solutions are posted at the end of each
+day. Run `git pull` to collect them.
+
+::: {.callout-important}
+## The first cell is slow — that is normal
+
+The first `using CairoMakie` in a fresh session can take a minute or more while
+Julia compiles the plotting stack. It is not frozen, and it only happens once
+per session. Later cells run quickly.
+:::
+
+**Coming from R?** Most of what you know transfers.
+
+| R | Julia | Note |
+|---|---|---|
+| `f <- function(x) x^2` | `f(x) = x^2` | or `function f(x) ... end` |
+| `x <- c(1, 2, 3)` | `x = [1.0, 2.0, 3.0]` | `1.0` and `1` are different types |
+| `v[1]` | `v[1]` | indexing starts at 1, as in R |
+| `sapply(v, f)` | `f.(v)` | the dot applies `f` elementwise |
+| `x[x < 0.5]` | `x[x .< 0.5]` | comparisons need the dot too |
+| `list(a = 1, b = 2)` | `(a = 1, b = 2)` | a named tuple; read fields with `p.a` |
+| `TRUE` / `FALSE` | `true` / `false` | lowercase |
+
+The [Julia essentials chapter](../../prerequisites/01-julia-essentials.qmd)
+has the full table.
+
+**The REPL is your other window.** Alongside this document you have a Julia
+prompt. Besides the ordinary `julia>` prompt it has three other modes. Type the
+character at an empty prompt to enter one, `Backspace` to leave:
+
+| Key | Mode | Use it when |
+|---|---|---|
+| `?` | help | you want a function's arguments — `?expm1` |
+| `]` | package | a package seems missing — `]st` also names the active environment |
+| `;` | shell | you need `ls` or `git status` without switching windows |
+
+If `using CairoMakie` fails, that is almost always Julia started outside the
+project. Check the name in front of the `pkg>` prompt, and ask. This is exactly
+the kind of thing an instructor can fix in ten seconds.
+
+Two Julia-specific conventions used throughout the course:
+
+- **Greek letters are ordinary variable names.** We write `β`, `γ`, `λ` because
+  they match the equations. Type them with a backslash and Tab: `\beta`↹ gives
+  `β`, `\gamma`↹ gives `γ`, `\lambda`↹ gives `λ`. Plain ASCII names work exactly
+  as well if you prefer them.
+- **A trailing `!`** (as in `sir_ode!`) marks a function that *modifies* one of
+  its arguments instead of returning a new value. Nothing enforces this; it is
+  a promise to the reader.
+
+---
+
+## Setup
+
+Run this first. It loads the two packages the worksheet needs and defines the
+`check` helper used by every part. If it fails, a setup step is missing (see
+[Setting up](../../setup.qmd)).
+
+```{julia}
+#| label: ws-p01-setup
+using CairoMakie
+using StableRNGs
+
+check(name, condition) =
+    println(condition ? "✓ $name" : "✗ $name — not right yet, see the hint")
+
+println("Julia version: ", VERSION)
+```
+
+---
+
+## Part A — writing a model kernel (~15 min)
+
+The session's `sir_ode!` had the signature every SciML solver expects:
+
+```julia
+function sir_ode!(du, u, p, t)
+```
+
+It *writes* the rates of change into `du` rather than returning them. You will
+use this shape in every remaining session, so it is worth typing once by hand
+rather than only reading.
+
+These are the session's equations, unchanged. The force of infection is
+$\lambda = \beta c I / N$, and
+
+$$
+\frac{\mathrm{d}S}{\mathrm{d}t} = -\lambda S, \qquad
+\frac{\mathrm{d}I}{\mathrm{d}t} = \lambda S - \gamma I, \qquad
+\frac{\mathrm{d}R}{\mathrm{d}t} = \gamma I.
+$$
+
+Your job is only to turn the second and third of them into Julia. The first is
+done for you as a worked example of the pattern.
+
+```{julia}
+#| label: ws-p01-a1
+p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
+u0 = [990.0, 10.0, 0.0]      # S, I, R
+
+function sir_ode!(du, u, p, t)
+    S, I, R = u
+    λ = p.β * p.c * I / p.N        # force of infection, λ = βcI/N
+    du[1] = -λ * S                 # dS/dt — worked for you
+    du[2] = 0.0     # TODO: replace 0.0 — dI/dt
+    du[3] = 0.0     # TODO: replace 0.0 — dR/dt
+    return nothing
+end
+
+du = zeros(3)
+sir_ode!(du, u0, p, 0.0)
+
+check("infectious are increasing", du[2] > 0)
+check("people are recovering", du[3] > 0)
+check("nobody is created or destroyed",
+      any(!iszero, du) && isapprox(sum(du), 0.0; atol = 1e-12))
+du
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part A
+
+```julia
+du[2] = λ * S - p.γ * I
+du[3] = p.γ * I
+```
+
+Note `p.γ` rather than a bare `γ`: the recovery rate arrived inside `p`, and only
+`λ` was unpacked for you. `S`, `I` and `R` *were* unpacked, on the first line of
+the function, which is why they can be used bare.
+
+The three lines should sum to zero: every term that leaves one compartment
+appears with the opposite sign in another. If the conservation check fails, look
+for a sign or a missing term.
+
+`zeros(3)` created `du` before the function ran, and the function filled it in.
+That is what "in place" means, and it is why `du` holds your answer *after* the
+call even though the function returns `nothing`.
+:::
+
+### A1. Interpret
+
+These are questions about the Julia, not the epidemiology.
+
+- The function writes `du[2] = ...` rather than `du = [...]`. What would go wrong
+  if you built a new array inside the function instead?
+- The function ends with `return nothing`, so it hands nothing back. Where did
+  your answer end up, and how did it get out?
+- The parameters arrived as `p` and you read them with `p.β`. What would break if
+  you had used `p[1]` and later reordered the parameters?
+
+> *Your answer here.*
+
+---
+
+## Part B — the same calculation over a whole grid (~15 min)
+
+A *rate* says how often something happens per unit time; a *probability* says how
+likely it is within a window. The session gave the conversion between them for a
+window of width $\delta t$:
+
+$$
+p(r, \delta t) = 1 - e^{-r\,\delta t}.
+$$
+
+You will need this every time a model takes discrete time steps. It is often
+replaced by the much simpler $r\,\delta t$, and here you will see for yourself
+when that shortcut is safe and when it is not.
+
+Rather than looping over values of $\delta t$, Julia applies a function to an
+entire array at once when you add a dot: `f.(v)`. This is the `sapply` of Julia,
+but it compiles to a single loop with no intermediate copies.
+
+```{julia}
+#| label: ws-p01-b1
+rate_to_proportion(r, δt) = -expm1(-r * δt)   # numerically stable 1 - exp(-r δt)
+
+δts = 0.0:0.25:10.0
+γ   = 0.25      # the session's recovery rate, per day
+
+linear = γ .* δts    # the shortcut, elementwise — note the dot on the `*`
+probs  = Float64[]   # TODO: replace this — rate_to_proportion at rate γ, for every δt in δts
+
+check("one value of each for every δt",
+      length(probs) == length(δts) && length(linear) == length(δts))
+check("every probability stays between 0 and 1",
+      !isempty(probs) && all(0 .<= probs .<= 1))
+check("the shortcut escapes [0, 1]", !isempty(linear) && maximum(linear) > 1)
+check("the two agree when δt is small",
+      length(probs) > 1 && length(linear) > 1 &&
+      isapprox(probs[2], linear[2]; rtol = 0.05))
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part B
+
+```julia
+probs = rate_to_proportion.(γ, δts)
+```
+
+The dot goes between the function name and the opening bracket. `γ` is a single
+number and `δts` is an array, so Julia reuses `γ` for every element rather than
+requiring two arrays of matching length.
+
+The `linear` line above shows the other place dots appear: `γ .* δts` multiplies
+elementwise. Once you are broadcasting, the dot goes on operators as well as on
+function calls.
+
+To type `δts`, use `\delta`↹ then `ts`, or copy it from the line above.
+:::
+
+Now draw them. A figure is built up in pieces: a `Figure` to hold everything, an
+`Axis` inside it, then one call per thing you want drawn.
+
+```{julia}
+#| label: fig-ws-p01-rate
+#| fig-cap: "Probability of at least one event in a window of width δt at rate γ = 0.25, against the linear shortcut γ δt."
+fig = Figure(size = (720, 400))
+ax  = Axis(fig[1, 1]; xlabel = "window width δt (days)", ylabel = "probability")
+hlines!(ax, [1.0]; color = :black, linestyle = :dash, label = "probability = 1")
+lines!(ax, δts, linear; color = :firebrick, linewidth = 3, label = "shortcut γ δt")
+
+# TODO: draw the exact curve — lines!(ax, xvalues, yvalues; linewidth = 3, label = "1 - exp(-γ δt)")
+
+axislegend(ax; position = :rb)
+ylims!(ax, 0, 2.6)
+fig
+```
+
+### B1. Interpret
+
+- Up to roughly which $\delta t$ are the two curves hard to tell apart, and where
+  do they part company?
+- The shortcut climbs past 1 and keeps going. A probability cannot do that, so
+  what quantity is $\gamma\,\delta t$ actually measuring?
+
+> *Your answer here.*
+
+---
+
+## Part C — random numbers you can reproduce (optional)
+
+*Start this only if you have finished Part B.*
+
+Later sessions simulate epidemics that are genuinely random. Results still have
+to be reproducible: the same script must give the same figure on your machine
+and on a reviewer's. Julia's answer is a *local* random number generator that you
+seed yourself, rather than a hidden global one.
+
+Feed the force of infection from Part A into the conversion from Part B, with a
+window of one day, and you get the probability that a given susceptible person is
+infected today.
+
+```{julia}
+#| label: ws-p01-c1
+λ0 = p.β * p.c * u0[2] / p.N          # force of infection at the start
+p_infect = rate_to_proportion(λ0, 1.0)
+
+# A seed fixes the entire stream of numbers that follows.
+draws_a = rand(StableRNG(2024), 5)
+draws_b = rand(StableRNG(2024), 5)
+draws_c = rand(StableRNG(99), 5)
+
+check("the same seed gives identical draws", draws_a == draws_b)
+check("a different seed gives different draws", draws_a != draws_c)
+
+function infected_today(rng, n_susceptible, p_infect)
+    draws = rand(rng, n_susceptible)
+    return 0    # TODO: replace 0 — how many of `draws` came out below p_infect?
+end
+
+today = infected_today(StableRNG(1), 990, p_infect)
+println("of 990 susceptibles, ", today, " are infected today")
+
+# The same experiment repeated a million times, to check the machinery.
+fraction = infected_today(StableRNG(2), 1_000_000, p_infect) / 1_000_000
+check("the observed fraction matches the probability",
+      isapprox(fraction, p_infect; rtol = 0.05))
+(; p_infect, fraction, today)
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part C
+
+```julia
+return count(draws .< p_infect)
+```
+
+`draws .< p_infect` compares every element against the same number and gives an
+array of `true`/`false`, the dot again doing elementwise work. `count` then
+counts the `true`s.
+
+If you get a single `true` or `false` rather than a number, you left the dot out
+of `<` and compared the whole array at once.
+:::
+
+### C1. Interpret
+
+- Run the `today` line again with a few different seeds. Roughly how much does
+  the number move? The deterministic model of Part A would give one fixed answer.
+  Which is right?
+- Why seed a generator you create yourself rather than calling `rand` and
+  setting a global seed once at the top of the script?
+
+> *Your answer here.*
+
+---
+
+## Finish: render your own report
+
+In a terminal, from the top of the repository:
+
+```bash
+quarto render worksheets/prerequisites/01-julia-essentials.qmd
+```
+
+This runs every cell top to bottom in a fresh session and produces an HTML file
+next to the worksheet. A clean render is the same standard you would apply to a
+reproducible analysis of your own. It proves the document does not depend on
+anything you typed and forgot about.
+
+---
+
+## Where to look next
+
+Nothing here is assigned. The whole project stays available to you afterwards.
+
+- [The chapter](../../prerequisites/01-julia-essentials.qmd) — the same material
+  worked through in full, plus comprehensions and multiple dispatch, which this
+  worksheet leaves out.
+- [The Pluto notebook](../../notebooks/prerequisites/01-julia-essentials.jl) —
+  the same ideas with sliders.
+- The chapter's own exercises, with worked solutions. Exercise 2 is Part C here
+  with different numbers, but Exercise 1 is new: it extends the kernel with a
+  fourth state tracking cumulative infections.
+- The [Julia documentation](https://docs.julialang.org/en/v1/), and its
+  [noteworthy differences from R](https://docs.julialang.org/en/v1/manual/noteworthy-differences/#Noteworthy-differences-from-R)
+  if you want the full list rather than the seven rows above.
