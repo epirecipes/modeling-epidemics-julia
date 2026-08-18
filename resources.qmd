@@ -2,6 +2,8 @@
 
 Each teaching unit has a book page, slide deck, Pluto source, and static notebook preview. Units are grouped below by [workshop](workshop.qmd)(taught live), or provided for self-study.
 
+Taught sessions also have a worksheet. Worksheets are not published pages: they are files in the repository, meant to be opened and completed in your editor, with solutions added at the end of each workshop day.
+
 The capstone uses the versioned [Eyam plague dataset](data/eyam_plague_1666.csv) with [provenance metadata](data/eyam_plague_1666.toml).
 
 ## Workshop track
@@ -14,6 +16,7 @@ Proposed schedule, see the [workshop programme](workshop.qmd) for the full day-b
 - [Slides](slides/prerequisites/01-julia-essentials.html)
 - [Pluto preview](notebook-exports/prerequisites/01-julia-essentials.html)
 - [Pluto source](notebooks/prerequisites/01-julia-essentials.jl)
+- Worksheet: `worksheets/prerequisites/01-julia-essentials.qmd`
 
 ### Foundations: SIR theory and the Julia workflow — Day 1, Session 2
 
@@ -21,6 +24,7 @@ Proposed schedule, see the [workshop programme](workshop.qmd) for the full day-b
 - [Slides](slides/chapters/01-foundations.html)
 - [Pluto preview](notebook-exports/chapters/01-foundations.html)
 - [Pluto source](notebooks/chapters/01-foundations.jl)
+- Worksheet: `worksheets/chapters/01-foundations.qmd`
 
 ### Ordinary differential equations — Day 1, Session 3
 
@@ -28,6 +32,7 @@ Proposed schedule, see the [workshop programme](workshop.qmd) for the full day-b
 - [Slides](slides/chapters/03-ordinary-differential-equations.html)
 - [Pluto preview](notebook-exports/chapters/03-ordinary-differential-equations.html)
 - [Pluto source](notebooks/chapters/03-ordinary-differential-equations.jl)
+- Worksheet: `worksheets/chapters/03-ordinary-differential-equations.qmd`
 
 ### Discrete-time models — Day 1, Session 4
 
@@ -35,6 +40,7 @@ Proposed schedule, see the [workshop programme](workshop.qmd) for the full day-b
 - [Slides](slides/chapters/02-discrete-time-models.html)
 - [Pluto preview](notebook-exports/chapters/02-discrete-time-models.html)
 - [Pluto source](notebooks/chapters/02-discrete-time-models.jl)
+- Worksheet: `worksheets/chapters/02-discrete-time-models.qmd`
 
 ### Continuous-time Markov chains and jump processes — Day 2, Session 1
 
@@ -42,6 +48,7 @@ Proposed schedule, see the [workshop programme](workshop.qmd) for the full day-b
 - [Slides](slides/chapters/04-jump-processes.html)
 - [Pluto preview](notebook-exports/chapters/04-jump-processes.html)
 - [Pluto source](notebooks/chapters/04-jump-processes.jl)
+- Worksheet: `worksheets/chapters/04-jump-processes.qmd`
 
 ### Stochastic differential equations — Day 2, Session 2
 
@@ -49,20 +56,23 @@ Proposed schedule, see the [workshop programme](workshop.qmd) for the full day-b
 - [Slides](slides/chapters/05-stochastic-differential-equations.html)
 - [Pluto preview](notebook-exports/chapters/05-stochastic-differential-equations.html)
 - [Pluto source](notebooks/chapters/05-stochastic-differential-equations.jl)
+- Worksheet: `worksheets/chapters/05-stochastic-differential-equations.qmd`
 
-### Sensitivity and identifiability — Day 2, Session 3
-
-- [Book](chapters/10-sensitivity-and-identifiability.html)
-- [Slides](slides/chapters/10-sensitivity-and-identifiability.html)
-- [Pluto preview](notebook-exports/chapters/10-sensitivity-and-identifiability.html)
-- [Pluto source](notebooks/chapters/10-sensitivity-and-identifiability.jl)
-
-### Observation models and simulated data — Day 2, Session 4
+### Observation models and simulated data — Day 2, Session 3
 
 - [Book](chapters/07-observation-models.html)
 - [Slides](slides/chapters/07-observation-models.html)
 - [Pluto preview](notebook-exports/chapters/07-observation-models.html)
 - [Pluto source](notebooks/chapters/07-observation-models.jl)
+- Worksheet: `worksheets/chapters/07-observation-models.qmd`
+
+### Sensitivity and identifiability — Day 2, Session 4
+
+- [Book](chapters/10-sensitivity-and-identifiability.html)
+- [Slides](slides/chapters/10-sensitivity-and-identifiability.html)
+- [Pluto preview](notebook-exports/chapters/10-sensitivity-and-identifiability.html)
+- [Pluto source](notebooks/chapters/10-sensitivity-and-identifiability.jl)
+- Worksheet: `worksheets/chapters/10-sensitivity-and-identifiability.qmd`
 
 ### Interventions and optimization — Day 3, Session 1
 

@@ -3,10 +3,10 @@ course-unit: ch10-sensitivity-and-identifiability
 status: complete
 ---
 
-# Sensitivity and identifiability
+# Sensitivity and identifiability {#sec-sensitivity-and-identifiability}
 
 ::: {.callout-note appearance="simple"}
-**Workshop programme**: taught live on Day 2, Session 3. See the [full schedule](../workshop.qmd).
+**Workshop programme**: taught live on Day 2, Session 4. See the [full schedule](../workshop.qmd).
 :::
 
 Sensitivity analysis asks how much a chosen model output changes when an input
@@ -77,18 +77,22 @@ The course module provides the baseline constructors and plotting theme. The
 right-hand side below is written out as a pedagogical three-parameter kernel so
 that the derivative in @eq-sensitivity-sir is visible in the code.
 
+Note one departure from the named-tuple convention of @sec-julia-essentials:
+parameters travel here as the plain vector `p0 = [β, c, γ]`, unpacked
+positionally. Sensitivity analysis differentiates *with respect to the parameter
+vector*, so `ODEForwardSensitivityProblem` and `gsa` both require an indexable
+container whose column order defines what the derivatives mean. Where that is
+not forced, as in every chapter so far, prefer the named tuple.
+
 ```{julia}
 using CairoMakie
+using EpiModelingCourse
 using GlobalSensitivity
 using Logging
 using ModelingToolkit
 using OrdinaryDiffEq
 using SciMLSensitivity
 using StructuralIdentifiability
-
-course_root = normpath(joinpath(@__DIR__, ".."))
-include(joinpath(course_root, "src", "EpiModelingCourse.jl"))
-using .EpiModelingCourse
 
 baseline = BASELINE_PARAMETERS
 u0 = Float64[
@@ -224,6 +228,17 @@ omit the known population scale in this small example to highlight the
 confounding of $\beta$ and $c$ in a mass-action-style observation. The package
 uses ASCII parameter names in this interface, so `b` and `c` stand for
 $\beta$ and $c$.
+
+The model below is written *symbolically*, which is a different object from the
+`sir_kernel!` function used above. `@parameters` and `@variables` create
+symbols rather than numbers; `D = Differential(t)` is a derivative operator, not
+a numerical difference; and `D(S) ~ -b * c * S * I` is an **equation**, where
+the `~` records a relationship instead of assigning a value. `ODESystem`
+collects those equations into a model that can be manipulated algebraically.
+Nothing is solved
+here: it is precisely because the model is symbolic that the package can reason
+about which parameters the observation map can distinguish, for every trajectory
+at once, rather than inspecting one numerical solution.
 
 ```{julia}
 @parameters b c g

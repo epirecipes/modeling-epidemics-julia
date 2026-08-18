@@ -4,15 +4,35 @@ This book is a comprehensive, self-paced course consisting of 24 teaching units.
 
 Each unit in the book, whether taught in the workshop or not, includes a complete chapter, a slide deck, an interactive Pluto notebook, and exercises with solutions. Attending the workshop offers in-person instruction, discussion, and debugging assistance for the 10 units. The remaining 14 units are fully developed and available for self-study, allowing you to work through them at your own pace, whether before, during, or after the workshop.
 
+Each taught session also has a worksheet: a short set of exercises that build on what the session showed, with hints and answer checks. Worksheets live in the `worksheets/` folder of the repository, and worked solutions are added there at the end of each day.
+
 ## What the workshop covers
 
-The ten sessions move in the following order: deterministic foundations, then stochasticity and connecting models to data, then decisions and individual-based models.
+The ten sessions move in the following order: deterministic foundations and a first stochastic model; then stochastic dynamics in continuous time, the data a model produces, and what those data can identify; then decisions and individual-based models.
 
-- **Day 1: deterministic foundations.** A Julia primer, the SIR model derived from first principles, the `OrdinaryDiffEq` workflow, and discrete-time models.
-- **Day 2: stochasticity, sensitivity, and observation.** Continuous-time jump processes, stochastic differential equations, sensitivity and identifiability, and observation models with simulated data.
+- **Day 1: foundations and discrete time.** A Julia primer, the SIR model derived from first principles, the `OrdinaryDiffEq` workflow, and discrete-time models, deterministic and stochastic.
+- **Day 2: stochasticity, observation, and sensitivity.** Continuous-time jump processes, stochastic differential equations, observation models with simulated data, and sensitivity and identifiability.
 - **Day 3: decisions and individual-based models.** Interventions and optimisation, then agent-based models.
 
 The workshop deliberately stops before parameter estimation and Bayesian inference ([ch08](chapters/08-parameter-estimation.html), [ch09](chapters/09-bayesian-inference.html)). For those interested in fitting models to data and inference, we recommend having a look at the modelling course ["Model Fitting and Inference for Infectious Disease Dynamics"](https://www.lshtm.ac.uk/study/courses/short-courses/infectious-diseases-dynamics).
+
+## Before the workshop
+
+Please arrive with Julia, VS Code, and Quarto already installed and the course
+packages downloaded. Installing takes far longer than the fifteen-minute
+environment check on the first morning.
+
+[**Setting up**](setup.qmd) walks through it step by step, including what to do
+when something does not work. Allow about half an hour, most of it waiting for
+downloads, and do it on a good connection rather than on workshop wifi.
+
+No prior Julia experience is assumed: Day 1 starts at the REPL. If you would
+like to read ahead, [Probability and stochastic
+processes](prerequisites/02-probability-and-stochastic-processes.html) and
+[Calculus and numerical
+methods](prerequisites/03-calculus-and-numerical-methods.html) are useful
+background, but they are optional: everything the sessions depend on is
+recapped in the session that uses it.
 
 ## Schedule
 
@@ -20,7 +40,7 @@ The workshop deliberately stops before parameter estimation and Bayesian inferen
 Days 1 and 2 run 09:30–17:30; Day 3 runs 09:30–16:00. Each day has a mid-morning or mid-afternoon break and lunch. Day 3 has a longer lunch and a closing block. Ten 90-minute sessions total 15 hours of teaching within 22.5 hours of contact time; the remaining time covers welcome and wrap-up, breaks, and lunch.
 :::
 
-### Day 1: Deterministic foundations
+### Day 1: Foundations and discrete time
 
 | Time | Session | Unit |
 |---|---|---|
@@ -34,7 +54,7 @@ Days 1 and 2 run 09:30–17:30; Day 3 runs 09:30–16:00. Each day has a mid-mor
 | 15:45–17:15 | Session 4 | [Discrete-time models](chapters/02-discrete-time-models.html) |
 | 17:15–17:30 | Day wrap-up and self-study pointers | - |
 
-### Day 2: Stochasticity, sensitivity, and observation
+### Day 2: Stochasticity, observation, and sensitivity
 
 | Time | Session | Unit |
 |---|---|---|
@@ -42,9 +62,9 @@ Days 1 and 2 run 09:30–17:30; Day 3 runs 09:30–16:00. Each day has a mid-mor
 | 11:00–11:15 | Break | - |
 | 11:15–12:45 | Session 2 | [Stochastic differential equations](chapters/05-stochastic-differential-equations.html) |
 | 12:45–13:45 | Lunch | - |
-| 13:45–15:15 | Session 3 | [Sensitivity and identifiability](chapters/10-sensitivity-and-identifiability.html) |
+| 13:45–15:15 | Session 3 | [Observation models and simulated data](chapters/07-observation-models.html) |
 | 15:15–15:30 | Break | - |
-| 15:30–17:00 | Session 4 | [Observation models and simulated data](chapters/07-observation-models.html) |
+| 15:30–17:00 | Session 4 | [Sensitivity and identifiability](chapters/10-sensitivity-and-identifiability.html) |
 | 17:00–17:30 | Day wrap-up | - |
 
 ### Day 3: Decisions and individual-based models
@@ -62,10 +82,10 @@ Days 1 and 2 run 09:30–17:30; Day 3 runs 09:30–16:00. Each day has a mid-mor
 
 The chapters and appendices listed below are not part of the workshop, but they can be organised as follows:
 
-**Background** : Further material to support the workshop sessions.
+**Background** : Optional further material behind the workshop sessions. Neither is a prerequisite.
 
-- [Probability and stochastic processes](prerequisites/02-probability-and-stochastic-processes.html) : Background for the stochastic sessions.
-- [Calculus and numerical methods](prerequisites/03-calculus-and-numerical-methods.html) : Background for the ODE session.
+- [Probability and stochastic processes](prerequisites/02-probability-and-stochastic-processes.html) : Waiting times, memorylessness, and the binomial chain used in the stochastic sessions.
+- [Calculus and numerical methods](prerequisites/03-calculus-and-numerical-methods.html) : The Euler method and order of convergence behind the ODE session.
 
 **Connecting models to data, in depth** : Although we suggest that people interested in parameter estimation and Bayesian inference should look at the "Model Fitting and Inference for Infectious Disease Dynamics" course, the following three chapters provide a more detailed look at the topic.
 

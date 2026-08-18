@@ -10,13 +10,26 @@ status: complete
   epidemic trajectory.
 - Surveillance data are never the latent process — they are **noisy, partial
   counts**.
-- An **observation model** links the two, and is the raw material for the
-  inference chapters that follow.
+- An **observation model** links the two, and is what you must state before
+  anyone can fit anything.
+
+**Noise moves house.** This morning it was in the process, where events fired
+at random. Here the process goes back to being a deterministic ODE and *all* the
+randomness sits in the measurement.
 
 ::: {.notes}
-Keep the process/observation split explicit. Chapters 8 and 9 both estimate the
-same process parameters *through* this observation layer, so the modelling
-choices made here propagate directly into the inference results.
+Deal with the switch head-on, because it looks like a step backwards after two
+sessions arguing that process noise changes the answer. Two separate questions:
+does the epidemic itself unfold randomly, and is what we observe a noisy view of
+it? This morning answered the first and held the second fixed; this session does
+the reverse, which isolates one thing at a time. Real analyses need both layers,
+and the reason to hold the process deterministic here is that it makes the
+observation layer's effect unmistakable rather than tangled up with fade-out.
+
+Keep the process/observation split explicit throughout. Chapters 8 and 9 estimate
+process parameters *through* this observation layer, so the modelling choices made
+here propagate directly into any inference results. Note that those are
+self-study chapters, not workshop sessions.
 :::
 
 ## Process and observation, side by side
@@ -35,7 +48,7 @@ $$
 |---|---|---|
 | Determinism | deterministic | stochastic |
 | Time | continuous | discrete (daily) |
-| State | densities $S,I,R,C$ | counts $Y_t\in\mathbb Z_{\ge0}$ |
+| State | continuous counts $S,I,R,C$ | integer counts $Y_t\in\mathbb Z_{\ge0}$ |
 
 ::: {.notes}
 Only *new* infections generate reports, so the signal is incidence, not
@@ -60,9 +73,12 @@ Poisson is **equidispersed**; the negative-binomial adds overdispersion and
 recovers Poisson as $r\to\infty$.
 
 ::: {.notes}
-Real surveillance is almost always overdispersed because of batching, weekday
-effects, and super-spreading. The dispersion $r$ is the one extra parameter that
-buys a defensible variance.
+Real surveillance is almost always overdispersed, and the dispersion $r$ is the
+one extra parameter that buys a defensible variance. Be precise about what it
+does: it widens each day's marginal distribution and nothing more. Batching and
+weekday effects correlate neighbouring days, which a per-day variance cannot
+represent, and super-spreading is variation in transmission — process noise, not
+reporting noise.
 :::
 
 ## Simulating case reports
@@ -71,23 +87,16 @@ buys a defensible variance.
 #| label: fig-slide-ch07-obs
 #| fig-cap: "Latent daily incidence (line) with one Poisson (left) and one overdispersed negative-binomial (right) realisation. Same latent mean, wider negative-binomial scatter."
 using CairoMakie
+using EpiModelingCourse
 using OrdinaryDiffEq
 using Distributions
 using StableRNGs
 CairoMakie.activate!(type = "png")
 
-function sir_cum07!(du, u, p, t)
-    S, I, R, C = u
-    β, c, γ, N = p
-    infection = β * c * S * I / N
-    du[1] = -infection
-    du[2] = infection - γ * I
-    du[3] = γ * I
-    du[4] = infection
-end
-
-p07 = (0.05, 10.0, 0.25, 1000.0)
-prob07 = ODEProblem(sir_cum07!, [990.0, 10.0, 0.0, 0.0], (0.0, 40.0), p07)
+# The process kernel and baseline come from the course package, so the deck,
+# the book chapter and the notebook run the same code.
+p07 = BASELINE_PARAMETERS
+prob07 = ODEProblem(sir_cumulative_ode!, [990.0, 10.0, 0.0, 0.0], (0.0, 40.0), p07)
 sol07 = solve(prob07, Tsit5(); saveat = 1.0, abstol = 1e-10, reltol = 1e-10)
 obstimes07 = 1.0:1.0:40.0
 cum07 = Array(sol07)[4, :]
@@ -167,8 +176,8 @@ observed_incidence`) so the chapter, slides and notebook share one generator.
 - Separate the **latent process** from the **observation process**.
 - Poisson understates uncertainty when reporting is clustered; use the
   negative-binomial.
-- $\rho$ and $\beta$ both scale the mean $\Rightarrow$ **not identifiable** from one
-  incidence series (Chapter 10).
+- $\rho$ rescales the expected counts; $\beta$ also changes growth rate and peak
+  timing — strongly correlated, **not interchangeable**. The next session names this.
 - We assumed instantaneous, conditionally independent reporting — real systems
   add delays and weekday effects.
 
@@ -177,6 +186,15 @@ Read the [book chapter](../../chapters/07-observation-models.html); see
 [StableRNGs.jl](https://github.com/JuliaRandom/StableRNGs.jl).
 
 ::: {.notes}
-Close by previewing the two inference chapters: Chapter 8 estimates parameters by
-maximum likelihood from these reports, Chapter 9 by Bayesian sampling.
+Be careful with the reporting-fraction bullet: it is a statement about how hard
+the two are to separate, not a claim that it is impossible. Halving rho and
+doubling beta does not give the same epidemic, because it shifts the peak day,
+so the curve does carry the information in principle. What is true is that the two are
+strongly correlated, and the last session shows exactly what has to be known
+about the population before they come apart at all.
+
+Close by pointing at the two inference chapters, Chapter 8 by maximum
+likelihood and Chapter 9 by Bayesian sampling, while saying clearly that they are
+self-study, not sessions here, and that the programme page names the LSHTM course
+for anyone who wants to go further with fitting.
 :::
