@@ -20,7 +20,8 @@ learnable.
 
 By the end of this chapter you should be able to:
 
-- distinguish local, global, and structural identifiability analyses;
+- distinguish local sensitivity analysis, global sensitivity analysis, and
+  structural identifiability analysis;
 - compute local state sensitivities with the current
   [SciMLSensitivity.jl API](https://docs.sciml.ai/SciMLSensitivity/stable/);
 - use a small Sobol analysis with
@@ -41,8 +42,11 @@ though the ODE depends on their product.
 
 With $S(0)=990$, $I(0)=10$, $R(0)=0$, $N=1000$, contact rate
 $c=10$, transmission probability $\beta=0.05$, and recovery rate
-$\gamma=0.25$, the initial effective reproduction number is
-$\mathcal{R}_0=\beta c/\gamma=2$. These values are the course baseline.
+$\gamma=0.25$, the basic reproduction number is
+$\mathcal{R}_0=\beta c/\gamma=2$. Because $S(0)/N=0.99$, the initial
+effective reproduction number is
+$\mathcal{R}_{\mathrm{eff}}(0)=\mathcal{R}_0 S(0)/N=1.98$. These values are the
+course baseline.
 
 ## Equations
 
@@ -146,31 +150,76 @@ final_jacobian
 ```
 
 The rows of `final_jacobian` correspond to $S$, $I$, and $R$, and its columns
-correspond to $\beta$, $c$, and $\gamma$. The following figure displays the
-infectious-row sensitivities through time.
+correspond to $\beta$, $c$, and $\gamma$.
+
+These three columns must not be compared directly, because each is measured in
+the units of its own parameter. The model depends on $\beta$ and $c$ only
+through the product $k=\beta c$, so
+
+$$
+\frac{\partial I}{\partial\beta}=c\,\frac{\partial I}{\partial k},
+\qquad
+\frac{\partial I}{\partial c}=\beta\,\frac{\partial I}{\partial k},
+$$ {#eq-sensitivity-chain}
+
+so away from their common zeros their ratio is $c/\beta=200$. A raw plot
+therefore shows a $\beta$ curve two hundred times larger than the $c$ curve;
+that is a statement about the units in which each input happens to be measured,
+not evidence that $\beta$ matters more. Rescaling each derivative by its own
+parameter value removes the arbitrariness. The elasticity
+
+$$
+E_j(t)=\frac{\theta_j}{I(t)}\,\frac{\partial I(t)}{\partial\theta_j}
+$$ {#eq-sensitivity-elasticity}
+
+is dimensionless: the fractional change in $I(t)$ per fractional change in
+$\theta_j$. Scaling by $\theta_j$ alone, without dividing by $I(t)$, does the
+same job in units of people rather than percent. Plotted either way the $\beta$
+and $c$ curves coincide exactly, which is the same confounding that the
+structural analysis below derives symbolically.
 
 ```{julia}
 #| label: fig-ch10-local-sensitivity
-#| fig-cap: "Local derivatives of the infectious state with respect to the three SIR inputs."
-fig = Figure(size = (800, 450))
-ax = Axis(
+#| fig-cap: "Local sensitivities of the infectious state. Left: raw derivatives, whose relative sizes are fixed by the units of each parameter. Right: dimensionless elasticities, where the β and c curves coincide exactly (c is dashed so the overlap is visible)."
+infectious = local_states[2, :]
+raw_sensitivities = [[jacobian[2, j] for jacobian in local_jacobians] for j in 1:3]
+elasticities = [p0[j] .* raw_sensitivities[j] ./ infectious for j in 1:3]
+
+fig = Figure(size = (900, 420))
+raw_axis = Axis(
     fig[1, 1],
     xlabel = "time",
-    ylabel = "∂I/∂parameter",
-    title = "Local forward sensitivities",
+    ylabel = "∂I/∂θⱼ",
+    title = "Raw derivatives (unit-dependent)",
+)
+elasticity_axis = Axis(
+    fig[1, 2],
+    xlabel = "time",
+    ylabel = "(θⱼ/I) ∂I/∂θⱼ",
+    title = "Elasticities (dimensionless)",
 )
 parameter_labels = ["β", "c", "γ"]
 parameter_colors = [:steelblue, :darkorange, :seagreen]
+parameter_styles = [:solid, :dash, :solid]
 for j in 1:3
     lines!(
-        ax,
+        raw_axis,
         tgrid,
-        [jacobian[2, j] for jacobian in local_jacobians],
+        raw_sensitivities[j],
         label = parameter_labels[j],
         color = parameter_colors[j],
+        linestyle = parameter_styles[j],
+    )
+    lines!(
+        elasticity_axis,
+        tgrid,
+        elasticities[j],
+        label = parameter_labels[j],
+        color = parameter_colors[j],
+        linestyle = parameter_styles[j],
     )
 end
-axislegend(ax)
+axislegend(elasticity_axis)
 fig
 ```
 
@@ -180,13 +229,23 @@ Local derivatives can miss interactions and changes in ranking away from
 $p_0$. GlobalSensitivity evaluates a scalar output over a specified parameter
 box. Here the output is the peak infectious population. `samples=32` keeps
 the example short; a production analysis needs a convergence study over
-larger designs and, ideally, uncertainty distributions justified by data.
+larger designs and, ideally, uncertainty distributions justified by data. The
+difference is not academic: at 32 samples the first-order index for $c$ below
+comes out near $0.19$, while a 16384-sample design puts it at about $0.26$.
+
+The peak is read from the solver's dense output on a fine grid rather than from
+daily save points, because the maximum rarely falls on a whole day: at the
+baseline the daily grid gives about $158.09$ on day 18, while the continuous
+peak is about $158.45$ near $t=17.5$. That gap is small, but it is a
+discretization artifact of the output definition, and it would enter every
+sample of the Sobol design.
 
 ```{julia}
 function peak_infectious(p)
     problem = ODEProblem(sir_kernel!, u0, (0.0, 40.0), Float64.(p))
-    solution = solve(problem, Tsit5(); saveat = 1.0, abstol = 1e-8, reltol = 1e-8)
-    return maximum(Array(solution)[2, :])
+    solution = solve(problem, Tsit5(); abstol = 1e-8, reltol = 1e-8)
+    # Dense interpolation on a sub-daily grid, since the peak falls between days.
+    return maximum(solution(t)[2] for t in 0.0:0.05:40.0)
 end
 
 parameter_bounds = [
@@ -204,9 +263,19 @@ sobol_first, sobol_total
 The plot is a compact way to compare the two summaries rather than treating
 one ranking as universal.
 
+These indices assume independent uniform inputs over the stated bounds, and
+they attribute output variance under exactly that assumed distribution.
+Separate indices for $\beta$ and $c$ therefore quantify variance attribution
+under an artificial factorization of $\beta c$ into two independently sampled
+factors: their relative sizes follow from the widths of the two boxes chosen
+above, and they do not imply that incidence data can identify the two
+parameters separately. Sobol analysis answers "which input ranges drive the
+spread of this output", not "which parameters can be estimated" — that second
+question is the structural one taken up next.
+
 ```{julia}
 #| label: fig-ch10-global-sensitivity
-#| fig-cap: "First-order and total Sobol indices for the infectious peak."
+#| fig-cap: "First-order and total Sobol indices for the infectious peak, under independent uniform sampling over the stated bounds."
 fig = Figure(size = (800, 450))
 ax = Axis(
     fig[1, 1],
@@ -214,8 +283,8 @@ ax = Axis(
     ylabel = "Sobol index",
     title = "Global sensitivity of the peak",
 )
-barplot!(ax, 1:3, sobol_first, dodge = fill(1, 3), color = :steelblue)
-barplot!(ax, (1:3) .+ 0.35, sobol_total, dodge = fill(1, 3), color = :darkorange)
+barplot!(ax, (1:3) .- 0.18, sobol_first, width = 0.32, color = :steelblue)
+barplot!(ax, (1:3) .+ 0.18, sobol_total, width = 0.32, color = :darkorange)
 Legend(fig[1, 2], [PolyElement(color = :steelblue), PolyElement(color = :darkorange)],
     ["first order", "total"])
 fig
@@ -267,16 +336,28 @@ identifiability
 
 The expected interpretation is that `b` and `c` are nonidentifiable while
 `b*c` and `g` are identifiable for this observation choice. Adding an
-independent observation, fixing the contact rate from external information,
-or collecting contact-pattern data changes the identification problem; no
-optimizer can recover information absent from the observation map.
+observation that depends on one factor separately — contact-pattern data, for
+instance — or fixing the contact rate from external information changes the
+identification problem; no optimizer can recover information absent from the
+observation map.
+
+Note the convention: called without the `known_ic` keyword,
+`assess_identifiability` treats the initial conditions as generic unknown
+quantities, so this symbolic calculation does not use the numerical baseline
+initial state fixed earlier in the chapter. Declaring the initial state through
+`known_ic` is a separate option and a different question. It does not rescue
+$\beta$ and $c$ here: the map $(\beta,c)\mapsto(a\beta,c/a)$ leaves every
+trajectory — and hence every observation of the states — unchanged, so the
+confounding persists whether or not the initial conditions are known.
 
 ## Validation
 
 The forward sensitivity solve should conserve total population, and its
 finite perturbation should agree with the derivative at the scale of the
-chosen perturbation. The checks below are deliberately numerical rather than
-asserting a particular rounded sensitivity value.
+chosen perturbation. The elasticities of $\beta$ and $c$ should also agree to
+solver tolerance, since @eq-sensitivity-chain makes them equal identically. The
+checks below are deliberately numerical rather than asserting a particular
+rounded sensitivity value.
 
 ```{julia}
 population_error = maximum(abs.(vec(sum(local_states; dims = 1)) .- N))
@@ -296,20 +377,29 @@ sensitivity_difference = abs(finite_difference - final_jacobian[2, 1])
 sensitivity_relative_difference =
     sensitivity_difference / (1 + abs(final_jacobian[2, 1]))
 
+elasticity_gap = maximum(abs.(elasticities[1] .- elasticities[2]))
+
 @assert population_error < 1e-6
 @assert sensitivity_relative_difference < 1e-3
+@assert elasticity_gap < 1e-6
 (population_error = population_error, sensitivity_difference = sensitivity_difference,
-    sensitivity_relative_difference = sensitivity_relative_difference)
+    sensitivity_relative_difference = sensitivity_relative_difference,
+    elasticity_gap = elasticity_gap)
 ```
 
 ## Interpretation and limitations
 
 The local plot describes a neighborhood of the baseline; it is not a
-probability distribution or a causal effect. The Sobol result is conditional
-on the rectangular bounds and the small quasi-random design. Structural
-identifiability is an idealized, noiseless, continuous-observation result,
-whereas practical identifiability also depends on observation times,
-measurement error, initial conditions, and model misspecification. In
+probability distribution or a causal effect, and it is only comparable across
+parameters once each derivative is rescaled to the dimensionless elasticity of
+@eq-sensitivity-elasticity. The
+Sobol result is conditional on the rectangular bounds and the small
+quasi-random design, and it attributes variance under an assumed independent
+uniform distribution rather than testing whether the parameters can be
+estimated. Structural identifiability is an idealized, noiseless,
+continuous-observation result computed here under generic unknown initial
+conditions, whereas practical identifiability also depends on observation
+times, measurement error, initial conditions, and model misspecification. In
 particular, a fit of $\beta c$ does not justify separate biological claims
 about $\beta$ and $c$. The SciMLSensitivity, GlobalSensitivity, and
 StructuralIdentifiability APIs used here are documented in their current
@@ -327,10 +417,12 @@ between a transient output and a cumulative output.
 
 ### Exercise 2 {#ch10-ex2}
 
-Extend `identifiability_system` with an observable `n(t) ~ S + I + R`.
-Assess `[b, c, g, b*c]` again. State which confounding remains, if any, and
-describe one additional data stream that would make the separate contact rate
-credible.
+Extend `identifiability_system` with an observable `n(t) ~ S + I + R`, keeping
+the generic unknown initial conditions of the section above — the total is
+informative only under that convention, since a fully specified initial state
+would already fix it. Assess `[b, c, g, b*c]` again. State which confounding
+remains, if any, and describe one additional data stream that would make the
+separate contact rate credible.
 
 ## Companion materials
 

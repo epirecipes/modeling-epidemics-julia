@@ -4,6 +4,24 @@ course-unit: ch04-jump-processes
 status: complete
 ---
 
+## Where we are
+
+| Model | Determinism | Time | State |
+|---|---|---|---|
+| ODE (Day 1) | deterministic | continuous | continuous |
+| Function map (Day 1) | deterministic | discrete | continuous |
+| Markov chain (Day 1) | stochastic | discrete | discrete |
+| **Jump process (now)** | **stochastic** | **continuous** | **discrete** |
+
+All four are population models: the state is counts, not people.
+
+::: {.notes}
+Two minutes at the start of the day. These four axes are the map the whole
+course is drawn on, and today fills in the last population-level corner:
+stochastic, continuous in time, discrete in state. Point out that the
+individual-level column is still empty; that is Day 3.
+:::
+
 ## Why events matter
 
 - A CTMC waits for the next infection or recovery.
@@ -19,6 +37,49 @@ $$
 ::: {.notes}
 Contrast this with an ODE: an ODE advances all flows over a numerical
 interval, while a jump process samples the next event and its type.
+:::
+
+## Recap: where the exponential comes from
+
+An event with constant hazard $r$ has waiting time $T$ with
+
+$$
+\Pr(T>t)=e^{-rt},\qquad \Pr(T\le\delta t)=1-e^{-r\delta t},
+$$
+
+the same conversion used for the discrete-time chain on Day 1.
+
+::: {.notes}
+Five minutes, no derivation on the board. Point out that the survival function
+is where yesterday's rate-to-proportion rule came from: the per-step
+probability is the chance the waiting time lands inside the step. The full
+derivation is in the probability prerequisite; nobody needs to have read it to
+follow this session.
+:::
+
+## Recap: memoryless clocks and which one rings first
+
+Exponential waiting times are **memoryless**,
+
+$$
+\Pr(T>s+t\mid T>s)=e^{-rt}=\Pr(T>t),
+$$
+
+so no per-individual clock has to be carried and the counts $(S,I,R)$ are the
+whole state. With competing events at rates $a_j$ and $a_0=\sum_j a_j$,
+
+$$
+\min_j T_j\sim\operatorname{Exponential}(a_0),
+\qquad \Pr(J=j)=\frac{a_j}{a_0}.
+$$
+
+::: {.notes}
+Memorylessness is a real assumption about the disease: someone infectious for a
+week is no closer to recovering than someone infected this morning. The two
+displayed results are the whole Gillespie algorithm: when the next event
+happens, and which one it is. The next slide is bookkeeping rather than new
+mathematics. Learners who want the derivations should read the waiting-times
+section of the probability prerequisite afterwards.
 :::
 
 ## Gillespie direct algorithm
@@ -67,47 +128,150 @@ The state update is the stoichiometric change vector in code.  The local
 StableRNG makes the result reproducible without relying on global state.
 :::
 
-## Current-code result
+## One path, and the ODE through it
 
 ```{julia}
+#| label: fig-slide-ch04-path
+#| fig-cap: "One exact CTMC path (steps) against the mean-field ODE (dashed)."
+using CairoMakie, OrdinaryDiffEq
+
 path = gillespie_sir(1000, 10, 0.05, 10.0, 0.25, 40.0,
     StableRNG(20250711))
 states = reduce(hcat, path.states)
-mass_error = maximum(abs.(sum(states; dims=1) .- 1000))
-(events = length(path.times) - 1, peak_I = maximum(states[2, :]),
-    mass_error)
+@assert maximum(abs.(sum(states; dims=1) .- 1000)) == 0   # conservation
+
+function sir_drift!(du, u, p, t)
+    κ, γ = p
+    du[1] = -κ*u[1]*u[2]
+    du[2] =  κ*u[1]*u[2] - γ*u[2]
+    du[3] =  γ*u[2]
+end
+grid = collect(0.0:0.2:40.0)
+ode = Array(solve(ODEProblem(sir_drift!, [990.0, 10.0, 0.0], (0.0, 40.0),
+    (0.05*10/1000, 0.25)), Tsit5(); saveat = grid))
+
+fig = Figure(size = (900, 380))
+ax = Axis(fig[1, 1], xlabel = "time (days)", ylabel = "people",
+    title = "$(length(path.times)-1) events, peak I = $(maximum(states[2, :]))")
+for (j, (name, col)) in enumerate(zip(["S", "I", "R"],
+        [:steelblue, :firebrick, :seagreen]))
+    stairs!(ax, path.times, states[j, :]; color = col, linewidth = 2,
+        label = "$name (jump)")
+    lines!(ax, grid, ode[j, :]; color = col, linestyle = :dash, linewidth = 1.5)
+end
+axislegend(ax, position = :rc)
+fig
 ```
 
-The returned result is generated at render time.  `mass_error == 0` is a
-structural validation; `peak_I` and the event count are realization-specific.
+::: {.notes}
+This is the picture the whole morning is about. Every wiggle is a real event, and
+at a thousand people there are well over a thousand of them, so the steps merge
+into a rough curve. Zooming in on the first few days is where you would see
+individual jumps. The dashed curves are yesterday's model, and the gap is not
+solver error: this particular realization ran a few days late, and a
+different seed would run early.
+
+The title numbers are generated at render time and are realization-specific;
+conservation is asserted, so a broken kernel would fail the render. Do not let
+anyone read one path as an expected epidemic; that is the next two slides.
+:::
+
+## Recap: two kinds of spread
+
+For $M$ independent paths with summary values $z_1,\dots,z_M$,
+
+$$
+\bar z=\frac1M\sum_k z_k,\qquad
+s^2=\frac1{M-1}\sum_k (z_k-\bar z)^2,\qquad
+\operatorname{se}(\bar z)=\frac{s}{\sqrt M}.
+$$
+
+- The standard deviation $s$ describes **the epidemics**: how much peak size
+  varies. More simulation does not shrink it.
+- The standard error $\operatorname{se}(\bar z)$ describes **our estimate** of
+  the average, and does shrink, as $1/\sqrt M$: four times the work to halve it.
 
 ::: {.notes}
-Do not interpret one path as an expected epidemic.  Use seeded ensembles when
-comparing with the deterministic mean-field model.
+Three minutes, and it pays for itself four times today. These two spreads get
+confused constantly, so keep them apart: one is a property of the disease
+process, the other a property of how hard we simulated. Say explicitly that this
+is the vocabulary the rest of the day uses. The relative spread of SDE peaks
+after the break, the variance-to-mean ratio of case counts this afternoon, and
+the variance decomposition in the last session all live on this slide. Nobody
+needs the probability prerequisite for it.
 :::
 
 ## From model to package API
 
-The same reaction structure can be represented with current SciML packages:
+The same reaction structure, in current SciML packages, executed here:
 
-```julia
+```{julia}
+#| label: ch04-catalyst
 using Catalyst, JumpProcesses
+
 sir_network = @reaction_network begin
     κ, S + I --> 2I
     γ, I --> R
 end
-jump_problem = JumpProblem(
-    sir_network, [:S=>990, :I=>10, :R=>0], (0.0, 40.0),
-    [:κ=>0.05*10/1000, :γ=>0.25];
-    aggregator=Direct(), rng=StableRNG(20250711))
-jump_solution = solve(jump_problem, SSAStepper(); saveat=0.2)
+u₀ = [:S => 990, :I => 10, :R => 0]
+jump_parameters = [:κ => 0.05*10/1000, :γ => 0.25]
+
+function simulate_jump(seed)
+    problem = JumpProblem(sir_network, u₀, (0.0, 40.0), jump_parameters;
+        aggregator = Direct(), rng = StableRNG(seed))
+    return Array(solve(problem, SSAStepper(); saveat = grid)(grid))
+end
+size(simulate_jump(3001))
 ```
 
-The network records species, propensities, and stoichiometry explicitly.
+One rate constant per reaction, so the $\beta cSI/N$ above becomes $\kappa SI$
+with $\kappa=\beta c/N$; $R_0=\beta c/\gamma=2$ is unchanged.
 
 ::: {.notes}
-The direct kernel is useful for learning; Catalyst plus JumpProcesses is useful
-when the reaction network will be reused as an ODE, SDE, or jump model.
+Two reactions in two lines, against the hand-written kernel three slides back.
+Say that out loud rather than reading the code. The kappa note matters because
+the book chapter uses kappa from here on: a reaction network carries one rate
+constant per reaction, and the baseline scenario has not changed. The network
+also records stoichiometry explicitly, which is what lets the same object become
+an ODE, an SDE, or a jump model later in the course.
+:::
+
+## Twenty paths and the ODE
+
+```{julia}
+#| label: fig-slide-ch04-ensemble
+#| fig-cap: "Twenty CTMC paths of infectious prevalence with the mean-field ODE."
+using Statistics
+
+M = 20
+ensemble = cat((simulate_jump(3000 + k) for k in 1:M)...; dims = 3)
+peaks = [maximum(ensemble[2, :, k]) for k in 1:M]
+
+fig2 = Figure(size = (900, 380))
+ax2 = Axis(fig2[1, 1], xlabel = "time (days)", ylabel = "infectious",
+    title = "peak I: mean $(round(Int, mean(peaks))), sd $(round(Int, std(peaks)))" *
+            ", se $(round(std(peaks)/sqrt(M); digits = 1))")
+for k in 1:M
+    lines!(ax2, grid, ensemble[2, :, k]; color = (:firebrick, 0.35), linewidth = 1)
+end
+lines!(ax2, grid, ode[2, :]; color = :black, linestyle = :dash, linewidth = 2.5)
+fig2
+```
+
+::: {.notes}
+Five minutes, and let them look before you talk. Two things to point at. First
+the spread in *timing*: every path has the same shape but peaks somewhere between
+roughly day 13 and day 25. Second, and this is the one worth labouring: the
+dashed ODE is not the average of the paths. Its peak is near 158 while the mean
+of the twenty individual peak heights is around 178, because each path peaks at
+its own time and averaging asynchronous peaks flattens the curve. So "the ODE
+peak" and "the average peak of an epidemic" are different quantities.
+
+The three numbers in the title are the previous slide made concrete: sd is the
+epidemics varying, se is how well twenty runs pin the average down. Note that
+none of these twenty paths fades out. With ten initial infectives and $R_0=2$
+that is expected, since fade-out needs all ten introductions to fail. Fade-out is
+a small-introduction phenomenon, and the worksheet quantifies it.
 :::
 
 ## Takeaways and links

@@ -1,0 +1,403 @@
+---
+title: "Worksheet — Jump processes"
+course-unit: ch04-jump-processes
+artifact: worksheet
+status: draft
+---
+
+# Worksheet: adding a latent period
+
+**~45 minutes**
+
+The [chapter](../../chapters/04-jump-processes.qmd) simulated an SIR epidemic as an
+exact sequence of events: draw a waiting time, pick which event fires, update the
+state, repeat. Here you keep
+that machinery and change the *disease*. Many infections have a **latent
+period**, someone infected but not yet infectious, which adds a fourth
+compartment $E$ and a third transition.
+
+**How to use this file.** Run cells one at a time with `Ctrl+Shift+Enter`. Cells
+marked `# TODO` have a line or two for you to complete; everything else runs as
+given. Each part ends with `✓` / `✗` lines that check your answer; a `✗` is
+information, not failure, and the collapsed hint below it will get you moving.
+An instructor is circulating; ask early rather than staying stuck.
+
+**Parts A and B are the session.** **Part C** goes further if you get there; not
+reaching it is fine. Worked solutions are posted at the end of each
+day. Run `git pull` to collect them.
+
+**New to Julia?** The
+[Julia essentials worksheet](../prerequisites/01-julia-essentials.qmd)
+opens with an R-to-Julia table, and a reminder of how to type `κ`, `σ` and `γ`.
+The [Julia essentials chapter](../../prerequisites/01-julia-essentials.qmd) has
+the full table.
+
+::: {.callout-note}
+The next session replaces these individual events with a continuous
+approximation. You are not being asked to judge which is better yet; today is
+about simulating the events exactly.
+:::
+
+---
+
+## Setup
+
+Run this and check `R₀` prints as 2.0. The `gillespie` function is the session's
+loop, written once so it can drive any model you hand it.
+
+```{julia}
+#| label: ws-ch04-setup
+using CairoMakie
+using Random
+using StableRNGs
+using Statistics
+
+check(name, condition) =
+    println(condition ? "✓ $name" : "✗ $name — not right yet, see the hint")
+
+# `propensities(u, p)` returns one rate per transition, and column j of
+# `stoichiometry` is what transition j does to the state.
+function gillespie(u0, p, tmax, propensities, stoichiometry, rng)
+    u = collect(u0)
+    t = 0.0
+    ts, us = [t], [copy(u)]
+    while true
+        a = propensities(u, p)
+        a₀ = sum(a)
+        a₀ == 0 && break                 # no transition can fire: absorbed
+        t += randexp(rng) / a₀           # τ ~ Exponential(a₀)
+        t > tmax && break
+        target = rand(rng) * a₀          # pick j with probability aⱼ / a₀
+        j = something(findfirst(≥(target), cumsum(a)), length(a))
+        u .+= stoichiometry[:, j]
+        push!(ts, t); push!(us, copy(u))
+    end
+    return ts, us
+end
+
+sample_states(ts, us, grid) =
+    reduce(hcat, (us[searchsortedlast(ts, t)] for t in grid))
+
+κ = 0.05 * 10 / 1000     # β c / N, as in the session
+σ = 0.5                  # progression rate: mean latent period 1/σ = 2 days
+γ = 0.25                 # recovery rate
+grid = 0.0:0.5:120.0
+
+println("R₀ = ", 0.05 * 10 / γ)
+```
+
+---
+
+## Part A — an exposed compartment (~15 min)
+
+The disease now has three transitions rather than two:
+
+| transition | who moves | propensity |
+|---|---|---|
+| infection | $S \to E$ | $\kappa SI$ |
+| progression | $E \to I$ | $\sigma E$ |
+| recovery | $I \to R$ | $\gamma I$ |
+
+You supply two things: what each transition does to the new $E$ compartment, and
+the three propensities, in the same order as the columns.
+
+```{julia}
+#| label: ws-ch04-a1
+# Column j says what transition j does to (S, E, I, R).
+#           infection  progression  recovery
+seir_stoichiometry = [
+    -1   0   0     # S
+     0   0   0     # E   TODO: replace this row — what does each transition do to E?
+     0   1  -1     # I
+     0   0   1     # R
+]
+
+function seir_propensities(u, p)
+    S, E, I, R = u
+    κ, σ, γ = p
+    return [0.0, 0.0, 0.0]   # TODO: replace the three zeros with the rates above
+end
+
+seir_u0 = (990, 0, 10, 0)
+seir_p = (κ, σ, γ)
+ts, us = gillespie(seir_u0, seir_p, last(grid), seir_propensities,
+                   seir_stoichiometry, StableRNG(1))
+path = sample_states(ts, us, grid)
+
+check("population conserved", all(sum(path; dims = 1) .== 1000))
+check("nobody went negative", minimum(path) >= 0)
+check("the exposed compartment is used", maximum(path[2, :]) > 0)
+check("an epidemic happened", path[4, end] > 100)
+println("events = ", length(ts) - 1, ", peak infectious = ", maximum(path[3, :]))
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part A
+
+```julia
+     1  -1   0     # E
+...
+return [κ * S * I, σ * E, γ * I]
+```
+
+Read the $E$ row across the three transitions: infection puts someone *into* $E$
+($+1$), progression takes them *out* ($-1$), and recovery does not touch $E$
+($0$). Every column should sum to zero: nobody is created or destroyed.
+
+If the conservation check fails, the $E$ row is the place to look. If nothing
+happens at all (zero events, no epidemic), you have probably written
+`κ * S * E` for the first rate. Infection needs someone *infectious* to do the
+infecting, and people in $E$ are not yet infectious.
+:::
+
+### The same model, in three lines
+
+Nothing to fill in here: read it and run it. This is the library half of the
+session: the model you just specified as a $4\times3$ matrix plus a propensity
+function, written as three reactions. In the first reaction $I$ appears on both
+sides because an infectious person is unchanged by infecting someone else; the
+transition moves one person from $S$ to $E$. Catalyst reads $\kappa$ as a
+mass-action rate constant, so that reaction's propensity is $\kappa SI$, the
+same expression you wrote by hand.
+
+The two implementations are the same stochastic process but consume randomness
+differently, so identical seeds do not give identical paths and only their
+distributions can be compared. The cell therefore runs 20 of each and asks
+whether the mean peaks differ by more than three standard errors of that
+difference, the comparison from the session's recap slide. Passing means no
+difference was detected at that resolution, not that the two are proven
+identical.
+
+```{julia}
+#| label: ws-ch04-a2
+using Catalyst
+using JumpProcesses
+
+seir_network = @reaction_network begin
+    κ, S + I --> E + I
+    σ, E --> I
+    γ, I --> R
+end
+
+# Species are named, not positional: ask for `seir_network.I` rather than row 3.
+function network_peak(seed)
+    problem = JumpProblem(seir_network,
+                          [:S => 990, :E => 0, :I => 10, :R => 0],
+                          (0.0, last(grid)), [:κ => κ, :σ => σ, :γ => γ];
+                          aggregator = Direct(), rng = StableRNG(seed))
+    return maximum(solve(problem, SSAStepper(); saveat = grid)[seir_network.I])
+end
+
+function hand_peak(seed)
+    ts, us = gillespie(seir_u0, seir_p, last(grid), seir_propensities,
+                       seir_stoichiometry, StableRNG(seed))
+    return maximum(sample_states(ts, us, grid)[3, :])
+end
+
+M = 20
+network_peaks = [network_peak(2000 + k) for k in 1:M]
+hand_peaks = [hand_peak(3000 + k) for k in 1:M]
+
+# Standard error of the difference between two independent ensemble means.
+standard_error = sqrt((var(network_peaks) + var(hand_peaks)) / M)
+
+check("your model and the reaction network agree on the mean peak",
+      abs(mean(network_peaks) - mean(hand_peaks)) < 3 * standard_error)
+println("mean peak infectious: network ", round(mean(network_peaks); digits = 1),
+        ", yours ", round(mean(hand_peaks); digits = 1),
+        " (standard error of the difference ",
+        round(standard_error; digits = 1), ")")
+```
+
+This check compares your Part A model with the reaction network, so it stays ✗
+until the stoichiometry row and the propensities above are right.
+
+### A1. Interpret
+
+Why is the first propensity a product of two compartments while the other two
+depend on only one?
+
+Then compare the two specifications you now have of one model. Which parts of
+the $4\times3$ matrix are hard to get right by hand, and what does the reaction
+network make impossible to get wrong?
+
+> *Your answer here.*
+
+---
+
+## Part B — does the latent period matter? (~15 min)
+
+Below, the same machinery runs the session's SIR model so the two can be
+compared. Both have $R_0 = 2$.
+
+```{julia}
+#| label: ws-ch04-b1
+function sir_propensities(u, p)
+    S, I, R = u
+    κ, γ = p
+    return [κ * S * I, γ * I]
+end
+sir_stoichiometry = [-1 0; 1 -1; 0 1]
+
+function ensemble(u0, p, propensities, stoichiometry, M, seed0)
+    return cat((sample_states(
+                    gillespie(u0, p, last(grid), propensities,
+                              stoichiometry, StableRNG(seed0 + k))...,
+                    grid) for k in 1:M)...; dims = 3)
+end
+
+M = 30
+seir_runs = ensemble(seir_u0, seir_p, seir_propensities, seir_stoichiometry, M, 100)
+sir_runs  = ensemble((990, 10, 0), (κ, γ), sir_propensities, sir_stoichiometry, M, 200)
+
+seir_I = dropdims(mean(seir_runs[3, :, :]; dims = 2), dims = 2)
+sir_I  = dropdims(mean(sir_runs[2, :, :]; dims = 2), dims = 2)
+
+seir_final = mean(seir_runs[4, end, :])
+sir_final  = mean(sir_runs[3, end, :])
+
+check("the SEIR peak comes later", grid[argmax(seir_I)] > grid[argmax(sir_I)])
+check("the SEIR peak is lower", maximum(seir_I) < maximum(sir_I))
+check("both reach a similar final size",
+      abs(seir_final - sir_final) / sir_final < 0.05)
+(; seir_peak_day = grid[argmax(seir_I)], sir_peak_day = grid[argmax(sir_I)],
+   seir_peak = round(maximum(seir_I); digits = 1),
+   sir_peak = round(maximum(sir_I); digits = 1),
+   seir_final = round(seir_final; digits = 1),
+   sir_final = round(sir_final; digits = 1))
+```
+
+```{julia}
+#| label: fig-ws-ch04-compare
+#| fig-cap: "Mean infectious curve over 30 exact simulations, with and without a latent period."
+fig = Figure(size = (720, 400))
+ax = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "mean infectious")
+lines!(ax, grid, sir_I; color = :firebrick, linewidth = 3, label = "SIR")
+lines!(ax, grid, seir_I; color = :steelblue, linewidth = 3, label = "SEIR")
+xlims!(ax, 0, 70)
+axislegend(ax; position = :rt)
+fig
+```
+
+### B1. Interpret
+
+- Approximately when does each epidemic peak, and roughly how much lower is the
+  SEIR peak?
+- Both models end with about the same number of people ever infected, but the
+  curves look very different. What does the latent period change, and what does
+  it leave alone?
+
+> *Your answer here.*
+
+### B2. Experiment
+
+Try a shorter and a longer latent period either side of the baseline
+$\sigma = 0.5$, and watch the peak move.
+
+```{julia}
+#| label: ws-ch04-b2
+latent_rates = Float64[]   # TODO: fill this list — try σ = 1.0, 0.5, and 0.25
+
+for s in latent_rates
+    runs = ensemble(seir_u0, (κ, s, γ), seir_propensities, seir_stoichiometry, 10, 300)
+    mean_I = dropdims(mean(runs[3, :, :]; dims = 2), dims = 2)
+    println("mean latent period ", round(1 / s; digits = 1), " days → peak on day ",
+            grid[argmax(mean_I)])
+end
+
+check("three latent periods tried", length(latent_rates) == 3)
+```
+
+Does doubling the latent period move the peak by twice as much, or by more?
+
+> *Your answer here.*
+
+---
+
+## Part C — how often does an outbreak fizzle out? (optional)
+
+*Start this only if you have finished Part B.*
+
+Every simulation so far began with 10 infectious people and every one produced
+an epidemic. Real introductions are usually a single case, and many single cases
+infect nobody. A deterministic model cannot describe this at all; an exact
+event simulation can.
+
+The quantity to compare against is $1/R_0$, but be clear about where it comes
+from. While cases are few the susceptible pool is essentially undepleted, so an
+infectious individual infects at rate $\beta c$ and recovers at rate $\gamma$:
+a linear birth–death process. Because infectious lifetimes are exponential
+here, its extinction probability is $q = \gamma/(\beta c) = 1/R_0$ when
+$R_0 > 1$. That formula belongs to this approximation; it is not universal
+across branching processes or infectious-period distributions.
+
+Two further approximations separate it from what the code measures. This model
+has 999 susceptibles, not infinitely many, and the code below scores an outbreak
+as faded if fewer than 20 people were ever infected rather than asking whether
+transmission truly stopped. The run is a check on how good an approximation
+$1/R_0$ is here.
+
+```{julia}
+#| label: ws-ch04-c1
+function fades_out(seed)
+    start = (990, 0, 10, 0)   # TODO: replace this — start from a single infectious individual
+    ts, us = gillespie(start, seir_p, last(grid), seir_propensities,
+                       seir_stoichiometry, StableRNG(seed))
+    # Outcomes are bimodal: a handful of cases, or hundreds. Any cut between the
+    # two modes gives the same answer, so 20 is not a delicate choice.
+    return last(us)[4] < 20
+end
+
+trials = 400
+fade_fraction = count(fades_out, 1:trials) / trials
+predicted = γ / (0.05 * 10)   # 1 / R₀, the branching-process approximation
+
+check("fade-out is close to the branching prediction",
+      abs(fade_fraction - predicted) < 0.05)
+(; fade_fraction, predicted)
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part C
+
+```julia
+start = (999, 0, 1, 0)
+```
+
+Keep the population at 1000: one infectious individual means 999 susceptible
+ones. If the fraction comes out near zero, check you did not leave 10 infectious
+people in the starting state.
+:::
+
+### C1. Interpret
+
+- What fraction of outbreaks died out, and how does it compare with $1/R_0$?
+- The deterministic model, started from one case, predicts a certain epidemic
+  every time. Why can it not produce the answer you just measured?
+
+> *Your answer here.*
+
+---
+
+## Finish: render your own report
+
+In a terminal:
+
+```bash
+quarto render worksheets/chapters/04-jump-processes.qmd
+```
+
+A clean render means every cell ran top to bottom in a fresh session.
+
+---
+
+## Where to look next
+
+Nothing here is assigned. The whole project stays available to you afterwards.
+
+- [The chapter](../../chapters/04-jump-processes.qmd) — the direct method derived
+  in full, and the same model built with Catalyst reaction networks.
+- [The Pluto notebook](../../notebooks/chapters/04-jump-processes.jl) — sliders
+  over the session's SIR model.
+- [The probability prerequisite](../../prerequisites/02-probability-and-stochastic-processes.qmd)
+  — where the exponential waiting time and the competing-events rule come from.
