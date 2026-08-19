@@ -1,0 +1,428 @@
+---
+title: "Worksheet — Stochastic differential equations"
+course-unit: ch05-stochastic-differential-equations
+artifact: worksheet
+status: draft
+---
+
+# Worksheet: another reaction, and where the diffusion breaks
+
+**~45 minutes**
+
+The [chapter](../../chapters/05-stochastic-differential-equations.qmd) built the
+chemical Langevin SIR model: the drift is the reaction propensities, and each
+reaction contributes one column of noise. Here you keep that construction and
+push on it twice. First you add a third reaction, waning immunity, which needs a
+third noise column. Then you shrink the population until the approximation stops
+being trustworthy, and see exactly how it fails.
+
+**How to use this file.** Run cells one at a time with `Ctrl+Shift+Enter`. Cells
+marked `# TODO` have a line or two for you to complete; everything else runs as
+given. Each part ends with `✓` / `✗` lines that check your answer; a `✗` is
+information, not failure, and the collapsed hint below it will get you moving.
+An instructor is circulating; ask early rather than staying stuck.
+
+**Parts A and B are the session.** **Part C** goes further if you get there; not
+reaching it is fine. Worked solutions are posted at the end of each
+day. Run `git pull` to collect them.
+
+**New to Julia?** The
+[Julia essentials worksheet](../prerequisites/01-julia-essentials.qmd)
+opens with an R-to-Julia table, and a reminder of how to type `κ`, `ω` and `γ`.
+The [Julia essentials chapter](../../prerequisites/01-julia-essentials.qmd) has
+the full table.
+
+::: {.callout-note}
+This morning's session simulated every infection and recovery as a separate
+event. This one replaces those events by a continuous approximation. Part C puts
+the two side by side, so keep the earlier worksheet nearby if you want it.
+:::
+
+---
+
+## Setup
+
+This is the session's model, given so you can get straight to the new material.
+Run it and check the peak looks familiar.
+
+```{julia}
+#| label: ws-ch05-setup
+using CairoMakie
+using OrdinaryDiffEq
+using StochasticDiffEq
+using StableRNGs
+using Statistics
+using Random
+
+check(name, condition) =
+    println(condition ? "✓ $name" : "✗ $name — not right yet, see the hint")
+
+β = 0.05; c = 10.0; γ = 0.25; N = 1000.0
+κ = β * c / N
+u₀ = [990.0, 10.0, 0.0]
+times = collect(0.0:0.1:60.0)   # fine output grid to limit missed-peak bias
+
+function propensities(u, p)
+    κ, γ = p
+    S, I = max(u[1], 0.0), max(u[2], 0.0)
+    return (κ * S * I, γ * I)
+end
+
+function sir_drift!(du, u, p, t)
+    infection, recovery = propensities(u, p)
+    du[1] = -infection
+    du[2] = infection - recovery
+    du[3] = recovery
+    return nothing
+end
+
+function sir_diffusion!(G, u, p, t)
+    infection, recovery = propensities(u, p)
+    G .= 0.0
+    G[1, 1] = -sqrt(infection);  G[2, 1] = sqrt(infection)
+    G[2, 2] = -sqrt(recovery);   G[3, 2] = sqrt(recovery)
+    return nothing
+end
+
+# The session's `SDEProblem` call, wrapped so the rest of the worksheet is short.
+# `reactions` is the number of independent Wiener processes, which is the number
+# of columns in `noise_rate_prototype`.
+function sde_path(drift!, diffusion!, u0, p, tmax, reactions;
+                  seed = 1, saveat = 0.5)
+    problem = SDEProblem(drift!, diffusion!, u0, (0.0, tmax), p;
+                         noise_rate_prototype = zeros(length(u0), reactions))
+    solution = solve(problem, LambaEM(); dt = 0.02, adaptive = false,
+                     saveat = saveat, rng = StableRNG(seed))
+    return Array(solution)
+end
+
+baseline = sde_path(sir_drift!, sir_diffusion!, u₀, (κ, γ), 60.0, 2; seed = 1)
+println("peak infectious on this path: ", round(maximum(baseline[2, :]); digits = 1))
+```
+
+---
+
+## Part A — waning immunity, a third reaction (~15 min)
+
+In the session, recovery is permanent. For many infections it is not: immunity
+fades and people return to the susceptible pool. That is a third reaction,
+
+| reaction | who moves | propensity |
+|---|---|---|
+| infection | $S + I \to 2I$ | $\kappa S I$ |
+| recovery | $I \to R$ | $\gamma I$ |
+| waning | $R \to S$ | $\omega R$ |
+
+so the drift gains a term and the diffusion gains a **third column**, one per
+independent Wiener process. You supply the third propensity and that third
+column.
+
+You built this model yesterday, as a discrete-time map and then as a binomial
+chain (the discrete-time worksheet, Part A). Same model, same $\omega$, same
+endemic level. What changes here is only how the randomness is represented.
+
+```{julia}
+#| label: ws-ch05-a1
+ω = 0.02                              # mean immune period 1/ω = 50 days
+sirs_times = collect(0.0:0.5:400.0)
+
+function sirs_propensities(u, p)
+    κ, γ, ω = p
+    S, I, R = max(u[1], 0.0), max(u[2], 0.0), max(u[3], 0.0)
+    return (κ * S * I, γ * I, 0.0)    # TODO: replace the 0.0 with the waning rate
+end
+
+function sirs_drift!(du, u, p, t)
+    infection, recovery, waning = sirs_propensities(u, p)
+    du[1] = -infection + waning
+    du[2] = infection - recovery
+    du[3] = recovery - waning
+    return nothing
+end
+
+function sirs_diffusion!(G, u, p, t)
+    infection, recovery, waning = sirs_propensities(u, p)
+    G .= 0.0
+    G[1, 1] = -sqrt(infection);  G[2, 1] = sqrt(infection)
+    G[2, 2] = -sqrt(recovery);   G[3, 2] = sqrt(recovery)
+    # TODO: column 3 is the waning reaction, which moves people from R to S
+    return nothing
+end
+
+sirs = sde_path(sirs_drift!, sirs_diffusion!, u₀, (κ, γ, ω), 400.0, 3;
+                seed = 3, saveat = sirs_times)
+
+G_test = zeros(3, 3)
+sirs_diffusion!(G_test, [500.0, 80.0, 420.0], (κ, γ, ω), 0.0)
+
+check("the waning reaction has a noise column", any(G_test[:, 3] .!= 0.0))
+check("every noise column sums to zero",
+      maximum(abs.(vec(sum(G_test; dims = 1)))) < 1e-12)
+check("population conserved",
+      maximum(abs.(vec(sum(sirs; dims = 1)) .- N)) < 1e-6)
+check("susceptibles are replenished", sirs[1, end] > minimum(sirs[1, :]) + 50)
+check("the infection is still around on day 400", sirs[2, end] > 10)
+
+(; predicted_S = γ / κ, observed_S = round(mean(sirs[1, 401:end]); digits = 1),
+   predicted_I = ω * (N - γ / κ) / (γ + ω),
+   observed_I = round(mean(sirs[2, 401:end]); digits = 1))
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part A
+
+```julia
+return (κ * S * I, γ * I, ω * R)
+...
+G[3, 3] = -sqrt(waning);     G[1, 3] = sqrt(waning)
+```
+
+The pattern is the same for every reaction: the column has $-\sqrt{a}$ in the
+compartment people leave and $+\sqrt{a}$ in the one they enter, so the column
+sums to zero and every Brownian increment conserves the population. Waning takes
+people out of $R$ and puts them into $S$, which is why the minus sign is on row
+3 this time.
+
+If the conservation check fails, one of the two signs in the new column is
+wrong. If the last two checks fail while conservation passes, the propensity is
+still `0.0`, so the column is multiplied by nothing.
+:::
+
+```{julia}
+#| label: fig-ws-ch05-sirs
+#| fig-cap: "One SIRS path from the chemical Langevin approximation, with the deterministic drift for comparison."
+sirs_ode = Array(solve(ODEProblem(sirs_drift!, u₀, (0.0, 400.0), (κ, γ, ω)),
+                       Tsit5(); saveat = sirs_times))
+
+fig = Figure(size = (760, 400))
+ax = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "infectious I(t)")
+lines!(ax, sirs_times, sirs[2, :]; color = :firebrick, linewidth = 2,
+       label = "SDE")
+lines!(ax, sirs_times, sirs_ode[2, :]; color = :black, linestyle = :dash,
+       linewidth = 2, label = "drift only (ODE)")
+axislegend(ax; position = :rt)
+fig
+```
+
+### A1. Interpret
+
+- The drift settles down to a steady level; the stochastic path does not. What
+  keeps it moving, and why does that not fade away as the ODE oscillation does?
+- Suppose you had given $S$, $I$ and $R$ one independent noise term each instead
+  of one per reaction. Which of the checks above would fail, and why?
+
+> *Your answer here.*
+
+---
+
+## Part B — how large must the population be? (~15 min)
+
+The chemical Langevin equation replaces whole-number event counts by a Gaussian
+with matching mean and variance. That is a good trade when events are frequent,
+which is a statement about population size. Below, the same baseline epidemic is
+run at three population sizes, with the initial state and $\kappa$ scaled so
+that $R_0 = 2$ every time.
+
+One thing to know before interpreting the output, because the code does not
+announce it: the `max(u, 0.0)` guards in `propensities` decide what happens at an
+empty compartment. Once a path steps to $I \le 0$, every rate becomes zero and it
+stays there. That imitates extinction rather than modelling it, so treat the
+fade-out counts below as qualitative. The exact jump process from this morning is
+where a number would come from.
+
+```{julia}
+#| label: ws-ch05-b1
+function summarise(population; seeds = 1:40)
+    scale = population / 1000
+    u0 = [990.0, 10.0, 0.0] .* scale
+    p = (β * c / population, γ)
+    peaks, lowest = Float64[], Float64[]
+    for s in seeds
+        path = sde_path(sir_drift!, sir_diffusion!, u0, p, 60.0, 2; seed = s)
+        push!(peaks, maximum(path[2, :]) / population)   # peak as a fraction of N
+        push!(lowest, minimum(path))                     # most negative state, if any
+    end
+    return (; population,
+            mean_peak = mean(peaks),
+            relative_sd = std(peaks) / mean(peaks),
+            deepest_negative = minimum(lowest),
+            never_took_off = count(<(0.02), peaks) / length(peaks))
+end
+
+populations = Float64[]     # TODO: fill this list — try 10_000, 1000 and 100
+
+results = [summarise(pop) for pop in populations]
+for r in results
+    println("N = ", Int(r.population),
+            " | mean peak ", round(100 * r.mean_peak; digits = 1), "% of N",
+            " | relative sd ", round(r.relative_sd; digits = 3),
+            " | deepest negative ", round(r.deepest_negative; digits = 2),
+            " | never took off ", round(100 * r.never_took_off; digits = 1), "%")
+end
+
+check("three populations tried", length(populations) == 3)
+if length(results) == 3
+    largest = results[argmax(populations)]
+    smallest = results[argmin(populations)]
+    check("fluctuations are relatively smaller in the large population",
+          largest.relative_sd < smallest.relative_sd)
+    check("the small population has runs that never take off",
+          smallest.never_took_off > 0.2)
+    check("the large population stays non-negative",
+          largest.deepest_negative > -0.5)
+end
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part B
+
+```julia
+populations = [10_000.0, 1000.0, 100.0]
+```
+
+`10_000` is ten thousand: Julia ignores underscores inside numbers, and they are
+there to be read. Each run takes a second or two, so all three together are
+about a minute.
+:::
+
+### B1. Interpret
+
+- Between $N = 10{,}000$ and $N = 1000$, roughly how does the relative spread
+  change when the population is divided by ten? The $\sqrt{a}$ in the diffusion
+  is the reason; can you connect the two? Then check the same ratio between
+  $N = 1000$ and $N = 100$: it is much larger. What is different about that
+  case, and what does it tell you about where the scaling argument applies?
+- Both smaller populations produce negative numbers of people, one or two of
+  them, and at $N = 100$ a large share of runs never take off at all. One of
+  those two behaviours is a genuine feature of small populations and the other
+  is an artefact of the approximation. Which is which, and why is a deficit of
+  two people a more serious matter at $N = 100$ than at $N = 1000$?
+
+> *Your answer here.*
+
+---
+
+## Part C — three descriptions of one epidemic (optional)
+
+*Start this only if you have finished Part B.*
+
+You now have three models of the same baseline epidemic: this morning's exact
+jump process, this afternoon's diffusion, and the ODE from Day 1. Here they are
+compared on the distribution of the epidemic peak. The jump code is the session's
+direct method, given again; you supply its propensities.
+
+The peak is $\sup_t I(t)$, so it has to be read off carefully. The jump process
+is taken over its events, where a path can only change; the SDE is saved on the
+0.1-day grid above. A coarse output grid can step over a short-lived maximum and
+quietly bias every peak downwards, which is a reporting artefact rather than a
+difference between the models.
+
+```{julia}
+#| label: ws-ch05-c1
+function gillespie(u0, p, tmax, propensities, stoichiometry, rng)
+    u = collect(u0)
+    t = 0.0
+    ts, us = [t], [copy(u)]
+    while true
+        a = collect(propensities(u, p))
+        a₀ = sum(a)
+        a₀ == 0 && break
+        t += randexp(rng) / a₀
+        t > tmax && break
+        target = rand(rng) * a₀
+        j = something(findfirst(≥(target), cumsum(a)), length(a))
+        u .+= stoichiometry[:, j]
+        push!(ts, t); push!(us, copy(u))
+    end
+    return ts, us
+end
+
+# TODO: the same two propensities as the SDE drift, for state (S, I, R)
+jump_propensities(u, p) = (0.0, 0.0)
+jump_stoichiometry = [-1 0; 1 -1; 0 1]
+
+jump_peaks, sde_peaks = Float64[], Float64[]
+for s in 1:40
+    ts, us = gillespie((990, 10, 0), (κ, γ), 60.0, jump_propensities,
+                       jump_stoichiometry, StableRNG(1000 + s))
+    push!(jump_peaks, maximum(state[2] for state in us))   # every event, no grid
+    push!(sde_peaks,
+          maximum(sde_path(sir_drift!, sir_diffusion!, u₀, (κ, γ), 60.0, 2;
+                           seed = 2000 + s, saveat = times)[2, :]))
+end
+
+ode_peak = maximum(Array(solve(ODEProblem(sir_drift!, u₀, (0.0, 60.0), (κ, γ)),
+                               Tsit5(); saveat = times))[2, :])
+
+check("the jump model produced epidemics", mean(jump_peaks) > 50)
+check("mean peaks agree within 10%",
+      abs(mean(sde_peaks) - mean(jump_peaks)) / mean(jump_peaks) < 0.1)
+check("spread of peaks agrees within 15%",
+      abs(std(sde_peaks) - std(jump_peaks)) / std(jump_peaks) < 0.15)
+
+(; ode_peak = round(ode_peak; digits = 1),
+   jump_mean = round(mean(jump_peaks); digits = 1),
+   jump_sd = round(std(jump_peaks); digits = 1),
+   sde_mean = round(mean(sde_peaks); digits = 1),
+   sde_sd = round(std(sde_peaks); digits = 1))
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part C
+
+```julia
+jump_propensities(u, p) = (p[1] * u[1] * u[2], p[2] * u[2])
+```
+
+`p` arrives as the tuple `(κ, γ)`, so `p[1]` is `κ`. These are the same two
+rates the drift uses; the difference between the two models is what is done with
+them, not what they are.
+:::
+
+```{julia}
+#| label: fig-ws-ch05-peaks
+#| fig-cap: "Distribution of the epidemic peak over 40 runs of the exact jump process and 40 of the diffusion, with the deterministic peak marked."
+fig = Figure(size = (760, 400))
+ax = Axis(fig[1, 1]; xlabel = "peak infectious", ylabel = "runs")
+edges = range(0, 260, length = 14)
+hist!(ax, jump_peaks; bins = edges, color = (:firebrick, 0.5), label = "jump")
+hist!(ax, sde_peaks; bins = edges, color = (:steelblue, 0.5), label = "SDE")
+vlines!(ax, [ode_peak]; color = :black, linestyle = :dash, label = "ODE")
+axislegend(ax; position = :lt)
+fig
+```
+
+### C1. Interpret
+
+- The two stochastic models agree closely on both the average peak and its
+  spread. What would you have to change about the scenario to pull them apart?
+- Both stochastic mean peaks sit above the deterministic one. The ODE is the
+  large-population limit, so why is it not the average of the paths?
+
+> *Your answer here.*
+
+---
+
+## Finish: render your own report
+
+In a terminal:
+
+```bash
+quarto render worksheets/chapters/05-stochastic-differential-equations.qmd
+```
+
+A clean render means every cell ran top to bottom in a fresh session.
+
+---
+
+## Where to look next
+
+Nothing here is assigned. The whole project stays available to you afterwards.
+
+- [The chapter](../../chapters/05-stochastic-differential-equations.qmd): the
+  Langevin approximation derived from the Poisson counts, and why
+  `noise_rate_prototype` is a mathematical statement rather than an API detail.
+- [The Pluto notebook](../../notebooks/chapters/05-stochastic-differential-equations.jl):
+  sliders over the same model.
+- [Model composition and structured populations](../../appendices/09-model-composition.qmd):
+  the self-study unit that takes this construction to multi-group populations.
