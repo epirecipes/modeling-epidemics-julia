@@ -6,9 +6,10 @@ status: complete
 
 ## Why model individuals?
 
-- An ABM stores who is susceptible, infectious, or recovered.
+- An ABM stores each individual's status, so the population counts are
+  something we compute rather than the model's only state.
 - Contact rules can be changed without deriving a new aggregate equation.
-- Aggregation is useful for comparison, but hides contact identities.
+- Who contacts whom *can* be made explicit, but only if you record it.
 
 This unit uses a stochastic, discrete-time, discrete-state, individual-level
 model with $\Delta t=0.1$, $c=10$, $\beta=0.05$, and $\gamma=0.25$.
@@ -16,6 +17,11 @@ model with $\Delta t=0.1$, $c=10$, $\beta=0.05$, and $\gamma=0.25$.
 ::: {.notes}
 The model is well mixed rather than spatial.  That keeps the connection to the
 SIR equations visible before adding networks or households.
+
+Be careful with the third bullet: this implementation does *not* log contacts or
+transmission sources.  They exist during an update and are discarded.  Recording
+who infected whom needs an event history or extra agent fields.  Worth saying
+aloud, because "ABMs track who infected whom" is a common overstatement.
 :::
 
 ## Individual transition probabilities
@@ -112,9 +118,10 @@ population, initial infections, contact rate, and horizon as controls.
 
 ## Extensions and checks
 
-- Use `GridSpace` and `nearby_agents` for local contacts.
-- Run seeded replicates and compare the mean with the ODE.
-- Check timestep sensitivity before interpreting a policy experiment.
+- Use `GridSpaceSingle` and `nearby_agents` for local contacts: with a fixed
+  neighborhood, $\beta c/\gamma$ is no longer the model's $R_0$.
+- Run seeded replicates, but say *which* summary you compare with the ODE.
+- Measure timestep error with a deterministic map, not a small ensemble.
 
 ABMs can represent clustering, households, behavior, and networks, but those
 mechanisms introduce parameters that may be difficult to observe or identify.
@@ -122,6 +129,12 @@ mechanisms introduce parameters that may be difficult to observe or identify.
 ::: {.notes}
 An ABM is not automatically more realistic.  The contact mechanism and
 calibration target determine whether its extra detail is useful.
+
+On the second bullet: the peak of the ensemble mean and the mean of the
+per-replicate peaks straddle the ODE peak, and neither converges to it at finite
+$N$: averaging and maximizing do not commute.  On the third: a 16-path ensemble
+has a standard error of several people, so it cannot resolve a timestep error of
+that size, and failing to resolve one is not evidence of its absence.
 :::
 
 ## Takeaways and links
