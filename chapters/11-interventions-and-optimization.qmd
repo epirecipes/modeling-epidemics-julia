@@ -15,6 +15,19 @@ many admissible policies using an explicit objective and constraints. Keeping
 those layers separate makes it possible to audit a proposed policy before
 asking an optimizer to choose one.
 
+::: {.callout-note appearance="simple"}
+## How this chapter is used in the workshop
+
+This session is a guided tour of what specialised packages let you do once a
+model exists, rather than a complete treatment of optimisation. The scenario
+half uses machinery you already have: the callback is the one that produced the
+lockdown in @sec-ordinary-differential-equations, and a vaccination campaign is
+the same pattern applied to a different parameter. The optimisation half
+introduces one small, fully worked problem so that the *shape* of an
+optimisation (decision variable, objective, bounds) becomes recognisable. The
+pointers at the end of the chapter are where to go when you need more than that.
+:::
+
 ## Learning goals
 
 By the end of this chapter you should be able to:
@@ -77,22 +90,35 @@ fixed, minimizing $J$ is a one-dimensional bounded problem. If intervention
 cost, equity, hospital capacity, or uncertainty matters, those terms must be
 added explicitly rather than inferred from this objective.
 
+Two properties of this objective are easy to misread. First, "final" means *at
+the finite decision horizon* $T=45$, not at epidemic extinction. A policy can
+lower $C(45)$ partly by pushing infections past the horizon rather than by
+preventing them, so both the optimal start time and the ranking of policies can
+depend on $T$. If eventual epidemic size is what you care about, choose $T$
+large enough that $I(T)$ is negligible and check that the answer is stable as
+$T$ grows. Second, integrating $\mathrm dC/\mathrm dt$ from $C(0)=0$ gives
+$C(T)=S(0)-S(T)$, so $C$ counts infections generated after time zero and
+excludes the ten people who are already infectious at the start.
+
 ## Julia implementation
 
 The right-hand side makes the policy multiplier visible. `PresetTimeCallback`
 is the appropriate tool for this rectangular scenario; its official
 documentation is in [DiffEqCallbacks.jl](https://docs.sciml.ai/DiffEqCallbacks/stable/).
 
+As in the previous chapter, parameters are a plain vector rather than the named
+tuple of @sec-julia-essentials, and for the same kind of reason: the callback
+mutates one entry in place (`integrator.p[4]`), which a `NamedTuple` cannot do.
+The comment beside each entry is doing the work the field name usually does, so
+read the order carefully.
+
 ```{julia}
 using CairoMakie
 using DiffEqCallbacks
+using EpiModelingCourse
 using OrdinaryDiffEq
 using Optimization
 using OptimizationOptimJL
-
-course_root = normpath(joinpath(@__DIR__, ".."))
-include(joinpath(course_root, "src", "EpiModelingCourse.jl"))
-using .EpiModelingCourse
 
 baseline = BASELINE_PARAMETERS
 u0 = Float64[
@@ -119,35 +145,54 @@ end
 
 ### Scenario simulation with a callback
 
-`run_scenario` starts with no intervention, changes the fourth parameter at
-$t_1$, and restores it at $t_1+d$. The callback does not optimize anything;
-it simply implements one policy that has already been specified.
+`run_scenario` sets the fourth parameter at $t_1$ and restores it at $t_1+d$.
+The callback does not optimize anything; it implements one policy that
+has already been specified.
+
+That fourth parameter is initialized to the value the policy takes at $t=0$
+rather than to zero. For every $t_1>0$ the two are the same, but at the lower
+bound $t_1=0$ the callback event coincides with the initial time, and whether
+such an event fires before the first step is a detail of the callback
+implementation rather than something @eq-rectangular-policy says. Setting the
+initial value explicitly makes the admissible policy $t_1=0$ implement the
+equation regardless, so the objective is continuous at the edge of the box.
+
+The test is `start_time <= 0.0 < stop_time` and not merely `start_time <= 0.0`,
+because it has to answer "is the policy window open at $t=0$?" rather than "does
+it start at $t=0$?". Those differ in exactly one case: a zero-duration policy at
+$t_1=0$, whose window $[0,0)$ is empty and which must therefore mean *no
+intervention*. That case is not hypothetical — Exercise 2 makes the duration a
+decision variable, and $d=0$ is the policy the optimizer selects once the cost
+weight is large enough. Passing the same times through `unique` keeps the
+degenerate case from registering one instant twice.
 
 ```{julia}
 function run_scenario(
     start_time;
     duration = intervention_duration,
     reduction = maximum_reduction,
+    horizon = last(time_grid),
 )
     stop_time = start_time + duration
+    initial_reduction = start_time <= 0.0 < stop_time ? reduction : 0.0
     parameters = [
-        baseline.beta,
-        baseline.contact_rate,
-        baseline.gamma,
-        0.0,
-        baseline.N,
+        baseline.beta,           # 1: β, transmission probability per contact
+        baseline.contact_rate,   # 2: c, contacts per person per unit time
+        baseline.gamma,          # 3: γ, recovery rate
+        initial_reduction,       # 4: v, the entry the callback mutates
+        baseline.N,              # 5: N, population size
     ]
     function affect!(integrator)
         integrator.p[4] = integrator.t < stop_time ? reduction : 0.0
         return nothing
     end
-    callback = PresetTimeCallback([start_time, stop_time], affect!)
-    problem = ODEProblem(policy_sir!, u0, (0.0, last(time_grid)), parameters)
+    callback = PresetTimeCallback(unique([start_time, stop_time]), affect!)
+    problem = ODEProblem(policy_sir!, u0, (0.0, horizon), parameters)
     return solve(
         problem,
         Tsit5();
         callback = callback,
-        saveat = time_grid,
+        saveat = 0.0:0.5:horizon,
         abstol = 1e-8,
         reltol = 1e-8,
     )
@@ -194,11 +239,32 @@ fig
 
 ### A bounded Optimization.jl problem
 
-Now the scenario function becomes the objective. `OptimizationFunction` with
-`AutoFiniteDiff()` differentiates the scalar objective by finite differences,
-while `Fminbox(LBFGS())` enforces the explicit lower and upper bounds. The
-optimizer only chooses $t_1$; it does not decide whether the intervention is
-ethical, feasible to deliver, or appropriate for the model.
+Now the scenario function becomes the objective, and every optimisation problem
+in the SciML stack is assembled from the same four pieces. Reading the block
+below in order:
+
+| Piece | Here | What it is |
+|---|---|---|
+| objective | `final_incidence(x, _)` | a function of the decision variable `x` and (unused) parameters, returning one number to minimise |
+| derivative | `AutoFiniteDiff()` | how the optimiser gets slopes: a robust black-box approximation |
+| starting point and box | `[reference_start]`, `lb`, `ub` | where the search begins and the range it may not leave |
+| method | `Fminbox(LBFGS())` | the algorithm; `Fminbox` is the wrapper that enforces the box |
+
+Containing an ODE solve is *not* by itself a reason to fall back on finite
+differences — SciML can differentiate through many solves, and the
+[universal differential equations](../appendices/04-universal-differential-equations.html)
+appendix does exactly that. Finite differences are the right choice here for
+narrower reasons: the callback *times* depend on the
+decision variable, which makes the objective a black box to a differentiation
+backend, and there is only one variable, so the cost of a numerical slope is two
+extra solves. The [Optimization.jl differentiation
+docs](https://docs.sciml.ai/Optimization/stable/API/ad/) list the alternatives
+and their trade-offs.
+
+`solve` is the same verb as for an `ODEProblem`: a different problem type
+selects a different method. The optimizer only chooses $t_1$; it does not decide
+whether the intervention is ethical, feasible to deliver, or appropriate for the
+model.
 
 ```{julia}
 function final_incidence(x, _)
@@ -223,8 +289,12 @@ optimal_start = optimization_solution.u[1]
 optimal_solution = run_scenario(optimal_start)
 ```
 
-The bounded problem can be inspected on a grid as well as by the optimizer.
-The grid is a diagnostic, not a replacement for the optimization API.
+`Fminbox(LBFGS())` is a gradient-based *local* method: it returns a point where
+the objective stops decreasing inside the box, not a certificate that no better
+point exists. With one decision variable we can afford to check. The grid below
+is that check — a diagnostic that gives evidence the returned local minimizer is
+the relevant minimum over the declared box, not a replacement for the
+optimization API.
 
 ```{julia}
 candidate_starts = collect(0.0:1.0:25.0)
@@ -251,32 +321,83 @@ fig
 
 ## Validation
 
-The state equations imply $S+I+R=N$ and $C$ is nondecreasing. The
-scenario callback should also reduce final incidence relative to no
-intervention for this parameter choice. Finally, the optimizer result must
-lie inside the declared box and agree with a nearby grid value.
+The state equations imply $S+I+R=N$ and $C$ is nondecreasing. The scenario
+callback should also reduce final incidence relative to no intervention for this
+parameter choice, *including* at the lower bound $t_1=0$ — that is the check
+that the policy is active when the callback event sits at the initial
+time. Finally, the optimizer must report success, land inside the declared box,
+and agree with the grid in **both** coordinates: comparing objective values
+alone would pass even if the optimizer had stopped somewhere else on a flat
+stretch of the curve.
 
 ```{julia}
 optimal_array = Array(optimal_solution(time_grid))
 conservation_error = maximum(abs.(vec(sum(optimal_array[1:3, :]; dims = 1)) .- baseline.N))
 incidence_is_monotone = all(diff(optimal_array[4, :]) .>= -1e-10)
-grid_minimum = minimum(candidate_objectives)
+grid_minimum, grid_best_index = findmin(candidate_objectives)
+grid_best_start = candidate_starts[grid_best_index]
+immediate_policy_incidence = final_incidence([0.0], nothing)
+empty_policy_incidence = Array(run_scenario(0.0; duration = 0.0))[4, end]
 
 @assert conservation_error < 1e-6
 @assert incidence_is_monotone
 @assert 0.0 <= optimal_start <= 25.0
-@assert objective_at_optimum <= grid_minimum + 1.0
+@assert successful_retcode(optimization_solution)
+@assert abs(optimal_start - grid_best_start) <= 1.0
+@assert abs(objective_at_optimum - grid_minimum) <= 1.0
 @assert optimal_array[4, end] < baseline_array[4, end]
+@assert immediate_policy_incidence < baseline_array[4, end]
+@assert empty_policy_incidence ≈ baseline_array[4, end]
 (conservation_error = conservation_error, optimal_start = optimal_start,
+    grid_best_start = grid_best_start,
     final_incidence_without_policy = baseline_array[4, end],
-    final_incidence_with_policy = optimal_array[4, end])
+    final_incidence_with_policy = optimal_array[4, end],
+    final_incidence_starting_immediately = immediate_policy_incidence)
 ```
+
+The last three assertions bracket the two degenerate corners of the box. The
+optimized policy beats doing nothing, and so does the earliest admissible
+policy, which is what would fail if $t_1=0$ silently meant "no intervention".
+The zero-duration policy at $t_1=0$ has to fail in precisely the opposite
+direction: an empty window must reproduce the no-intervention trajectory
+exactly, not a permanent intervention.
+
+One check remains, and it is the one most easily skipped: whether the answer is
+an artefact of the horizon. Rerunning the same grid with $T$ extended well past
+extinction is cheap, and the `horizon` keyword is there for it.
+
+```{julia}
+horizon_check = map((45.0, 90.0, 200.0)) do horizon
+    objectives = [
+        Array(run_scenario(start; horizon = horizon))[4, end]
+        for start in candidate_starts
+    ]
+    index = argmin(objectives)
+    return (horizon = horizon, best_start = candidate_starts[index],
+        best_incidence = objectives[index],
+        without_policy = Array(run_scenario(2 * horizon; horizon = horizon))[4, end])
+end
+```
+
+The best start time moves later as the horizon grows, and the incidence it
+achieves rises, while the no-policy column barely changes after the epidemic has
+burned out. Both effects are the deferral warned about above: at $T=45$ some of
+the credit an early-ish policy receives is for infections that had merely been
+postponed, and lengthening the horizon takes that credit back. The
+$T=90$ and $T=200$ rows agree with each other, which is the signal that the
+horizon is now long enough for the answer to mean "epidemic total".
 
 ## Interpretation and limitations
 
 The result is an optimal start time **conditional on** a fixed 50% reduction,
 a fixed ten-unit duration, a homogeneous closed population, perfect timing,
-and the final-incidence objective. It is not a universal recommendation.
+the 45-unit horizon, and the final-incidence objective. It is not a universal
+recommendation. It is also a *local* minimizer that the grid scan supports
+rather than a proven global one; with more decision variables that scan becomes
+unaffordable and the distinction starts to matter. Because the horizon is finite,
+part of any apparent gain can be infections deferred past $T$ rather than
+averted, which is worth confirming by rerunning with a larger $T$ before quoting
+a number.
 Changing the cost of intervention, adding a peak-infection penalty, or
 penalizing delayed action changes the problem. The rectangular callback also
 creates an idealized instantaneous policy switch; a ramp-up, adherence model,
@@ -284,6 +405,21 @@ or stochastic transmission would be a different model. This chapter uses a
 small bounded problem intentionally; continuous controls, path constraints,
 and multistage uncertainty are deferred to the advanced optimal-control
 appendix.
+
+### Where to go next
+
+- [Optimization.jl](https://docs.sciml.ai/Optimization/stable/) documents the
+  solver choices and automatic-differentiation backends behind the four pieces
+  above.
+- [Frequentist parameter estimation](08-parameter-estimation.html) reuses this
+  same `OptimizationProblem` pattern, with a likelihood as the objective instead
+  of final incidence. This is the natural next step if you want to fit rather
+  than choose.
+- [Advanced optimal control](../appendices/08-advanced-optimal-control.html)
+  replaces the single start time with a control *function* of time, using
+  InfiniteOpt and SDDP.
+- [Data-to-decision capstone](12-data-to-decision-capstone.html) runs the whole
+  chain end to end: data, fit, and policy choice.
 
 ## Exercises
 
@@ -296,12 +432,30 @@ be the time at which infectious prevalence is largest.
 
 ### Exercise 2 {#ch11-ex2}
 
-Define a new scalar objective
-$C(T)+\lambda\int v(t)\,\mathrm dt$ for a nonnegative cost weight
-$\lambda$. With a variable intervention duration, describe which additional
-bound or constraint prevents the optimizer from selecting an unrealistically
-long intervention. Implement the objective for two values of $\lambda$ and
-compare the resulting policy choices.
+Make both the start time $t_1$ and the duration $d$ decision variables, and
+define a new scalar objective
+
+$$
+J_\lambda(t_1,d)=C(T)+\lambda\int_0^{T}v(t)\,\mathrm dt
+$$ {#eq-costed-objective}
+
+for a nonnegative cost weight $\lambda$, over the admissible set
+
+$$
+0\leq t_1,\qquad 0\leq d\leq d_{\max},\qquad t_1+d\leq T,
+$$ {#eq-costed-constraints}
+
+so that the campaign both starts and finishes inside the decision horizon. For
+the rectangular policy of @eq-rectangular-policy the integral evaluates to
+$v_{\max}d$, so $\lambda$ is an exchange rate: it says how many infections one
+unit of intervention time is worth. Explain which bound or constraint in
+@eq-costed-constraints prevents the optimizer from selecting an unrealistically
+long intervention, and what happens to the chosen $d$ when $\lambda=0$.
+Implement the objective for at least two values of $\lambda$ and compare the
+resulting policy choices — but choose them deliberately, so that they straddle
+the weight at which the chosen duration changes. Two weights on the same side of
+that threshold give different objective *values* while selecting an identical
+policy, which is worth noticing rather than reporting as a comparison.
 
 ## Companion materials
 

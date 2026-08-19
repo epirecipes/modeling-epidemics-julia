@@ -65,14 +65,13 @@ Days 1 and 2 run 09:30–17:30; Day 3 runs 09:30–16:00. Each day has a mid-mor
 | 13:45–15:15 | Session 3 | [Observation models and simulated data](chapters/07-observation-models.html) |
 | 15:15–15:30 | Break | - |
 | 15:30–17:00 | Session 4 | [Sensitivity and identifiability](chapters/10-sensitivity-and-identifiability.html) |
-| 17:00–17:30 | Day wrap-up | - |
 
 ### Day 3: Decisions and individual-based models
 
 | Time | Session | Unit |
 |---|---|---|
-| 09:30–09:45 | Recap | - |
-| 09:45–11:15 | Session 1 | [Interventions and optimization](chapters/11-interventions-and-optimization.html) |
+| 09:30–10:00 | Recap | - |
+| 10:00–11:15 | Session 1 | [Interventions and optimization](chapters/11-interventions-and-optimization.html) |
 | 11:15–11:30 | Break | - |
 | 11:30–13:00 | Session 2 | [Agent-based models](chapters/06-agent-based-models.html) |
 | 13:00–14:30 | Lunch | - |

@@ -4,6 +4,43 @@ course-unit: ch11-interventions-and-optimization
 status: complete
 ---
 
+## Where we are
+
+| Model | Determinism | Time | State | Representation |
+|---|---|---|---|---|
+| ODE, function map | deterministic | cont. or discrete | continuous | population |
+| Markov chain | stochastic | discrete | discrete | population |
+| Jump process | stochastic | continuous | discrete | population |
+| SDE | stochastic | continuous | continuous | population |
+| **Agent-based (next)** | **stochastic** | **discrete** | **discrete** | **individual** |
+
+Sensitivity, identifiability, and observation models are questions asked *about*
+any of these. Today asks what to *do* with one.
+
+::: {.notes}
+The Day 3 recap slot. Everything so far has been a population model, where the
+state is counts; the final session fills the individual column, where the state
+is people. This session moves along a different axis again: not a new model
+class, but a decision made with a model you already have.
+:::
+
+## What this session is for
+
+- A tour of what specialised packages add **once a model exists**.
+- The scenario half is machinery you already have: the Day 1 lockdown callback,
+  reused. A vaccination campaign is the same pattern on a different parameter.
+- The optimisation half works one small problem end to end, so the *shape* of an
+  optimisation is recognisable when you meet a bigger one.
+- You leave with pointers, not with a complete treatment of optimal control.
+
+::: {.notes}
+Say this out loud at the start. The aim is recognition and orientation, not
+mastery: nobody should feel they are behind because they cannot yet write an
+optimal-control problem from scratch. Everything in the first half is a callback
+they have already used; everything in the second half is one worked example plus
+a reading list.
+:::
+
 ## Scenario first, optimization second
 
 An intervention analysis has two auditable layers:
@@ -98,37 +135,52 @@ the scenario; it does not search over policies.
 
 ## Bounded timing optimization
 
-```julia
-function final_incidence(x, _)
-    Array(scenario11(x[1]))[4, end]
-end
+Four pieces: objective, derivative rule, starting point and box, method.
 
-objective = OptimizationFunction(final_incidence, AutoFiniteDiff())
-problem = OptimizationProblem(objective, [8.0], nothing;
+```{julia}
+#| label: ch11-slide-optimize
+using Optimization
+using OptimizationOptimJL
+
+final_incidence11(x, _) = Array(scenario11(x[1]))[4, end]
+
+objective11 = OptimizationFunction(final_incidence11, AutoFiniteDiff())
+problem11 = OptimizationProblem(objective11, [8.0], nothing;
     lb = [0.0], ub = [25.0])
-solution = solve(problem, Fminbox(LBFGS()); maxiters = 30)
+solution11 = solve(problem11, Fminbox(LBFGS()); maxiters = 30)
+optimal11 = solution11.u[1]
 ```
 
-The API makes the decision variable, objective, and box explicit. A grid is a
-diagnostic for the optimizer, not a substitute for stating the problem.
+::: {.notes}
+Read the four pieces aloud in order rather than explaining the algorithm. The
+finite-difference rule is chosen because each objective evaluation runs a whole
+ODE solve. `solve` is the same verb as for an ODEProblem: a different problem
+type selects a different method.
+:::
+
+## The grid confirms the optimizer
 
 ```{julia}
 #| label: fig-slide-ch11-objective
-#| fig-cap: "Final cumulative incidence across admissible intervention starts."
+#| fig-cap: "Final cumulative incidence across admissible intervention starts, with the optimizer's answer marked."
 starts11 = collect(0.0:1.0:25.0)
 values11 = [Array(scenario11(t))[4, end] for t in starts11]
 fig11o = Figure(size = (780, 400))
 ax11o = Axis(fig11o[1, 1], xlabel = "start time", ylabel = "C(45)")
 lines!(ax11o, starts11, values11, color = :darkorange)
 scatter!(ax11o, [starts11[argmin(values11)]],
-    [minimum(values11)], color = :firebrick, label = "grid diagnostic")
+    [minimum(values11)], color = :grey, markersize = 12,
+    label = "grid diagnostic")
+scatter!(ax11o, [optimal11], [final_incidence11([optimal11], nothing)],
+    color = :firebrick, markersize = 14, label = "optimizer")
 axislegend(ax11o)
 fig11o
 ```
 
 ::: {.notes}
-Optimization can return a continuous timing estimate, while the grid reveals
-whether the objective is flat or has multiple plausible starts.
+The optimizer returns a continuous timing estimate; the grid shows whether the
+objective is flat or has several plausible starts. Both are computed here, so
+the two markers agreeing is the check.
 :::
 
 ## Validation, interpretation, and limits
@@ -144,9 +196,16 @@ $$
 - Instantaneous switching, perfect adherence, homogeneous mixing, and a closed population are idealizations.
 - Add intervention cost, capacity, equity, uncertainty, or a peak-infection penalty when those are decision requirements.
 
-See the [book chapter](../../chapters/11-interventions-and-optimization.html),
-[DiffEqCallbacks.jl](https://docs.sciml.ai/DiffEqCallbacks/stable/), and
-[Optimization.jl](https://docs.sciml.ai/Optimization/stable/).
+**Where to go next**
+
+- [Optimization.jl](https://docs.sciml.ai/Optimization/stable/): solvers and
+  differentiation backends.
+- [Parameter estimation](../../chapters/08-parameter-estimation.html): the same
+  problem shape with a likelihood as the objective.
+- [Advanced optimal control](../../appendices/08-advanced-optimal-control.html):
+  a control function of time, via InfiniteOpt and SDDP.
+- [Book chapter](../../chapters/11-interventions-and-optimization.html) and
+  [DiffEqCallbacks.jl](https://docs.sciml.ai/DiffEqCallbacks/stable/).
 
 ::: {.notes}
 The model is useful for learning how to formulate a decision, not for issuing a

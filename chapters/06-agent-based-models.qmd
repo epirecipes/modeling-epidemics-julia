@@ -10,10 +10,10 @@ status: complete
 :::
 
 An agent-based model (ABM) represents a population as interacting individuals.
-The SIR labels remain familiar, but the model now exposes who contacts whom,
-when an agent changes status, and how an update schedule can affect results.
-This chapter uses a deliberately small, well-mixed ABM so that the connection
-to the population equations stays visible.
+The SIR labels remain familiar, but the model can now make explicit who
+contacts whom, when an agent changes status, and how an update schedule can
+affect results. This chapter uses a small, well-mixed ABM so that
+the connection to the population equations stays visible.
 
 ## Learning goals
 
@@ -66,9 +66,13 @@ $$
 
 For small $\Delta t$, Equation @eq-abm-infection is approximately
 $\beta c(I_t/N)\Delta t$, matching the SIR force of infection. The
-individual model contains more information than the population equations:
-the identity of every contact and every infection is retained. The ODE only
-tracks the totals and uses the deterministic flow
+individual model still carries more state than the population equations:
+each agent's current status is retained, so the population counts are a
+summary we choose to compute rather than the model's only representation.
+Contacts and potential transmission sources exist during an update but are
+not logged by this implementation; recording who infected whom would require
+an event history or extra agent fields. The ODE only tracks the totals and
+uses the deterministic flow
 $$
 \dot S=-\beta cSI/N,\qquad
 \dot I=\beta cSI/N-\gamma I,\qquad
@@ -227,14 +231,22 @@ fig
 ## Validation
 
 The ABM has an exact bookkeeping invariant: every person has exactly one
-status. Consequently $S+I+R=N$ at every recorded step.
+status. Consequently $S+I+R=N$ at every recorded step. The status graph is
+also one-way ($S\to I\to R$, with no return), so $S$ can never increase and
+$R$ can never decrease. Checking the recorded initial row as well confirms
+that `run!` collected the initial condition rather than the state after one
+step.
 
 ```{julia}
 #| label: code-ch06-validation
 population_error = maximum(abs.(vec(sum(abm_states; dims = 1)) .- N))
 @assert population_error == 0
 @assert minimum(abm_states) >= 0
-(; population_error, final_counts = abm_states[:, end])
+@assert abm_states[:, 1] == [N - I₀, I₀, 0]
+@assert all(diff(abm_states[1, :]) .<= 0)
+@assert all(diff(abm_states[3, :]) .>= 0)
+(; population_error, initial_counts = abm_states[:, 1],
+   final_counts = abm_states[:, end])
 ```
 
 One realization can differ substantially from the ODE. To compare levels
@@ -267,6 +279,14 @@ The comparison is intentionally modest: 16 paths are enough to reveal the
 relationship and keep a teaching render quick, but not enough for a narrow
 confidence interval.
 
+The ensemble mean is not the same object as the ODE solution, and at fixed
+$N$ the difference does not vanish with more replicates or a smaller
+$\Delta t$.
+Individual epidemics take off at random times, so their peaks are spread over
+several time units; averaging them at fixed clock time flattens the mean curve
+below any single path's height. Averaging is therefore not interchangeable
+with taking a maximum, which Exercise 2 makes quantitative.
+
 ## Interpretation and limitations
 
 The ABM can be extended by replacing the no-space model with a grid, network,
@@ -292,19 +312,62 @@ its modeling rationale are described by Datseris, Vahdati, and DuBois
 
 ### Exercise 1 {#ch06-ex1}
 
-Change `initialize_model` to create a two-dimensional `GridSpace`, add a
-position field using the v7 `@agent` syntax, and let each susceptible contact
-only an agent in a Moore neighborhood. Keep the same infection and recovery
-parameters, verify $S+I+R=N$, and explain which assumption in Equation
-@eq-abm-infection is no longer valid.
+Replace the no-space model with a spatial one, so that a susceptible can only
+contact its immediate neighbors. Use this specification, which keeps the
+population identical to the chapter's and leaves no ambiguity about who is
+adjacent to whom:
+
+- a periodic $40\times25$ `GridSpaceSingle` with `metric = :chebyshev`, so
+  radius 1 is the eight-cell Moore neighborhood;
+- one stationary agent per cell, giving $N=1000$ as before;
+- 10 initial infectives chosen uniformly at random, everyone else susceptible;
+- the same $\beta$, $c$, $\gamma$, and $\Delta t$;
+- contacts drawn uniformly from `nearby_agents(person, model, 1)`;
+- a run of at least 60 time units, continued until $I=0$: spatial spread is
+  far slower than well-mixed spread, and the chapter's 30 units can end while
+  the well-mixed reference and spatial realizations are still running, so a
+  count recorded there need not be a final size.
+
+Derive the agent from `GridAgent{2}`, which already supplies `pos`, so do not
+add a position field by hand. Because the grid is full and periodic, every
+agent has exactly eight neighbors and the empty-neighborhood case cannot
+arise.
+
+Verify $S+I+R=N$, then compare the final size against the well-mixed model of
+this chapter over several seeds, using the same stopping rule. Explain which
+assumption behind Equation @eq-abm-infection has failed. Note that while
+$\beta$, $c$, and $\gamma$ are unchanged, the combination $\beta c/\gamma=2$
+is the *mass-action* reproduction number and is not the spatial model's
+$R_0$; part of the exercise is to say why not. Repeating the run at radius 5
+will help you check your explanation. Confirm that $I=0$ at the end of every
+run before calling the recovered count a final size; extend the horizon if
+necessary.
 
 ### Exercise 2 {#ch06-ex2}
 
-Run the ABM with $\Delta t=0.2$, $0.1$, and $0.05$, keeping physical
-time fixed. For each value, use at least 16 seeded replicates and calculate
-the ensemble mean and standard deviation of the peak infectious count.
-Compare those summaries with the ODE peak and discuss whether changing the
-update interval changes numerical error, biological assumptions, or both.
+Run the ABM with $\Delta t=0.2$, $0.1$, and $0.05$, keeping the physical time
+horizon fixed at 30 time units. For each value, report two different
+statistics of the infectious peak:
+
+1. the peak of the ensemble-mean trajectory, $\max_t \bar I(t)$; and
+2. the mean and standard deviation of the per-replicate peaks,
+   $\overline{\max_t I(t)}$.
+
+The deterministic ODE has $R_0=2$, $I_\text{peak}\approx158.5$ at
+$t\approx17.5$. Compare both statistics against that value and explain why
+they differ from each other and why one lies above the ODE peak and the other
+below it. State which part of each gap is attributable to the timestep and
+which is not.
+
+Report a standard error for *both* estimates. These need different methods:
+the per-replicate peaks are independent draws, so their mean has the usual
+$\mathrm{sd}/\sqrt{n}$ standard error, but the peak of the ensemble mean is a
+maximum taken over an averaged curve and has no such formula, so resample whole
+replicate trajectories with replacement and recompute it on each bootstrap
+sample. Sixteen replicates give a standard error of roughly $24/\sqrt{16}=6$
+on the mean peak, which is larger than the differences between these three
+timesteps, so treat 16 as a quick exploratory minimum and use substantially
+more replicates before drawing a firm conclusion about $\Delta t$.
 
 ## Companion materials
 
