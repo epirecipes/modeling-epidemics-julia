@@ -50,7 +50,7 @@ infectious $I$, and recovered $R$ individuals. Its assumptions are:
 |---|---|
 | Determinism | Deterministic |
 | Time | Continuous |
-| State | Continuous (population fractions) |
+| State | Continuous-valued compartment sizes (or fractions) |
 | Representation | Population (compartmental) |
 
 These choices place the model in the top-left of the modelling landscape:
@@ -97,18 +97,45 @@ $$
 \frac{S}{N} > \frac{1}{R_0}.
 $$ {#eq-ch01-threshold}
 
-At the epidemic peak $S/N = 1/R_0$ exactly. After the epidemic burns out, the
-surviving susceptible fraction $s_\infty = S(\infty)/N$ satisfies the
-transcendental **final-size relation**, obtained by integrating
-$\mathrm{d}S/\mathrm{d}R = -R_0 S/N$ and using $R(\infty)=N-S(\infty)$,
+$S$ never increases, so the threshold is crossed at most once. The peak condition
+has two cases. If $I(0) > 0$ and $R_0 s_0 > 1$, where $s_0 = S(0)/N$, then $I$ grows
+at first and later reaches an *interior* peak, one at a positive time rather than
+at the start, exactly where $S/N = 1/R_0$. If instead $R_0 s_0 \le 1$, then $I$
+falls from the start and its largest value is $I(0)$, at $t = 0$, where
+$S/N = s_0$ rather than $1/R_0$. The baseline below has $R_0 s_0 = 1.98$, so it
+is the first case; Exercise 2 builds the second.
+
+After the epidemic burns out, the surviving susceptible fraction
+$s_\infty = S(\infty)/N$ satisfies the **final-size relation**. It is obtained by
+integrating $\mathrm{d}S/\mathrm{d}R = -R_0 S/N$ and using
+$R(\infty)=N-S(\infty)$. Assuming nobody is recovered at the start, $R(0)=0$,
 
 $$
 s_\infty = s_0\,\exp\!\bigl(-R_0 (1 - s_\infty)\bigr),
-\qquad s_0 = \frac{S(0)}{N},
+\qquad s_0 = \frac{S(0)}{N}.
 $$ {#eq-ch01-finalsize}
 
-whose root gives the total attack rate $1 - s_\infty$. (With $s_0 \to 1$ this
-reduces to the familiar textbook form.)
+The unknown $s_\infty$ appears twice, once on its own and once inside the
+exponential, which is what makes this a *transcendental* equation. No amount of
+rearranging gives $s_\infty$ by itself in terms of powers, exponentials and
+logarithms. It can be written in closed form with the Lambert $W$ function, but
+here, and throughout the book, we find the root numerically.
+
+If a fraction $r_0 = R(0)/N$ is immune at the start, the exponent becomes
+$-R_0(1 - s_\infty - r_0)$: only those removed *after* $t=0$ add to the
+cumulative force of infection. Three quantities are easy to mix up, writing
+$i_0 = I(0)/N$ for the seed:
+
+- $s_0 - s_\infty$: infected strictly after $t=0$;
+- $i_0 + s_0 - s_\infty = 1 - r_0 - s_\infty$: infected at or after $t=0$, which
+  adds the seed;
+- $1 - s_\infty$: immune at the end, which also counts the $r_0$ who were immune
+  before anything happened.
+
+We report $1 - s_\infty$ as the attack rate throughout. The baseline has
+$r_0 = 0$, so there it is the fraction infected at or after $t=0$. (When
+$s_0 \to 1$ all three agree, and @eq-ch01-finalsize becomes the usual textbook
+form.)
 
 ## Julia implementation
 
@@ -187,8 +214,9 @@ s₀ = u0[1] / p.N                                   # initial susceptible fract
 finalsize(s, R0) = s - s₀ * exp(-R0 * (1 - s))     # eq-ch01-finalsize
 fs_prob = NonlinearProblem(finalsize, 0.2, R₀)
 s_inf = solve(fs_prob, NewtonRaphson()).u
-attack_rate = 1 - s_inf
-(s_inf, attack_rate)
+attack_rate = 1 - s_inf                            # infected at or after t = 0
+newly_infected = s₀ - s_inf                        # infected strictly after t = 0
+(s_inf, attack_rate, newly_infected)
 ```
 
 `NonlinearProblem` mirrors `ODEProblem`: the residual function takes the unknown
@@ -233,15 +261,16 @@ totals = [sum(u) for u in sol.u]        # whole states, so sol.u rather than sol
 all(x -> isapprox(x, p.N; atol = 1e-6), totals)
 ```
 
-**Threshold (@eq-ch01-threshold).** The infectious peak must coincide with the
-susceptible fraction crossing $1/R_0$. We locate the peak and read off $S/N$
-there:
+**Threshold (@eq-ch01-threshold).** Since $R_0 s_0 = 1.98 > 1$, the peak is
+interior and must coincide with the susceptible fraction crossing $1/R_0$. We
+locate the peak and read off $S/N$ there, to within 1% relative error:
 
 ```{julia}
 #| label: ch01-check-threshold
 peak_index = argmax(I)
+peak_time = t[peak_index]
 S_over_N_at_peak = S[peak_index] / p.N
-isapprox(S_over_N_at_peak, threshold_fraction; atol = 0.01)
+(peak_time, S_over_N_at_peak, isapprox(S_over_N_at_peak, threshold_fraction; rtol = 0.01))
 ```
 
 **Final size (@eq-ch01-finalsize).** Extending the horizon, the simulated
@@ -257,16 +286,24 @@ S_end_fraction = sol_long.u[end][1] / p.N
 isapprox(S_end_fraction, s_inf; atol = 1e-3)
 ```
 
-All three return `true`: population is conserved to machine tolerance, the peak
-sits on the threshold, and the long-run susceptible fraction matches the
-final-size prediction $s_\infty \approx 0.200$ (attack rate $\approx 80\%$).
+All three checks pass: population is conserved to the $10^{-6}$ tolerance the
+check uses, the peak (at $t \approx 17.5$ on the `saveat = 0.5` grid) sits on the
+threshold, and the long-run susceptible fraction matches the final-size
+prediction $s_\infty \approx 0.200$, so $1 - s_\infty \approx 80\%$ of the
+population is infected at or after $t=0$, of which the initial 1% was seeded
+rather than infected during the epidemic.
 
 ## Interpretation and limitations
 
-The SIR model compresses an epidemic into three numbers — $R_0$, the peak
-timing, and the final size — that follow from just two parameters, $R_0$ and the
-recovery rate. This parsimony is its strength and its limitation. The
-deterministic ODE describes the *mean* behaviour of a large population and cannot
+The SIR model compresses an epidemic into a few numbers — the peak height and
+timing, and the final size. The final size follows from $R_0$ and the initial
+state alone; the peak timing also needs the recovery rate, because $\gamma$ sets
+the timescale. Using so few numbers is both the strength and the weakness of the
+model. The deterministic ODE is the limit of a stochastic epidemic in a large
+population, not the exact average of one in a population of finite size $N$: the
+transmission term multiplies two states together, and
+$\mathbb{E}[SI] \neq \mathbb{E}[S]\,\mathbb{E}[I]$ once $S$ and $I$ are
+correlated. It cannot
 represent extinction, super-spreading, or the sampling noise of small outbreaks;
 those require the stochastic models of @sec-discrete-time-models and the jump
 processes that follow. Homogeneous mixing ignores age, space, and contact
@@ -294,16 +331,19 @@ for root-finding the
 
 Using the baseline parameters, compute $R_0$ for contact rates
 $c \in \{4, 6, 8, 10\}$ (holding $\beta$ and $\gamma$ fixed). For each, solve the
-final-size relation @eq-ch01-finalsize and tabulate the attack rate. Identify the
-contact rate below which no epidemic occurs and relate it to the condition
-$R_0 = 1$.
+final-size relation @eq-ch01-finalsize and tabulate the attack rate
+$1 - s_\infty$, the fraction infected at or after $t=0$. Identify the contact
+rate below which prevalence never grows, and compare it with the
+fully-susceptible threshold $R_0 = 1$: with $s_0 = 0.99$ these are not the same
+number.
 
 ### Exercise 2 {#ch01-ex2}
 
 Verify the threshold prediction numerically: solve the baseline model, extract
 the time of the infectious peak, and confirm that $S/N$ at that time equals
-$1/R_0$ to within 1%. Then raise $\gamma$ to $0.5$ (so $R_0 = 1$) and describe
-what happens to the infectious trajectory.
+$1/R_0$ to within 1% relative error. Then raise $\gamma$ to $0.5$ (so $R_0 = 1$)
+and describe what happens to the infectious trajectory, and to the peak condition
+$S/N = 1/R_0$ itself.
 
 ## Companion materials
 

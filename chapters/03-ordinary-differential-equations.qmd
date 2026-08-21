@@ -29,7 +29,8 @@ By the end of this chapter you should be able to:
   differs from indexing the stored solution as `sol[i, :]`;
 - apply a `PresetTimeCallback` to change a parameter mid-simulation (a
   lockdown);
-- use a `ContinuousCallback` to detect an event (the infectious peak) exactly.
+- use a `ContinuousCallback` to detect an event (the infectious peak) to
+  root-finding tolerance, and say where that method can miss a peak.
 
 ## Model assumptions and classification
 
@@ -69,15 +70,23 @@ $$
 \end{cases}
 $$ {#eq-ch03-lockdown}
 
-The infectious peak is the instant at which growth turns to decline,
-characterised by
+Where the epidemic turns *smoothly*, growth gives way to decline through a point
+at which
 
 $$
 \frac{\mathrm{d}I}{\mathrm{d}t} = \lambda(t) S - \gamma I = 0,
 $$ {#eq-ch03-peak}
 
-which a `ContinuousCallback` can locate to solver tolerance by root-finding on
-this expression.
+and a `ContinuousCallback` can locate that point to root-finding tolerance.
+
+@eq-ch03-peak describes a smooth turning point somewhere inside the time span,
+which is not the only place a maximum can sit. At $t_1$ and $t_2$ the parameter
+$\beta$ jumps, so $\mathrm{d}I/\mathrm{d}t$ jumps with it. $I(t)$ stays continuous, but its slope
+can go from positive to negative without ever passing through zero, and then the
+largest value of $I$ is reached exactly at the switching time. A maximum can also
+sit at either end of the time span. Root-finding on @eq-ch03-peak sees none of
+these: it finds smooth turning points, so switching times and endpoints have to
+be checked separately. Exercise 1 builds a case where this matters.
 
 ## Julia implementation
 
@@ -181,8 +190,19 @@ cb = CallbackSet(PresetTimeCallback([t1], start_lockdown!),
 
 prob_lock = ODEProblem(sir_ode!, u0, tspan, p)
 sol_lock = solve(prob_lock, Tsit5(); callback = cb, reltol = 1e-8, abstol = 1e-8)
-(maximum(sol[2, :]), maximum(sol_lock[2, :]))   # peak I: baseline vs lockdown
+# largest stored value, and the largest on a fine grid of the interpolant
+fine_grid = 0.0:0.01:80.0
+(stored = (maximum(sol[2, :]), maximum(sol_lock[2, :])),
+ dense  = (maximum(sol(t)[2] for t in fine_grid),
+           maximum(sol_lock(t)[2] for t in fine_grid)))
 ```
+
+The two rows of that output are worth comparing. `maximum(sol[2, :])` is the
+largest value the solver happened to *store*, and the adaptive controller does
+not place a step on the peak, so it reads 158.34 against a fine-grid estimate of
+158.45 taken from the interpolant. For the lockdown run the two agree, because the callback forces a step
+exactly at day 10 and that is where this run's largest value sits. When a number
+matters, take it from `sol(t)` rather than from the stored points.
 
 `merge` returns a new `NamedTuple` with `β` replaced and every other field
 carried over, which we assign back to `integrator.p`. The parameters therefore
@@ -194,7 +214,8 @@ combines callbacks; the solver applies each at its own times.
 
 `ContinuousCallback` root-finds a scalar condition and fires when it crosses
 zero. Setting the condition to $\mathrm{d}I/\mathrm{d}t$ (@eq-ch03-peak) locates
-the infectious peak exactly, without scanning saved points.
+a smooth infectious peak to root-finding tolerance, without scanning saved
+points. The baseline run below has exactly one such turning point.
 
 ```{julia}
 #| label: ch03-peak
@@ -219,13 +240,20 @@ solve(prob, Tsit5(); callback = peak_cb, reltol = 1e-8, abstol = 1e-8)
 The two functions handed to `ContinuousCallback` have different signatures, and
 this trips people up. The **condition** is given `(u, t, integrator)`, so the
 state arrives directly as `u` and we write `u[2]`. The **affect!** is given only
-the integrator, so the same state is reached as `integrator.u[2]`. Reading `u`
-inside an `affect!`, or `integrator.u` inside a condition, is the usual first
-error.
+the integrator, so the same state is reached as `integrator.u[2]`. Writing a bare
+`u` inside an `affect!` is an error: there is no such variable there.
+
+Reaching for `integrator.u` inside the *condition* is the subtler mistake,
+because Julia will not complain. To find a root, the solver evaluates the
+condition at trial times inside the current step, handing each trial state in as
+`u`. `integrator.u` does not follow those trials; it is the state at the end of
+the step. A condition written on `integrator.u` therefore returns the same value
+at every trial, never changes sign, and the event is silently never detected.
+Use the `u` you are given.
 
 ```{julia}
 #| label: fig-ch03-lockdown
-#| fig-cap: "Infectious curve without intervention (solid red) and with a lockdown reducing β by half over days 10–30 (dashed blue, shaded window). The vertical line marks the callback-detected baseline peak. The lockdown flattens and delays the peak."
+#| fig-cap: "Infectious curve without intervention (solid red) and with a lockdown halving β over days 10–30 (dashed blue, shaded window). The vertical line marks the callback-detected baseline peak. This lockdown is strong enough to turn the epidemic the moment it starts, so it lowers the largest value of I and moves it to day 10, then leaves a smaller rebound after release."
 using CairoMakie
 
 tt = 0.0:0.25:80.0
@@ -285,7 +313,9 @@ The `OrdinaryDiffEq` workflow separates *what* the model is (the kernel and
 problem) from *how* it is solved (the algorithm and tolerances) and *what
 happens during* the solve (callbacks). This separation scales: the same
 `ODEProblem` can be handed to a stiff solver, differentiated for sensitivity
-analysis, or fitted to data with no change to the kernel. Callbacks turn a plain
+analysis, or fitted to data, usually with no change to the kernel; as
+@sec-julia-essentials notes, some automatic-differentiation backends are the
+exception and want an out-of-place kernel. Callbacks turn a plain
 integrator into an event-driven simulator — lockdowns, vaccination pulses, and
 threshold-triggered interventions all follow the same pattern. The limitations
 are those of the deterministic SIR model itself (@sec-foundations): no
@@ -303,9 +333,18 @@ the
 
 Extend the lockdown study by sweeping the intervention strength: for
 $\beta_\text{lock} \in \{0.045, 0.035, 0.025, 0.015\}$ over the same window
-10–30, solve the model and record the peak infectious count and its timing using
-the `ContinuousCallback`. Describe how intervention strength trades off peak
-height against peak timing.
+10–30, solve the model and record the largest infectious count and when it
+occurs.
+
+Use the `ContinuousCallback` to find the smooth turning points, but do not stop
+there. As the Equations section warned, a maximum can also sit at a switching
+time or at the end of the span, and root-finding will not report those. Compare
+the callback's events with $I$ evaluated at $t_1$, $t_2$ and both ends of the
+time span, and take the largest.
+
+Then describe how intervention strength trades off the height of the peak
+against its timing, and say whether the answer is the same for the largest value
+of $I$ overall as it is for the turning point that follows the lockdown.
 
 ### Exercise 2 {#ch03-ex2}
 

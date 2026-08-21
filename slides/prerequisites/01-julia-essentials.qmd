@@ -18,7 +18,8 @@ status: complete
 - The course reuses one object throughout: the SIR model of Kermack & McKendrick (1927).
 - Before solving it we need a precise slice of Julia:
   - the **REPL** and its modes;
-  - **in-place kernels** `f(du, u, p, t)` — the SciML calling convention;
+  - **in-place kernels** `f!(du, u, p, t)`, the form this course uses (SciML
+    also accepts out-of-place `f(u, p, t)`);
   - **broadcasting** and comprehensions to evaluate models on a grid;
   - **named tuples** for parameters, read by field, and **multiple dispatch**;
   - **reproducible randomness** with `StableRNGs`.
@@ -134,19 +135,23 @@ Both `true`: the kernel conserves population and the conversion is well behaved.
   `using`, no profiling, metaprogramming, user-defined `struct`s, or parametric
   types.
 - **Takeaways:**
-  - write mutating kernels with the `f(du, u, p, t)` signature;
-  - broadcast with `.` and fuse operations; use `expm1` for stability;
+  - write mutating kernels with the `f!(du, u, p, t)` signature, the in-place
+    form this course uses throughout;
+  - broadcast with `.` to fuse away intermediates; use `expm1` for stability;
   - state by position (`S, I, R = u`), parameters by field (`p.β`);
-  - dispatch is why `solve` composes with any problem/algorithm pair;
-  - seed a *local* `StableRNG` for bit-reproducible figures.
-- Next: we actually *solve* the model in **Foundations**.
+  - dispatch is why `solve` composes with a compatible problem/algorithm pair
+    without glue code;
+  - seed a *local* `StableRNG` to fix the random stream everywhere.
+- Next: we *solve* the model in **Foundations**.
 
 ::: {.notes}
 Demonstrate the four REPL modes live rather than reading the table — enter and
 leave each one, and show `?expm1` in particular, since help mode answers most
 "what arguments does this take" questions faster than a web search and works
 offline. Point out the environment name in the package prompt; a package that
-appears to be missing is almost always Julia started outside the project.
+appears to be missing almost always means the project environment was never
+activated: a plain `julia` starts in the default environment wherever you launch
+it, so `--project=.` or `] activate .` is the fix.
 Emphasise that the `!` suffix is a convention, not syntax, and that in-place
 kernels avoid per-evaluation allocations across the thousands of solver calls.
 Spend a moment on the two reading conventions — state destructured positionally,

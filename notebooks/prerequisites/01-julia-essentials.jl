@@ -142,13 +142,15 @@ end
 md"""
 ## Takeaways
 
-- In-place kernels `f(du, u, p, t)` write derivatives into `du` and return
-  `nothing` — the SciML convention reused everywhere.
+- In-place kernels `f!(du, u, p, t)` write derivatives into `du` and return
+  `nothing`. SciML also accepts an out-of-place `f(u, p, t)`; this course uses
+  the in-place form everywhere.
 - State is read by position (`S, I, R = u`), parameters by field (`p.β`) — the
   convention every later chapter follows.
 - Broadcasting (`.`) evaluates a scalar function on a whole grid without a loop.
 - `expm1` avoids cancellation error in ``1 - e^{-x}``.
-- Seed a local `StableRNG` for reproducible stochastic figures.
+- Seed a local `StableRNG` to fix the random stream across machines and Julia
+  versions; what you compute from it can still shift in the last digits.
 """
 
 # ╔═╡ a5c3fead-9b7a-4e6f-aa8e-669439ced39f

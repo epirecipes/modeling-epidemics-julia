@@ -57,7 +57,7 @@ is the complete list.
 By the end of this unit you should be able to:
 
 - read and write Julia functions that mutate a preallocated array in place, the
-  pattern every SciML solver expects;
+  form this course uses for every model kernel;
 - use broadcasting (`.`) and comprehensions to vectorise scalar operations
   without writing loops;
 - group model parameters in a `NamedTuple` and access them by field rather than
@@ -65,8 +65,10 @@ By the end of this unit you should be able to:
 - collect results with a loop and `push!` or into a preallocated array, and
   build a variant parameter set with `merge`;
 - recognise that Julia resolves a function by the *types* of its arguments, and
-  explain why that is what lets `solve` accept any problem/algorithm pair;
-- produce bit-for-bit reproducible stochastic output with `StableRNGs`;
+  explain why that is what lets `solve` accept a compatible problem/algorithm
+  pair without glue code;
+- draw the same random numbers on every machine with `StableRNGs`, and say what
+  that does and does not guarantee about what you compute from them;
 - render a figure from code with `CairoMakie`.
 
 ## Model assumptions and classification
@@ -152,17 +154,20 @@ shell> ls prerequisites
 ```
 
 The prompt in package mode names the *active environment*, and that name is the
-first thing to check when a package appears to be missing: the course's packages
-are declared in the repository's `Project.toml`, so Julia must be started from
-the repository root, or with `julia --project=.`, for `using CairoMakie` to
-resolve.
+first thing to check when a package appears to be missing. The course's packages
+are declared in the repository's `Project.toml`, and Julia does **not** pick that
+up merely because you started it in the repository folder: a plain `julia` starts
+in your default environment, which knows nothing about them. Start with
+`julia --project=.` from the top of the repository, or press `]` and run
+`activate .`, then `instantiate` once to install what the project declares.
+Only then does `using CairoMakie` resolve.
 
 The first `using CairoMakie` in a fresh session takes a minute or more while
 Julia compiles the plotting stack, and once per session after that it is fast.
 [Setting up](../setup.qmd) covers this and the rest of the installation.
 
-Help mode is worth building a habit around. Every function used in this course
-carries a docstring, so `?` answers most "what arguments does this take"
+Help mode is worth building a habit around. Most Base and package functions carry
+a docstring, so `?` answers most "what arguments does this take"
 questions faster than a web search, and it works offline on the exact version
 you have installed.
 
@@ -180,10 +185,13 @@ choice is cosmetic.
 
 ### Functions and in-place mutation
 
-Every SciML right-hand side has the signature `f(du, u, p, t)`: it *writes* the
-derivatives into a preallocated vector `du` and returns nothing. This avoids
-allocating a fresh array on each of the thousands of evaluations a solver makes.
-Here `u = [S, I, R]` maps directly onto the states in @eq-p01-sir, and `p`
+A SciML right-hand side can be written two ways. The *out-of-place* form
+`f(u, p, t)` builds and returns a new derivative vector each time it is called.
+The *in-place* form `f!(du, u, p, t)` instead *writes* the derivatives into a
+preallocated vector `du` and returns nothing, which avoids allocating a fresh
+array on each of the thousands of evaluations a solver makes. Both are supported;
+this course uses the in-place form throughout, so that is the one to get fluent
+in. Here `u = [S, I, R]` maps directly onto the states in @eq-p01-sir, and `p`
 carries $(\beta, c, \gamma, N)$.
 
 ```{julia}
@@ -217,9 +225,12 @@ either resolves or errors.
 
 ### Broadcasting and comprehensions
 
-The dot syntax applies a scalar function elementwise, fusing all operations into
-a single loop with no temporaries. We use it constantly to evaluate a model over
-a grid. Below we compute @eq-p01-rate for a range of window widths and two
+The dot syntax applies a scalar function elementwise, fusing a chain of dotted
+operations into a single loop. What that saves is the *intermediate* arrays a
+chain would otherwise build one step at a time; the result array is still
+allocated. To write into an array you already have, use `.=`, as the
+preallocation example below does. We use broadcasting constantly to evaluate a
+model over a grid. Below we compute @eq-p01-rate for a range of window widths and two
 rates.
 
 ```{julia}
@@ -371,16 +382,32 @@ the caller used.
 You will not often write dispatch in this course, but you will rely on it in
 every chapter. When the next chapters call `solve(prob, Tsit5())`, no glue code
 connects that problem to that algorithm: `solve` resolves to a method chosen by
-the types of *both* arguments. This is why swapping `Tsit5()` for a stiff solver,
-or handing the same `ODEProblem` to a sensitivity or inference package, needs no
-change to the kernel you wrote. Independently written SciML packages compose
-because each adds methods rather than editing anyone else's.
+the types of *both* arguments. This is why swapping `Tsit5()` for another
+compatible ODE solver needs no change to the kernel you wrote, and why the same
+`ODEProblem` usually goes straight to a sensitivity or inference package. One
+exception is worth knowing before you meet it: some automatic-differentiation
+backends cannot differentiate through code that writes into arrays, and want the
+out-of-place kernel instead. What dispatch cannot do is invent a combination
+nobody has written, and that is what "compatible" means above: `solve` works for
+the pair in front of it because some package defines a method for those two
+types.
+Independently written SciML packages compose because each adds methods rather
+than editing anyone else's.
 
 ### Reproducible randomness
 
-Later chapters simulate stochastic epidemics. To make figures reproducible we
+Later chapters simulate stochastic epidemics. To make results reproducible we
 seed a *local* random stream with `StableRNGs`, whose output is fixed across
-Julia versions — unlike the global `Random.default_rng()`.
+Julia versions, unlike the global `Random.default_rng()`.
+
+Two separate things are being bought here. Seeding a *local* stream means an
+unrelated draw elsewhere in your session cannot shift the numbers this code
+sees, which is what makes a result repeatable when you rerun a notebook out of
+order. `StableRNG` then fixes the stream itself, so the same seed gives the same
+draws on another machine and another Julia version. What neither guarantees is
+that everything computed *from* those draws matches bit for bit everywhere:
+floating-point arithmetic can reorder across platforms and library versions, so
+an identical stream can still produce answers that differ in the last digits.
 
 ```{julia}
 #| label: p01-rng
@@ -425,8 +452,8 @@ isapprox(sum(du), 0.0; atol = 1e-12)
 ```
 
 Second, `rate_to_proportion` must reduce to its first-order Taylor expansion
-$p \approx r\,\delta t$ as $\delta t \to 0$, and must always return a valid
-probability in $[0, 1]$:
+$p \approx r\,\delta t$ as $\delta t \to 0$, and must return a valid probability
+in $[0, 1]$ for every rate $r \ge 0$ and window $\delta t \ge 0$:
 
 ```{julia}
 #| label: p01-check-rate
@@ -435,7 +462,7 @@ small = rate_to_proportion(0.25, 1e-6)
 ```
 
 Both cells return `true`, so the in-place kernel conserves population and the
-rate conversion is well behaved.
+rate conversion is well behaved on the range it is used over.
 
 ## Interpretation and limitations
 
@@ -458,15 +485,23 @@ plotting API in depth.
 Write an in-place kernel `sir_incidence!(du, u, p, t)` that extends
 @eq-p01-sir with a fourth state $C$ tracking *cumulative* infections, so that
 $\mathrm{d}C/\mathrm{d}t = \lambda S$. Evaluate the derivative at the baseline
-initial condition and confirm that `du[4]` equals `-du[1]` (new infections leave
-$S$ at exactly the rate they enter $C$).
+initial condition extended with $C(0) = 0$, so that $C$ counts infections
+occurring after $t = 0$:
+
+```julia
+u0_incidence = [990.0, 10.0, 0.0, 0.0]
+```
+
+Confirm that `du[4]` equals `-du[1]`: new infections leave $S$ at exactly the
+rate they are added to the cumulative count.
 
 ### Exercise 2 {#p01-ex2}
 
-Using `StableRNG(2024)`, draw 10 000 samples from `rand`, and use broadcasting
-to count how many fall below `rate_to_proportion(0.25, 1.0)`. Compare the
-observed fraction with the target probability and explain why a *local* seeded
-RNG makes this figure reproducible across machines.
+Using `StableRNG(2024)`, draw 10 000 samples with `rand(rng, 10_000)`, and count
+how many fall below `rate_to_proportion(0.25, 1.0)`. Compare the observed
+fraction with the target probability, then explain what a *local* seeded
+`StableRNG` guarantees about this result on another machine, and what it does
+not.
 
 ## Companion materials
 

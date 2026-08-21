@@ -12,8 +12,9 @@ status: draft
 In the last session you wrote the SIR kernel but never ran it. Here you hand it
 to a solver and get an epidemic curve out, then check that curve against two
 things the theory predicts in advance: that the population is conserved, and
-that the infectious peak arrives exactly when the susceptible fraction falls
-through $1/R_0$. Part B defines $R_0$.
+that the infectious peak, which at the baseline arrives after a spell of growth,
+sits exactly where the susceptible fraction falls through $1/R_0$. Part B
+defines $R_0$.
 
 Nothing here changes the model. The ordinary differential equations session is
 where the model starts responding to interventions; today is about getting a
@@ -115,8 +116,9 @@ check("it stored one state every half day", length(sol.t) == 161)
 sol.u[end]       # the whole state vector at day 80
 ```
 
-Three numbers came back: $S$, $I$ and $R$ at day 80. Almost everyone has been
-infected and recovered, and the epidemic is over.
+Three numbers came back: $S$, $I$ and $R$ at day 80. About 80% of the population
+has been infected and recovered, fewer than one person is still infectious, and
+the epidemic is over.
 
 Now read the result. A solution can be read three ways, and each answers a
 different question:
@@ -196,8 +198,11 @@ R_0 = \frac{\beta c}{\gamma}.
 $$
 
 The epidemic grows only while $S/N > 1/R_0$. That makes a sharp, checkable
-prediction: the infectious curve turns over at the *exact moment* the
-susceptible fraction crosses $1/R_0$ — not near it, at it.
+prediction: once the curve has grown, it turns over at the *exact moment* the
+susceptible fraction crosses $1/R_0$, not near it, at it. The baseline does grow
+first, because $R_0 S(0)/N = 1.98 > 1$. If that product were below 1 there would
+be no crossing to find: $I$ would fall from day zero and its largest value would
+be $I(0)$.
 
 ```{julia}
 #| label: ws-ch01-b1
@@ -208,7 +213,7 @@ S_over_N_at_peak = S[peak_index] / p.N
 
 check("R₀ is 2 for the baseline", isapprox(R₀, 2.0; atol = 1e-9))
 check("the peak sits on the threshold",
-      R₀ > 0 && isapprox(S_over_N_at_peak, 1 / R₀; atol = 0.01))
+      R₀ > 0 && isapprox(S_over_N_at_peak, 1 / R₀; rtol = 0.01))   # 1% relative
 
 (R₀ = R₀, threshold = R₀ > 0 ? 1 / R₀ : NaN, S_over_N_at_peak = S_over_N_at_peak)
 ```
@@ -229,8 +234,10 @@ the value itself.
 :::
 
 Now vary the contact rate. Everything else stays at baseline, so $R_0$ scales
-with $c$ and there is some contact rate below which the epidemic never takes
-off.
+with $c$ and there is some contact rate below which prevalence never grows. Watch
+where that lands: $R_0 = 1$ at $c = 5$, but growth needs $R_0 S(0)/N > 1$, and
+with 99% susceptible at the start that is $c > \gamma / (\beta s_0) \approx 5.05$,
+where $s_0 = S(0)/N = 0.99$ is the susceptible fraction at the start.
 
 `p` is a named tuple, which cannot be modified in place. `merge` builds a new
 one with some fields replaced and the rest carried over:
@@ -251,13 +258,13 @@ results = map(contact_rates) do c_val
     (c = c_val,
      R₀ = round(p_c.β * p_c.c / p_c.γ; digits = 2),
      peak_I = round(maximum(s[2, :]); digits = 1),
-     infected_by_80 = round(s[3, end] / p.N; digits = 3))
+     infected_by_80 = round(1 - s[1, end] / p_c.N; digits = 3))   # no longer susceptible
 end
 
 check("each run used its own contact rate",
       length(unique(r.R₀ for r in results)) == 4)
 check("c = 4 gives R₀ below 1", results[1].R₀ < 1)
-check("no epidemic at c = 4", results[1].peak_I <= u0[2])
+check("prevalence does not grow at c = 4", results[1].peak_I <= u0[2])
 check("the day-80 total climbs with contact rate",
       let a = [r.infected_by_80 for r in results]; issorted(a) && allunique(a) end)
 
@@ -282,7 +289,7 @@ to be assigned.
 
 ```{julia}
 #| label: fig-ws-ch01-threshold
-#| fig-cap: "Infectious curves across contact rates. Below c = 5 the reproduction number falls under 1 and the initial infections fade without an epidemic."
+#| fig-cap: "Infectious curves across contact rates. Below c ≈ 5.05 the initial infections fade without an epidemic: with 99% susceptible at the start, growth needs R₀S(0)/N > 1, which is a little more than R₀ > 1."
 fig2 = Figure(size = (720, 400))
 ax2  = Axis(fig2[1, 1]; xlabel = "time (days)", ylabel = "infectious I(t)",
             title = "Contact rate and the epidemic threshold")
@@ -319,9 +326,9 @@ fig2
 *Start this only if you have finished Part B.*
 
 You already know how many had been infected by day 80 at each contact rate: you
-simulated it and read the number off. The total ever infected, however far into
-the future you look, can be obtained directly from $R_0$ without running the
-model at all. The surviving susceptible fraction
+simulated it and read the number off. The total infected, however far into the
+future you look, can be obtained directly from $R_0$ without running the model at
+all. The surviving susceptible fraction
 $s_\infty = S(\infty)/N$ satisfies
 
 $$
@@ -329,8 +336,9 @@ s_\infty = s_0 \exp\bigl(-R_0 (1 - s_\infty)\bigr),
 \qquad s_0 = \frac{S(0)}{N},
 $$
 
-which cannot be rearranged for $s_\infty$ in elementary functions: it appears on
-both sides and inside the exponential. (There is a closed form in terms of the
+which cannot be rearranged to give $s_\infty$ on its own: it appears on both
+sides, and once inside the exponential, so no amount of shuffling isolates it in
+terms of powers, exponentials and logarithms. (There is a closed form using the
 Lambert $W$ function, which is not much help unless you already have $W$.) In
 practice it is found numerically, by searching for the value that makes the two
 sides equal.
@@ -352,7 +360,7 @@ fs_prob = NonlinearProblem(residual, 0.0, R₀)
 s_inf = solve(fs_prob, NewtonRaphson()).u
 attack_rate = 1 - s_inf
 
-check("s∞ is a fraction", 0 < s_inf < 1)
+check("s∞ is a fraction, smaller than s₀", 0 < s_inf < s₀)
 check("it really is a root", isapprox(residual(s_inf, R₀), 0.0; atol = 1e-8))
 
 # Compare against simulation: run far past the end of the epidemic.
@@ -374,11 +382,17 @@ check("analytic and simulated agree", isapprox(s_inf, simulated; atol = 1e-3))
 fs_prob = NonlinearProblem(residual, 0.2, R₀)
 ```
 
-Any guess below about 0.6 lands on the root you want. The residual turns over at
-$s = 1 - \ln(s_0 R_0)/R_0 \approx 0.66$, and from above that point Newton's method
-converges instead to a second root at $s_\infty \approx 1.010$. That is a genuine
-solution of the equation, but it describes a negative attack rate, so it is not
-an epidemic.
+Any guess below about 0.6 lands on the root you want. The equation has a second
+root at $s_\infty \approx 1.010$, and a large guess such as `0.9` converges to
+that one instead. It solves the equation, but it is not a state the SIR model can
+end in: more people would have finished susceptible than started.
+
+The residual turns over at $s = 1 - \ln(s_0 R_0)/R_0 \approx 0.658$, which is why
+there are two roots at all. It does not tell you which guesses end at which root:
+start exactly on the turning point and the slope is zero, so Newton's first step
+is undefined and the solve fails rather than reaching a root. Check the value
+that came back, its residual, and the return code together, rather than trusting
+any one of them.
 
 Try `0.9` as well as `0.2` and watch the "s∞ is a fraction" check fail. A
 root-finder returns *a* root; nothing in the mathematics says which one you
@@ -422,7 +436,6 @@ Nothing here is assigned. The whole project stays available to you afterwards.
 - [The Pluto notebook](../../notebooks/chapters/01-foundations.jl) — sliders for
   $\beta$, $c$ and $\gamma$, with $R_0$ and the final size recomputing as you
   drag.
-- The chapter's own exercises, with worked solutions. Exercise 1 covers the same
-  ground as Parts B and C above, so skip it unless you want the comparison.
-  Exercise 2 goes further than this worksheet: it asks what the trajectory does
-  when $\gamma$ is raised to 0.5, putting $R_0$ exactly at 1.
+- The chapter's own exercises, with worked solutions — Exercise 1 computes the
+  final size at each contact rate from $R_0$ alone; Exercise 2 asks what the
+  trajectory does when $\gamma$ is raised to 0.5, putting $R_0$ exactly at 1.
