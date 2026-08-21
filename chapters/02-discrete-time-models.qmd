@@ -40,9 +40,17 @@ only in how they represent time and state:
 | Markov chain | Stochastic | Discrete | Discrete (integer) |
 | ODE (@sec-foundations) | Deterministic | Continuous | Continuous |
 
-The function map is the deterministic *expectation* of the Markov chain: it
-moves the mean number of individuals each step, whereas the chain draws a random
-integer around that mean.
+For a fixed current state, the map moves exactly the number of individuals the
+chain expects to move: it is the chain's **one-step conditional expectation**,
+and the chain draws a random integer around that same mean.
+
+Iterating the map is not the same as averaging the chain, though. The infection
+update multiplies $S_t$ by a probability that itself depends on $I_t$, so the
+update is nonlinear, and the average of a nonlinear function is not that function
+of the average. Iterating the map therefore gives a *mean-field approximation* to
+the ensemble mean rather than the mean trajectory itself: it pushes the average
+state forward as though it were a single realisation, which is not the same as
+averaging over realisations.
 
 ## Equations
 
@@ -79,13 +87,21 @@ $$ {#eq-ch02-chain}
 
 A $\text{Binomial}(n, p)$ counts how many of $n$ independent individuals, each
 with probability $p$, make the move; here $n$ is the number of people at risk
-and $p$ comes from @eq-ch02-probs. The same chain is derived at more length in
+and $p$ comes from @eq-ch02-probs. Given the state at time $t$, $Y_t$ and $Z_t$
+are drawn independently, as the two separate `rand` calls below do. The same
+chain is derived at more length in
 @sec-probability-and-stochastic-processes, which is optional background rather
 than a prerequisite for this chapter.
 
-As $\delta t \to 0$, $p_I \to \tfrac{\beta c I}{N}\delta t$ and
-$p_R \to \gamma\,\delta t$, so the map @eq-ch02-map reduces to a forward-Euler
-step of the ODE @eq-ch01-sir and converges to it.
+Expanding @eq-ch02-probs for a small step gives
+
+$$
+p_I = \frac{\beta c I}{N}\,\delta t + O(\delta t^2), \qquad
+p_R = \gamma\,\delta t + O(\delta t^2),
+$$ {#eq-ch02-expansion}
+
+so the map @eq-ch02-map agrees with a forward-Euler step of the ODE
+@eq-ch01-sir to first order, and converges to it as $\delta t \to 0$.
 
 ## Julia implementation
 
@@ -147,7 +163,7 @@ chain_mean_I = vec(sum(chain_I; dims = 2)) ./ nsims
 
 ```{julia}
 #| label: fig-ch02-compare
-#| fig-cap: "Infectious compartment: stochastic Markov-chain realisations (thin grey), their ensemble mean (red), and the deterministic function map (dashed black). The map closely tracks the stochastic mean."
+#| fig-cap: "Infectious compartment: stochastic Markov-chain realisations (thin grey), their ensemble mean (red), and the deterministic function map (dashed black). The map tracks the ensemble mean closely but peaks above it. Variation in when each realisation crests is one contributor, since averaging curves that do not line up flattens the mean."
 using CairoMakie
 
 fig = Figure(size = (720, 440))
@@ -195,10 +211,10 @@ end
 
 ```{julia}
 #| label: fig-ch02-convergence
-#| fig-cap: "Error of the deterministic map at $t=40$ relative to the ODE solution, versus step size (log–log). The points parallel the slope-1 guide, confirming first-order convergence of the map to the ODE."
+#| fig-cap: "Error of the deterministic map at $t=40$ relative to the ODE solution, versus step size (log–log). The error plotted is the largest absolute difference across the three compartments, the infinity norm. The points parallel the slope-1 guide, confirming first-order convergence of the map to the ODE."
 fig2 = Figure(size = (640, 420))
 ax2 = Axis(fig2[1, 1]; xscale = log10, yscale = log10,
-           xlabel = "step size δt", ylabel = "‖map − ODE‖ at t = 40",
+           xlabel = "step size δt", ylabel = "max |map − ODE| at t = 40",
            title = "Map → ODE convergence")
 scatter!(ax2, δts, map_errors; markersize = 12, color = :steelblue, label = "measured")
 guide = map_errors[1] .* (δts ./ δts[1])
@@ -237,34 +253,63 @@ trajectory, and the map converges to the ODE at first order.
 
 ## Interpretation and limitations
 
-The three models form a coherent family. The Markov chain is the most faithful:
-it produces integer counts, allows an epidemic to fade out by chance, and shows
-run-to-run variability that shrinks as the population grows. The deterministic
-map is its mean-field shadow — cheap and smooth, but blind to extinction and
-fluctuations. Both are only *approximations* to the continuous process, exact
-only as $\delta t \to 0$; at $\delta t = 1$ day the discretisation error is
-visible but modest. A subtle limitation of the binomial construction is that it
+The three models form a coherent family. The Markov chain is the most faithful of
+the three to the randomness of a finite population: it produces integer counts,
+allows an epidemic to fade out by chance, and shows
+run-to-run variability whose size *relative to the population* shrinks as the
+population grows. The absolute fluctuations do not shrink; in counts they
+typically grow like $\sqrt{N}$, which is slower than $N$ itself, so as a fraction
+of the population they fall away like $1/\sqrt{N}$. The deterministic map is the
+chain's mean-field shadow: cheap and smooth, but blind to extinction and
+fluctuations.
+
+Shrinking $\delta t$ sends the two discrete models to two *different* limits. The
+deterministic map approaches the SIR ODE of @sec-foundations, which is what
+@fig-ch02-convergence measures. The stochastic chain approaches the
+continuous-time Markov chain of the jump-process chapter. Those limits are not
+the same object: the ODE is a mean-field description, and at a finite population
+size it is not generally the expected trajectory of the stochastic process.
+
+The step size matters more than it might look. At $\delta t = 1$ day the map
+peaks at 201 infectious against the ODE's 158, overstating the peak by 27%;
+quartering the step brings it down to 169. A subtle limitation of the binomial
+construction is that it
 processes all infections and recoveries within a step simultaneously, so an
 individual cannot become infected *and* recover in the same step — an artefact
 that vanishes as the step shrinks. The exact event-driven treatment is the
 subject of the continuous-time Markov chain chapter. See the
 [Distributions.jl documentation](https://juliastats.org/Distributions.jl/stable/)
-and the [SciML FunctionMap solver](https://docs.sciml.ai/OrdinaryDiffEq/stable/)
-for the corresponding library tools.
+and the [SciML discrete-solver documentation](https://docs.sciml.ai/DiffEqDocs/stable/solvers/discrete_solve/)
+for the corresponding library tools. The latter covers `FunctionMap`, which
+solves a map like @eq-ch02-map through the same `solve` interface; note that it
+ships in `OrdinaryDiffEqFunctionMap` rather than in `OrdinaryDiffEq`'s default
+re-exports.
 
 ## Exercises
 
 ### Exercise 1 {#ch02-ex1}
 
 Run the stochastic chain ensemble at $\delta t = 1$ and again at $\delta t = 0.25$
-(with the horizon fixed at 40 days). Compare the ensemble-mean infectious peak
-against the deterministic map at each step size, and explain which discretisation
-sits closer to the ODE reference and why.
+(horizon fixed at 40 days, same 200 members as above), and record the
+ensemble-mean infectious peak alongside the deterministic map's peak at each step
+size, with the ODE peak as a reference.
+
+The map carries a time-discretisation error that shrinks with $\delta t$. The
+ensemble mean carries that as well, plus the effects of working with whole people
+in a population of 1000, differences in when each epidemic crests, any
+realisations that fade out, and the Monte Carlo error of using a finite number of
+runs. The timing difference alone pulls the mean down: if two epidemics of the
+same height peak on different days, their average peaks lower than either of
+them did.
+
+The mean is an estimate, so treat it as one. Report a standard error next to each
+ensemble peak, then re-run one step size with ten times as many members and say
+which of the gaps you found survive.
 
 ### Exercise 2 {#ch02-ex2}
 
-Compute, from the 200-member ensemble, the probability that the epidemic goes
-extinct (reaches $I = 0$) before day 40 for the baseline $R_0 = 2$. Then lower
+Estimate, from the 200-member ensemble, the probability that the epidemic goes
+extinct (reaches $I = 0$) by day 40 for the baseline $R_0 = 2$. Then lower
 the contact rate to $c = 6$ and recompute. Explain the change in terms of the
 reproduction number and of demographic stochasticity, the chance variation that
 comes from moving whole individuals rather than expected fractions, which the

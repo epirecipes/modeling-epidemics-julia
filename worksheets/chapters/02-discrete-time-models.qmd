@@ -247,8 +247,9 @@ refinement
 ```
 
 The session measured this convergence against the ODE at a fixed time and got
-first order. The same error is showing up here in a quantity you would actually
-report (the endemic prevalence), where a 10% bias is not a numerical curiosity.
+first order. The same error is showing up here in a quantity you would report. At $\delta t = 1$ the endemic prevalence sits 23% above the analytic
+level, and the susceptible level 10% below it. Both are large enough to change
+the answer you would give.
 
 > *At $\delta t = 1$ day, is the discretisation error large or small compared with
 > the other uncertainties in a model like this? Your answer here.*
@@ -260,8 +261,14 @@ report (the endemic prevalence), where a 10% bias is not a numerical curiosity.
 The map moves fractions of people: at the trough it held 19.3 infectious
 individuals, and a quantity that shrinks by fractions approaches zero without
 ever arriving. The stochastic chain replaces each of the three flows with a
-binomial draw, so its counts are whole numbers and the disease can genuinely run
-out.
+binomial draw, so its counts are whole numbers and the disease can run out.
+
+That changes what the model can say. The map has an endemic equilibrium and sits
+on it forever. In the chain, $I = 0$ can be reached from any state and nothing
+here brings the disease back, so every realisation fades out eventually; what
+varies is how long it takes. What you measure below is how many realisations
+survive two years, and the survivors hover near the map's endemic level rather
+than settling on it.
 
 The chain step is given. It is your Part A function with `rand(rng, Binomial(…))`
 around each flow, run 100 times from 100 different seeds. Each run is called a
@@ -286,9 +293,11 @@ chain_mean_I = vec(mean(chain_I; dims = 2))
 # TODO: replace `falses(nsims)` — true for each realisation in which I reached 0
 died_out = falses(nsims)
 
-check("every realisation keeps an integer population",
+check("every realisation conserves the population",
       all(traj -> all(k -> sum(traj[:, k]) == p.N, 1:nsteps+1), chain_ens))
-check("some realisations died out", count(died_out) >= 3)
+check("and every compartment stays a whole number",
+      all(traj -> all(isinteger, traj), chain_ens))
+check("some realisations faded out", count(died_out) >= 3)
 check("but not all of them", 0 < count(died_out) < nsims)
 check("the ensemble mean tracks the map through the first wave",
       isapprox(maximum(chain_mean_I[1:80]), maximum(sirs_traj[2, 1:80]); rtol = 0.1))
@@ -320,7 +329,7 @@ question you actually mean.
 #| fig-cap: "One hundred stochastic SIRS realisations (thin grey), their ensemble mean (red), and the deterministic map (dashed black). Runs that reach zero infectious stay there."
 fig2 = Figure(size = (720, 440))
 ax2  = Axis(fig2[1, 1]; xlabel = "time (days)", ylabel = "infectious I(t)",
-            title = "Endemic in the mean, extinct in some runs")
+            title = "Persisting in most runs, faded out in some")
 for j in 1:nsims
     lines!(ax2, ts, chain_I[:, j]; color = (:grey, 0.15), linewidth = 1)
 end
@@ -333,12 +342,13 @@ fig2
 
 ### B1. Interpret
 
-- Most of the extinctions happen between days 57 and 101, not later. What is it
+- Most of the fade-outs happen between days 57 and 101, not later. What is it
   about that window that makes the disease vulnerable?
 - The ensemble mean settles a little *below* the map. Given that some runs are
   sitting at zero forever, is the mean describing a typical realisation?
-- Both models were handed the same $\omega$, and both say the disease is endemic.
-  Which of them can answer "will this disease still be here in five years?"
+- The map says the disease settles at an endemic level and stays. Which model can
+  answer "what is the chance it is still here in five years?", and what does the
+  other one give you instead?
 
 > *Your answer here.*
 
@@ -371,21 +381,36 @@ check("fade-out becomes rarer as the population grows", issorted(fractions; rev 
 ```
 
 $R_0$ was 2 in every one of those runs. Two communities with the same disease and
-the same contact patterns, and one cannot sustain it at all. What does that mean
-for a national elimination target?
+the same contact patterns, and over two years the smaller one loses it every time
+while the larger one almost never does. What does that mean for a national
+elimination target?
 
 > *Your answer here.*
 
 ---
 
-## Part C — from prevalence to reported cases (optional)
+## Part C — from prevalence to incident infections (optional)
 
 *Start this only if you have finished Part B.*
 
 Everything so far plotted $I_t$, the number of people infectious *right now*.
-Surveillance data are not that. A weekly report counts **new cases**, and new
-cases are a flow: the `infection` term inside the step, which the model computes
-and then throws away.
+Surveillance data are usually not that. A weekly report counts **new cases**, and
+new cases are a flow: the `infection` term inside the step, which the model
+computes and then throws away.
+
+What the model produces is *incident infections*, not reports. The two match only
+if every infection is detected and notified straight away, which no real system
+manages. Read the series below as an idealised case series. The observation-model
+session is where the gap between infections and reports gets modelled.
+
+One more convention before the code. An interval runs from one day to the next,
+so a daily incidence number has to be labelled by one end or the other. Here each
+value is labelled by the day the interval *starts*: `daily_cases[k]` covers day
+$k-1$ to day $k$ and is reported as day $k-1$. Prevalence needs no such choice,
+since it is read at an instant. So when you compare the two peaks, remember that
+one is a label on an interval and the other is a point in time. The gap between
+them tells you incidence turns over first; it is not an exact lag between two
+comparable moments.
 
 Discrete time is where this is easiest, because the step already has the shape of
 a reporting interval. The loop below keeps each step's infections; you turn the
@@ -451,20 +476,20 @@ weekly_cases = [sum(daily_cases[(7 * (w - 1) + 1):(7 * w)]) for w in 1:nweeks]
 
 ```{julia}
 #| label: fig-ws-ch02-reporting
-#| fig-cap: "Top: daily new infections and prevalence over the first wave; the case peak leads the prevalence peak by four days. Bottom: the same epidemic as 104 weekly case totals, the form surveillance data actually arrive in."
+#| fig-cap: "Top: daily incident infections and prevalence over the first wave. Each incidence value covers a one-day interval and is labelled by the day that interval starts; prevalence is an instantaneous state read at each day. The busiest incidence interval starts on day 15 and prevalence peaks at day 19, so incidence turns over earlier. Bottom: the same epidemic as 104 weekly infection totals, the shape a case series arrives in."
 fig3 = Figure(size = (720, 600))
 
 ax3 = Axis(fig3[1, 1]; xlabel = "time (days)", ylabel = "people",
-           title = "New cases lead prevalence")
-lines!(ax3, 1:120, traj_c[2, 2:121]; color = :steelblue, linewidth = 3,
+           title = "New infections lead prevalence")
+lines!(ax3, 0:120, traj_c[2, 1:121]; color = :steelblue, linewidth = 3,
        label = "prevalence I(t)")
-lines!(ax3, 1:120, daily_cases[1:120]; color = :firebrick, linewidth = 3,
-       label = "new cases per day")
-vlines!(ax3, [argmax(daily_cases)]; color = :firebrick, linestyle = :dot)
-vlines!(ax3, [argmax(traj_c[2, :])]; color = :steelblue, linestyle = :dot)
+lines!(ax3, 0:119, daily_cases[1:120]; color = :firebrick, linewidth = 3,
+       label = "new infections per day")
+vlines!(ax3, [argmax(daily_cases) - 1]; color = :firebrick, linestyle = :dot)
+vlines!(ax3, [argmax(traj_c[2, :]) - 1]; color = :steelblue, linestyle = :dot)
 axislegend(ax3; position = :rt)
 
-ax4 = Axis(fig3[2, 1]; xlabel = "week", ylabel = "reported cases",
+ax4 = Axis(fig3[2, 1]; xlabel = "week", ylabel = "incident infections",
            title = "Two years of weekly totals")
 isempty(weekly_cases) ||
     barplot!(ax4, 1:nweeks, weekly_cases; color = :seagreen, gap = 0.1)
@@ -474,19 +499,22 @@ fig3
 
 ### C1. Interpret
 
-- Cases peak on day 15 and prevalence on day 19. Which one would a surveillance
-  system see, and what does that mean for judging whether an epidemic has turned?
-- Over two years the model produces about 7.7 cases per person. Nothing is wrong
-  with the arithmetic. Which assumption is doing that, and is 50 days of immunity
-  a reasonable choice?
-- The weekly totals settle at about 70 cases a week. Two years in, would you call
-  this epidemic over?
+- The busiest daily interval starts on day 15, and prevalence peaks on day 19.
+  Routine notifications track incidence rather than prevalence, so which of the
+  two does a surveillance system usually follow, and what does that mean for
+  judging whether an epidemic has turned?
+- Over two years the model produces about 7.7 infections per person. Nothing is
+  wrong with the arithmetic. Which assumption is doing that, and is 50 days of
+  immunity a reasonable choice?
+- The weekly totals settle at about 70 infections a week. Two years in, would you
+  call this epidemic over?
 
 > *Your answer here.*
 
 ::: {.callout-note}
-These weekly totals are still model output, not data: nobody has been missed,
-nobody has been counted twice, and nothing was reported late. The
+These weekly totals are still model output, not data: no infection has been
+missed, no infection episode has been counted twice, and nothing was reported
+late. The
 observation-model session is where those gaps get added on top of exactly this
 kind of incidence series.
 :::

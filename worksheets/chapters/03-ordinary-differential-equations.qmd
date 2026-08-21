@@ -77,7 +77,7 @@ tt    = 0.0:0.25:80.0
 
 sol = solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5(); reltol = 1e-8, abstol = 1e-8)
 
-println("peak infectious: ", round(maximum(sol[2, :]), digits = 1))
+println("peak infectious: ", round(maximum(sol(t)[2] for t in tt), digits = 1))
 println("final size (R at day 80): ", round(sol(80.0)[3], digits = 1))
 ```
 
@@ -256,7 +256,8 @@ function impose_restrictions!(integrator)
     push!(trigger_day, integrator.t)
 end
 
-cap_cb  = ContinuousCallback(capacity_condition, impose_restrictions!)
+# the third argument, `nothing`, means "fire on the way up only"
+cap_cb  = ContinuousCallback(capacity_condition, impose_restrictions!, nothing)
 sol_cap = solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5();
                 callback = cap_cb, reltol = 1e-8, abstol = 1e-8)
 
@@ -277,8 +278,12 @@ point.
 
 Watch the two spellings of the state. A *condition* is handed the state directly,
 so it uses `u[2]`. An *affect!* is handed the whole integrator and reaches inside
-it, so Part A wrote `integrator.u[1]`. Writing `integrator.u[2]` here would work
-too, but `u` is already right there.
+it, so Part A wrote `integrator.u[1]`.
+
+Use the `u[2]` you are given here. To find the crossing, the solver tries several
+states inside the current step and passes each one in as `u`. `integrator.u[2]`
+does not follow those tries, so a condition written on it returns the same value
+every time, never changes sign, and the crossing is never found.
 :::
 
 ### C1. Interpret
@@ -289,6 +294,10 @@ a date and the other did not.
 - What does the triggered version need you to know in advance that the scheduled
   version does not, and vice versa?
 - The restrictions here never lift. What would you need to add for them to?
+- The trigger fired on day 11 and $I$ never goes far above 100. Where in time
+  does the largest value of $I$ sit? The session found the baseline peak
+  by root-finding $\mathrm{d}I/\mathrm{d}t = 0$; would that method find this
+  one?
 
 > *Your answer here.*
 
@@ -314,7 +323,7 @@ Nothing here is assigned. The whole project stays available to you afterwards.
 
 - [The chapter](../../chapters/03-ordinary-differential-equations.qmd) — the
   lockdown example in full, plus dense interpolation `sol(t)` and using
-  `ContinuousCallback` to locate the epidemic peak exactly.
+  `ContinuousCallback` to locate a smooth epidemic peak by root-finding.
 - [The Pluto notebook](../../notebooks/chapters/03-ordinary-differential-equations.jl)
   — sliders for the lockdown's strength, start day, and duration.
 - The chapter's own exercises, with worked solutions, if you want more practice on

@@ -91,8 +91,8 @@ All `true`: conservation, threshold, and final size are confirmed.
 
 ## Limitations & roadmap
 
-- The deterministic ODE is the population **mean** — no extinction,
-  super-spreading, or small-outbreak noise.
+- The deterministic ODE is the **large-population limit**, not the exact average
+  of a finite epidemic — no extinction, super-spreading, or small-outbreak noise.
 - Homogeneous mixing ignores age, space, contact structure; exponential
   infectious periods are a convenience.
 - The book relaxes each assumption in turn: discrete-time & stochastic → jump
@@ -102,8 +102,11 @@ All `true`: conservation, threshold, and final size are confirmed.
 Derive the mass-action term from contacts × prevalence × transmission
 probability, and show that summing the equations gives conservation. Explain R₀
 as expected secondary infections in a fully susceptible population, and that the
-peak occurs exactly at S/N = 1/R₀. The final-size relation is transcendental,
-which is why NonlinearSolve is used. Use this chapter to preview the whole book.
+peak occurs at S/N = 1/R₀ only when the epidemic grows first, that is, when
+R₀·S(0)/N > 1, which holds here (1.98). If it does not, I falls from the start
+and its largest value is I(0). The final-size relation cannot be rearranged to
+give s∞ on its own, which is why NonlinearSolve is used. Use this chapter to
+preview the whole book.
 :::
 
 ## Learn more

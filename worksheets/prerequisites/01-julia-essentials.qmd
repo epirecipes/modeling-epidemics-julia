@@ -63,9 +63,11 @@ character at an empty prompt to enter one, `Backspace` to leave:
 | `]` | package | a package seems missing — `]st` also names the active environment |
 | `;` | shell | you need `ls` or `git status` without switching windows |
 
-If `using CairoMakie` fails, that is almost always Julia started outside the
-project. Check the name in front of the `pkg>` prompt, and ask. This is exactly
-the kind of thing an instructor can fix in ten seconds.
+If `using CairoMakie` fails, that is almost always the project environment not
+being active. Check the name in front of the `pkg>` prompt: it should name the
+course project, not `@v1.12`. Start Julia with `julia --project=.` from the top
+of the repository, or press `]` and run `activate .`. Ask if it still fails —
+this is exactly the kind of thing an instructor can fix in ten seconds.
 
 Two Julia-specific conventions used throughout the course:
 
@@ -73,9 +75,10 @@ Two Julia-specific conventions used throughout the course:
   they match the equations. Type them with a backslash and Tab: `\beta`↹ gives
   `β`, `\gamma`↹ gives `γ`, `\lambda`↹ gives `λ`. Plain ASCII names work exactly
   as well if you prefer them.
-- **A trailing `!`** (as in `sir_ode!`) marks a function that *modifies* one of
-  its arguments instead of returning a new value. Nothing enforces this; it is
-  a promise to the reader.
+- **A trailing `!`** (as in `sir_ode!`) marks a function that *modifies* one or
+  more of its arguments. It may still return something useful as well — `push!`
+  hands back the array it just grew. Nothing enforces the convention; it is a
+  promise to the reader.
 
 ---
 
@@ -100,13 +103,15 @@ println("Julia version: ", VERSION)
 
 ## Part A — writing a model kernel (~15 min)
 
-The session's `sir_ode!` had the signature every SciML solver expects:
+The session's `sir_ode!` had the in-place signature this course uses everywhere:
 
 ```julia
 function sir_ode!(du, u, p, t)
 ```
 
-It *writes* the rates of change into `du` rather than returning them. You will
+It *writes* the rates of change into `du` rather than returning them. SciML also
+accepts an out-of-place `f(u, p, t)` that returns a new vector; we stay with the
+in-place form because it avoids an allocation on every solver step. You will
 use this shape in every remaining session, so it is worth typing once by hand
 rather than only reading.
 
@@ -139,8 +144,8 @@ end
 du = zeros(3)
 sir_ode!(du, u0, p, 0.0)
 
-check("infectious are increasing", du[2] > 0)
-check("people are recovering", du[3] > 0)
+check("dI/dt is 2.45 at the baseline", isapprox(du[2], 2.45; atol = 1e-9))
+check("dR/dt is 2.50 at the baseline", isapprox(du[3], 2.50; atol = 1e-9))
 check("nobody is created or destroyed",
       any(!iszero, du) && isapprox(sum(du), 0.0; atol = 1e-12))
 du
@@ -198,7 +203,8 @@ when that shortcut is safe and when it is not.
 
 Rather than looping over values of $\delta t$, Julia applies a function to an
 entire array at once when you add a dot: `f.(v)`. This is the `sapply` of Julia,
-but it compiles to a single loop with no intermediate copies.
+except that a chain of dotted operations compiles into a single loop instead of
+building a separate array at each step.
 
 ```{julia}
 #| label: ws-p01-b1
@@ -271,14 +277,17 @@ fig
 
 *Start this only if you have finished Part B.*
 
-Later sessions simulate epidemics that are genuinely random. Results still have
-to be reproducible: the same script must give the same figure on your machine
-and on a reviewer's. Julia's answer is a *local* random number generator that you
-seed yourself, rather than a hidden global one.
+Later sessions simulate stochastic epidemics. Results still have to be
+reproducible: the same script must give the same numbers on your machine and on
+a colleague's. Julia's answer is a *local* random number generator that you seed
+yourself, rather than a hidden global one.
 
 Feed the force of infection from Part A into the conversion from Part B, with a
 window of one day, and you get the probability that a given susceptible person is
-infected today.
+infected today, holding the initial force of infection constant across that day.
+In a real SIR trajectory $I$ changes as the day goes on, so $\lambda$ changes
+with it; treating it as fixed is what makes a one-day probability well defined
+here.
 
 ```{julia}
 #| label: ws-p01-c1
@@ -319,8 +328,9 @@ return count(draws .< p_infect)
 array of `true`/`false`, the dot again doing elementwise work. `count` then
 counts the `true`s.
 
-If you get a single `true` or `false` rather than a number, you left the dot out
-of `<` and compared the whole array at once.
+Leaving the dot off `<` raises a `MethodError`: Julia has no way to compare a
+whole array against a single number, so it tells you no method matches rather
+than guessing what you meant.
 :::
 
 ### C1. Interpret

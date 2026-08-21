@@ -31,7 +31,7 @@ $$
 \text{chain:}\;\; Y_t\sim\text{Bin}(S_t,p_I),\;\; Z_t\sim\text{Bin}(I_t,p_R).
 $$ {#eq-s-ch02-chain}
 
-The map is the mean-field expectation of the chain.
+The map is the chain's one-step conditional expectation.
 
 ## Julia API: two kernels side by side
 
@@ -107,15 +107,19 @@ First-order convergence and conservation confirmed.
 ## Limitations & takeaways
 
 - The **chain** is most faithful: integer counts, chance extinction, run-to-run
-  variability shrinking with population size.
+  variability shrinking *relative to* population size.
 - The **map** is its cheap, smooth mean-field shadow — blind to fluctuations.
-- Both are exact only as $\delta t\to0$; a within-step artefact (no infect *and*
-  recover in one step) vanishes as the step shrinks.
+- As $\delta t\to0$ the map tends to the **ODE**, the chain to the
+  **continuous-time Markov chain**: different limits.
+- A within-step artefact (no infect *and* recover in one step) vanishes as the
+  step shrinks.
 - **Takeaway:** discrete models bridge data cadence and continuous theory.
 
 ::: {.notes}
-Stress that the map is literally the expectation of the chain's update, which is
-why the red mean and dashed map coincide. The convergence study measures
+Stress that the map is the chain's expectation for one step from a given state,
+which is why the red mean and dashed map run so close together. They are not the
+same curve: the update is nonlinear, so iterating the expectation is not the same
+as averaging the chain, and the map's peak sits above the ensemble mean. The convergence study measures
 first-order behaviour: halve the step and the error halves. The calculus
 prerequisite derives the same result for forward Euler and is optional
 background. Encourage learners

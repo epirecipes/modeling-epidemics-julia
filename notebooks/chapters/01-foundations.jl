@@ -105,8 +105,10 @@ end
 md"""
 ## Validation
 
-Population is conserved, and when ``R_0 > 1`` the infectious peak sits on the
-threshold ``S/N = 1/R_0``.
+Population is conserved, and when the epidemic grows at first
+(``R_0 S(0)/N > 1``) the infectious peak sits on the threshold ``S/N = 1/R_0``.
+When it does not, ``I`` falls from the start and its largest value is ``I(0)``,
+so the check below is skipped.
 """
 
 # ╔═╡ be6f1bf3-767f-471d-aa43-210e173e33ac
@@ -125,10 +127,13 @@ end
 md"""
 ## Takeaways
 
-- Two numbers — ``R_0`` and the recovery rate — set the peak timing and final size.
-- The epidemic grows only while ``S/N > 1/R_0``; the peak is exactly at equality.
-- `NonlinearSolve` roots the transcendental final-size relation.
-- The deterministic ODE is the *mean* behaviour; later chapters add stochasticity.
+- ``R_0`` and the initial state set the final size; the recovery rate sets the timing.
+- The epidemic grows only while ``S/N > 1/R_0``, so a peak at a positive time sits
+  exactly at equality.
+- `NonlinearSolve` roots the final-size relation, which cannot be rearranged to
+  give the surviving susceptible fraction on its own.
+- The deterministic ODE is the large-population limit, not the exact average of a
+  finite epidemic; later chapters add stochasticity.
 """
 
 # ╔═╡ 51e8bca4-dc6e-49af-a0f1-3aaabc4199b1

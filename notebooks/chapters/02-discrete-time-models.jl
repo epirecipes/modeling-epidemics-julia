@@ -141,11 +141,14 @@ end
 md"""
 ## Takeaways
 
-- The map is literally the expectation of the chain's update, so the red mean
-  and dashed map coincide.
-- The chain shows chance extinction and run-to-run variability that shrink with
-  population size.
-- Both converge to the ODE of *Foundations* as ``\delta t \to 0``.
+- The map is the chain's one-step conditional expectation, so the red mean and
+  dashed map run close together. They do not coincide: the update is nonlinear,
+  so iterating the expectation is not the same as averaging the chain.
+- The chain shows chance extinction and run-to-run variability whose size
+  *relative to the population* shrinks as the population grows.
+- As ``\delta t \to 0`` the map converges to the ODE of *Foundations*, while the
+  chain converges to the continuous-time Markov chain. These are two different
+  limits.
 """
 
 # ╔═╡ 5480ae15-f262-45a1-a701-824ab7f2b365

@@ -89,9 +89,12 @@ begin
     peak_cb = ContinuousCallback((u, t, i) -> dIdt(u, i.p), i -> push!(peak_t, i.t))
     solve(prob_ch03, Tsit5(); callback = peak_cb, reltol = 1e-8, abstol = 1e-8)
 
+    # read peaks off the interpolant: the adaptive solver does not place a step
+    # on the peak, and a lockdown peak can sit exactly at a switching time
+    grid_ch03 = 0.0:0.01:80.0
     (window = (t1_ui, t2_ui),
-     baseline_peak = round(maximum(sol_base[2, :]); digits = 1),
-     lockdown_peak = round(maximum(sol_lock[2, :]); digits = 1),
+     baseline_peak = round(maximum(sol_base(t)[2] for t in grid_ch03); digits = 1),
+     lockdown_peak = round(maximum(sol_lock(t)[2] for t in grid_ch03); digits = 1),
      detected_peak_time = round.(peak_t; digits = 2))
 end
 
@@ -132,10 +135,18 @@ md"""
 ## Takeaways
 
 - `PresetTimeCallback` mutates a parameter mid-solve; `ContinuousCallback`
-  root-finds an event exactly.
-- Dense output means `sol(t)` is a high-order interpolant at *any* time.
-- Earlier and stronger lockdowns flatten the peak more but can shift it later.
-- The same `ODEProblem` scales to stiff solvers, sensitivity, and fitting.
+  root-finds a *smooth* turning point, to root-finding tolerance.
+- A maximum can also sit at a switching time, where the slope jumps from
+  positive to negative without passing through zero. Root-finding misses those,
+  so check ``t_1`` and ``t_2`` as well. Drag ``\beta_\text{lock}`` low and the
+  largest value of ``I`` moves to the moment the lockdown starts.
+- Dense output means `sol(t)` is a high-order interpolant at *any* time, which is
+  where peak values should be read from.
+- A stronger lockdown lowers the largest value of ``I``, but what it delays is
+  the rebound after release, not that maximum.
+- The same `ODEProblem` usually goes to stiff solvers, sensitivity and fitting
+  unchanged; some automatic-differentiation backends want an out-of-place
+  kernel.
 """
 
 # ╔═╡ c184c8c2-28e9-4d56-b09d-e12aa2f21f14
