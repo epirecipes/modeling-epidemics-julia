@@ -10,4 +10,8 @@ The course supports a mixed audience:
 
 Every teaching unit has a detailed book chapter, a Reveal.js slide deck, an interactive Pluto notebook, and two exercises with solutions.
 
-See the [course resources](resources.qmd) for all companion materials.
+Start with [Setting up](setup.qmd) to install Julia, VS Code, Quarto, and the course packages.
+
+Workshop participants: see the [workshop resources](resources.qmd) for the
+chapter, slides, and worksheet of each taught session. Every other chapter links
+its own slides and notebook at the end of the page.

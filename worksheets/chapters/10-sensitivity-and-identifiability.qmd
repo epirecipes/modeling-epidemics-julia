@@ -35,6 +35,27 @@ parameter *vector*, so the order of the entries is what gives the derivatives
 their meaning. Column 1 means $\beta$ because $\beta$ is first.
 :::
 
+::: {.callout-note}
+## Greek letters you can copy
+
+`\gamma` followed by `Tab` gives `γ` at a Julia prompt, but that completion
+often does not fire inside a Quarto file like this one. Copy what you need
+from here, or insert it from the command palette with the Unicode Latex
+extension described in [Setting up](../../setup.qmd#optional-extras).
+
+| Symbol | Reads as | At a Julia prompt |
+|---|---|---|
+| `β` | beta | `\beta` then `Tab` |
+| `γ` | gamma | `\gamma` then `Tab` |
+| `ε` | epsilon | `\varepsilon` then `Tab` |
+| `ρ` | rho | `\rho` then `Tab` |
+| `₀` | subscript zero | `\_0` then `Tab` |
+
+A subscript is its own character too: `R₀` is `R` followed by `₀`.
+
+Plain ASCII names work exactly as well if you prefer them.
+:::
+
 ---
 
 ## Setup

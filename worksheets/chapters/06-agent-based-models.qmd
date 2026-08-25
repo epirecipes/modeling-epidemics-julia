@@ -38,6 +38,28 @@ makes per step and how often anyone can recover. Part B is about what follows
 from that.
 :::
 
+::: {.callout-note}
+## Greek letters you can copy
+
+`\gamma` followed by `Tab` gives `γ` at a Julia prompt, but that completion
+often does not fire inside a Quarto file like this one. Copy what you need
+from here, or insert it from the command palette with the Unicode Latex
+extension described in [Setting up](../../setup.qmd#optional-extras).
+
+| Symbol | Reads as | At a Julia prompt |
+|---|---|---|
+| `Δ` | capital delta | `\Delta` then `Tab` |
+| `β` | beta | `\beta` then `Tab` |
+| `γ` | gamma | `\gamma` then `Tab` |
+| `₀` | subscript zero | `\_0` then `Tab` |
+
+`Δt` is two characters: `Δ` followed by `t`.
+
+A subscript is its own character too: `R₀` is `R` followed by `₀`.
+
+Plain ASCII names work exactly as well if you prefer them.
+:::
+
 ---
 
 ## Setup
