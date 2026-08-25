@@ -37,7 +37,7 @@ recapped in the session that uses it.
 ## Schedule
 
 ::: {.callout-note appearance="simple"}
-Days 1 and 2 run 09:30–17:30; Day 3 runs 09:30–16:00. Each day has a mid-morning or mid-afternoon break and lunch. Day 3 has a longer lunch and a closing block. Ten 90-minute sessions total 15 hours of teaching within 22.5 hours of contact time; the remaining time covers welcome and wrap-up, breaks, and lunch.
+Days 1 and 2 run 09:30–17:00; Day 3 runs 09:30–16:00 with sessions finishing at 13:00 but with lunch and an extended Q&A session until 16:00. Each day has a mid-morning or mid-afternoon break and lunch.
 :::
 
 ### Day 1: Foundations and discrete time
@@ -51,8 +51,7 @@ Days 1 and 2 run 09:30–17:30; Day 3 runs 09:30–16:00. Each day has a mid-mor
 | 13:00–14:00 | Lunch | - |
 | 14:00–15:30 | Session 3 | [Ordinary differential equations](chapters/03-ordinary-differential-equations.html) |
 | 15:30–15:45 | Break | - |
-| 15:45–17:15 | Session 4 | [Discrete-time models](chapters/02-discrete-time-models.html) |
-| 17:15–17:30 | Day wrap-up and self-study pointers | - |
+| 15:45–17:00 | Session 4 | [Discrete-time models](chapters/02-discrete-time-models.html) |
 
 ### Day 2: Stochasticity, observation, and sensitivity
 
@@ -75,32 +74,6 @@ Days 1 and 2 run 09:30–17:30; Day 3 runs 09:30–16:00. Each day has a mid-mor
 | 11:15–11:30 | Break | - |
 | 11:30–13:00 | Session 2 | [Agent-based models](chapters/06-agent-based-models.html) |
 | 13:00–14:30 | Lunch | - |
-| 14:30–16:00 | Self-study map, closing, and extended Q&A | - |
+| 14:30–16:00 | Closing and extended Q&A | - |
 
-## Self-study
-
-The chapters and appendices listed below are not part of the workshop, but they can be organised as follows:
-
-**Background** : Optional further material behind the workshop sessions. Neither is a prerequisite.
-
-- [Probability and stochastic processes](prerequisites/02-probability-and-stochastic-processes.html) : Waiting times, memorylessness, and the binomial chain used in the stochastic sessions.
-- [Calculus and numerical methods](prerequisites/03-calculus-and-numerical-methods.html) : The Euler method and order of convergence behind the ODE session.
-
-**Connecting models to data, in depth** : Although we suggest that people interested in parameter estimation and Bayesian inference should look at the "Model Fitting and Inference for Infectious Disease Dynamics" course, the following three chapters provide a more detailed look at the topic.
-
-- [Frequentist parameter estimation](chapters/08-parameter-estimation.html)
-- [Bayesian inference](chapters/09-bayesian-inference.html)
-- [Data-to-decision capstone](chapters/12-data-to-decision-capstone.html)
-
-**Advanced extensions** : Each chapter builds on a taught session.
-
-- [Delay differential equations](appendices/01-delay-differential-equations.html) : Generalises the memoryless recovery assumption used in the ODE, jump-process, and SDE sessions.
-- [Stochastic delay differential equations](appendices/02-stochastic-delay-differential-equations.html) : Recombines that fixed delay with the stochastic differential equations session.
-- [Discrete-event simulation](appendices/03-discrete-event-simulation.html) : Combines the jump-process and agent-based sessions into one individual-level, continuously-timed simulation.
-- [Universal differential equations](appendices/04-universal-differential-equations.html) and [Surrogate and emulator models](appendices/07-surrogate-models.html) : Scientific machine learning.
-- [Finite-state projection](appendices/05-finite-state-projection.html) : Extends the jump-process session by solving directly for the probability distribution instead of simulating trajectories.
-- [Probabilistic numerical integration](appendices/06-probabilistic-numerical-integration.html) : Extends the ODE session by quantifying the solver's own numerical uncertainty.
-- [Advanced optimal control](appendices/08-advanced-optimal-control.html) : Extends the interventions session.
-- [Model composition and structured populations](appendices/09-model-composition.html) : Extends the stochastic differential equations session, composing structured, multi-group populations.
-
-See the [course resources page](resources.qmd) for book, slide, and notebook links grouped by track.
+See the [workshop resources page](resources.qmd) for the book, slide, worksheet, and notebook links of each taught session, grouped by day.

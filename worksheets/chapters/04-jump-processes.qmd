@@ -28,14 +28,35 @@ day. Run `git pull` to collect them.
 
 **New to Julia?** The
 [Julia essentials worksheet](../prerequisites/01-julia-essentials.qmd)
-opens with an R-to-Julia table, and a reminder of how to type `κ`, `σ` and `γ`.
-The [Julia essentials chapter](../../prerequisites/01-julia-essentials.qmd) has
-the full table.
+opens with an R-to-Julia table, and the
+[Julia essentials chapter](../../prerequisites/01-julia-essentials.qmd) has the
+full one.
 
 ::: {.callout-note}
 The next session replaces these individual events with a continuous
 approximation. You are not being asked to judge which is better yet; today is
 about simulating the events exactly.
+:::
+
+::: {.callout-note}
+## Greek letters you can copy
+
+`\gamma` followed by `Tab` gives `γ` at a Julia prompt, but that completion
+often does not fire inside a Quarto file like this one. Copy what you need
+from here, or insert it from the command palette with the Unicode Latex
+extension described in [Setting up](../../setup.qmd#optional-extras).
+
+| Symbol | Reads as | At a Julia prompt |
+|---|---|---|
+| `β` | beta | `\beta` then `Tab` |
+| `γ` | gamma | `\gamma` then `Tab` |
+| `κ` | kappa | `\kappa` then `Tab` |
+| `σ` | sigma | `\sigma` then `Tab` |
+| `₀` | subscript zero | `\_0` then `Tab` |
+
+A subscript is its own character too: `R₀` is `R` followed by `₀`.
+
+Plain ASCII names work exactly as well if you prefer them.
 :::
 
 ---
@@ -334,7 +355,7 @@ across branching processes or infectious-period distributions.
 Two further approximations separate it from what the code measures. This model
 has 999 susceptibles, not infinitely many, and the code below scores an outbreak
 as faded if fewer than 20 people were ever infected rather than asking whether
-transmission truly stopped. The run is a check on how good an approximation
+transmission stopped. The run is a check on how good an approximation
 $1/R_0$ is here.
 
 ```{julia}

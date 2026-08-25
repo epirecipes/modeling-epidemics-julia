@@ -72,13 +72,42 @@ this is exactly the kind of thing an instructor can fix in ten seconds.
 Two Julia-specific conventions used throughout the course:
 
 - **Greek letters are ordinary variable names.** We write `β`, `γ`, `λ` because
-  they match the equations. Type them with a backslash and Tab: `\beta`↹ gives
-  `β`, `\gamma`↹ gives `γ`, `\lambda`↹ gives `λ`. Plain ASCII names work exactly
-  as well if you prefer them.
+  they match the equations. At a Julia prompt a backslash and Tab types them:
+  `\beta`↹ gives `β`. Inside this Quarto file that completion often does not
+  fire, so the note below gives you the symbols to copy. Plain ASCII names work
+  exactly as well if you prefer them.
 - **A trailing `!`** (as in `sir_ode!`) marks a function that *modifies* one or
   more of its arguments. It may still return something useful as well — `push!`
   hands back the array it just grew. Nothing enforces the convention; it is a
   promise to the reader.
+
+::: {.callout-note}
+## Greek letters you can copy
+
+`\beta` followed by `Tab` gives `β` at a Julia prompt, but that completion
+often does not fire inside a Quarto file like this one. There are two ways
+round it.
+
+**Copy them from here.**
+
+| Symbol | Reads as | At a Julia prompt |
+|---|---|---|
+| `β` | beta | `\beta` then `Tab` |
+| `γ` | gamma | `\gamma` then `Tab` |
+| `δ` | delta | `\delta` then `Tab` |
+| `λ` | lambda | `\lambda` then `Tab` |
+
+`δt` is two characters: `δ` followed by `t`.
+
+**Or insert them from the command palette.** Install the **Unicode Latex**
+extension: open the Extensions panel, search for `unicode-latex`, and install
+the one published by *Omer Sheikh*. Then press `Cmd`/`Ctrl`+`Shift`+`P`, type
+`unicode`, choose **Unicode: Insert Math Symbol**, type the name of the symbol
+you want, and press `Enter`. Nothing has to be configured per symbol.
+
+Plain ASCII names work exactly as well if you prefer them.
+[Setting up](../../setup.qmd#optional-extras) has the install steps in full.
+:::
 
 ---
 

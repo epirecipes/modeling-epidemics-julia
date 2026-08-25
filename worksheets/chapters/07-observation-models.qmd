@@ -39,6 +39,25 @@ are in the book for self-study, and the closing session names an external course
 that covers them properly.
 :::
 
+::: {.callout-note}
+## Greek letters you can copy
+
+`\gamma` followed by `Tab` gives `γ` at a Julia prompt, but that completion
+often does not fire inside a Quarto file like this one. Copy what you need
+from here, or insert it from the command palette with the Unicode Latex
+extension described in [Setting up](../../setup.qmd#optional-extras).
+
+| Symbol | Reads as | At a Julia prompt |
+|---|---|---|
+| `β` | beta | `\beta` then `Tab` |
+| `γ` | gamma | `\gamma` then `Tab` |
+| `λ` | lambda | `\lambda` then `Tab` |
+| `μ` | mu | `\mu` then `Tab` |
+| `ρ` | rho | `\rho` then `Tab` |
+
+Plain ASCII names work exactly as well if you prefer them.
+:::
+
 ---
 
 ## Setup
@@ -146,8 +165,8 @@ fig
 ### A1. Match the peak, not the epidemic
 
 The dashed expectation is exactly the latent curve multiplied by $\rho$, so it
-keeps the latent curve's shape and timing. Could a genuinely smaller epidemic
-produce the same peak height under full reporting? The code below searches over
+keeps the latent curve's shape and timing. Could a smaller epidemic produce the
+same peak height under full reporting? The code below searches over
 $\beta$ while keeping $N$, the initial state, $c$ and $\gamma$ fixed.
 
 It matches the peak of the **expected** reported curve, not the random maximum of
@@ -252,7 +271,7 @@ peak_day = argmax(expected)
 
 # TODO: fill this list with three values of r, one of which you work out rather
 # than guess. Using Var/E = 1 + μ/r from above, which r makes the variance on the
-# peak day exactly twice the mean? Add one clearly smaller and one clearly larger.
+# peak day exactly twice the mean? Add one well below it and one well above.
 dispersions = Float64[]
 
 for r in dispersions
@@ -356,7 +375,7 @@ Averaging to one keeps the overall total roughly unchanged, but only roughly.
 Exact cancellation would need the weights to be uncorrelated with incidence, and
 they are not: while the epidemic is growing, the later days of each week carry
 more cases than the earlier ones, so a low weekend weight removes more than its
-share. Keep an eye on how close the two totals actually come.
+share. Keep an eye on how close the two totals come.
 
 ```{julia}
 #| label: ws-ch07-c1

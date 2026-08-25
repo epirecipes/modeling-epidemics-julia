@@ -6,6 +6,7 @@ project:
     - quarto render slides
   render:
     - index.qmd
+    - setup.qmd
     - workshop.qmd
     - prerequisites/*.qmd
     - chapters/*.qmd
@@ -16,12 +17,15 @@ project:
     - data/**
     - notebook-exports/**
     - notebooks/**/*.jl
+    - worksheets/prerequisites/*.qmd
+    - worksheets/chapters/*.qmd
 
 book:
   title: "Modeling Epidemics with Julia"
   page-navigation: true
   chapters:
     - index.qmd
+    - setup.qmd
     - workshop.qmd
     - part: "Prerequisites"
       chapters:
