@@ -61,13 +61,13 @@ The baseline (no intervention) curve is shown for comparison.
 """
 
 # ╔═╡ 3bce08c3-5d3e-421c-bba1-9f148a66769b
-@bind βlock_ui Slider(0.010:0.005:0.050; default = 0.025, show_value = true)
+@bind βlock_ui PlutoUI.Slider(0.010:0.005:0.050; default = 0.025, show_value = true)
 
 # ╔═╡ 194bb316-5374-473a-9ac9-9a9a4e153851
-@bind t1_ui Slider(0.0:2.0:30.0; default = 10.0, show_value = true)
+@bind t1_ui PlutoUI.Slider(0.0:2.0:30.0; default = 10.0, show_value = true)
 
 # ╔═╡ 803c1a74-252c-4216-a048-1cbcfaa58d0b
-@bind window_ui Slider(5.0:5.0:40.0; default = 20.0, show_value = true)
+@bind window_ui PlutoUI.Slider(5.0:5.0:40.0; default = 20.0, show_value = true)
 
 # ╔═╡ 7a104907-389f-4367-bf1e-fa812c66d358
 begin
@@ -151,6 +151,7 @@ md"""
 
 # ╔═╡ c184c8c2-28e9-4d56-b09d-e12aa2f21f14
 (course_unit = "ch03-ordinary-differential-equations", status = "complete")
+
 # ╔═╡ Cell order:
 # ╠═515e9f35-fe32-4a27-9c47-31342a750cf6
 # ╠═ae91bcaf-6f7b-4ea6-ba39-f64a0c5195c4

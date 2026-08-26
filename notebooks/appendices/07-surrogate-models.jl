@@ -46,10 +46,10 @@ population-level.
 """
 
 # ╔═╡ 74ba7e3a-7f90-4726-91a1-a910f72eb82f
-@bind n_train Slider(6:2:24; default = 12, show_value = true)
+@bind n_train PlutoUI.Slider(6:2:24; default = 12, show_value = true)
 
 # ╔═╡ 4362acc2-cf0b-480e-93c5-019857b3db56
-@bind selected_beta Slider(0.02:0.001:0.08; default = 0.05, show_value = true)
+@bind selected_beta PlutoUI.Slider(0.02:0.001:0.08; default = 0.05, show_value = true)
 
 # ╔═╡ 5af2d6de-6776-4c37-9398-cd4ad40e5b3b
 begin

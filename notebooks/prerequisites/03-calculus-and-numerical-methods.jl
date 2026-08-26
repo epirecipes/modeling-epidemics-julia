@@ -88,7 +88,7 @@ integrator's own exact solution at the final time ``t=40``.
 @bind method_ui Select(["euler" => "Forward Euler", "midpoint" => "Midpoint (RK2)"]; default = "euler")
 
 # ╔═╡ 5a3f1dce-8efb-42c8-96ee-fccc8606e557
-@bind logstep_ui Slider(3:9; default = 6, show_value = true)
+@bind logstep_ui PlutoUI.Slider(3:9; default = 6, show_value = true)
 
 # ╔═╡ d4306274-d0ab-4050-b271-be3737b543e7
 begin
@@ -150,6 +150,7 @@ md"""
 
 # ╔═╡ 3e2a2d44-22b6-4636-b210-265106dff41c
 (course_unit = "p03-calculus-and-numerical-methods", status = "complete")
+
 # ╔═╡ Cell order:
 # ╠═fa144ee6-6cb3-4a3e-b2bf-af8d2dda1505
 # ╠═bf981898-c2fd-40d5-ba7d-20b9befc73f1

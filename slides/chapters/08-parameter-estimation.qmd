@@ -101,8 +101,8 @@ DataFrame(parameter = ["i₀", "β"], truth = [0.01, 0.05], mle = round.(θ̂; d
 
 ::: {.notes}
 The MLE recovers the generating parameters and both 95% profile intervals cover
-the truth. Sample counts and grid are deliberately small so the deck renders
-quickly in CI.
+the truth. Sample counts and grid are small so the deck runs quickly; a real
+profile would use a finer grid.
 :::
 
 ## Profile log-likelihoods

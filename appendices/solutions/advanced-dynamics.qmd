@@ -200,7 +200,7 @@ At seed 4 specifically, the minimum state does happen to improve as `dt`
 shrinks — but a single seed is not evidence of a general trend, because
 changing `dt` under a *fixed* global seed does not refine the *same*
 Wiener path; it consumes a different number of Gaussian draws from the RNG
-stream and so produces a **different realization altogether**. A fifteen-seed
+stream and so produces a **different realisation altogether**. A fifteen-seed
 ensemble at each step size makes this explicit:
 
 ```{julia}
@@ -375,7 +375,7 @@ dde_peak, dde_idx = findmax(sol_dde[2, :])
  dde_peak = round(dde_peak; digits = 1), dde_peak_t = round(sol_dde.t[dde_idx]; digits = 2))
 ```
 
-The single stochastic `EventQueueABM` realization peaks close to — a bit
+The single stochastic `EventQueueABM` realisation peaks close to — a bit
 below, as expected for one finite-population sample — the deterministic
 DDE's peak, and at a comparable time. This individual-level construction
 reaches the same fixed-delay assumption **without a history function**: no
@@ -416,10 +416,7 @@ end
 @resumable function live(sim::Simulation, person::BedPerson, m::BedModel, rng)
     while person.status == :S
         @yield timeout(sim, rand(rng, Exponential(1 / m.c)))
-        alter = person
-        while alter === person
-            alter = rand(rng, m.people)
-        end
+        alter = rand(rng, m.people)
         if alter.status == :I && rand(rng) < m.β
             person.status = :I
             push!(m.Ia, count(pp -> pp.status == :I, m.people))

@@ -161,8 +161,9 @@ We draw three independent chains of 500 iterations each. Multiple chains are
 what make the $\hat R$ diagnostic meaningful, and NUTS uses automatic
 differentiation through the ODE solver, enabled here by
 [SciMLSensitivity.jl](https://docs.sciml.ai/SciMLSensitivity/stable/). The
-`StableRNG` seed makes the run reproducible; the sample counts are deliberately
-modest so the chapter renders quickly in continuous integration.
+`StableRNG` seed makes the run reproducible. The sample counts here are modest so
+that the chapter runs in seconds; a real analysis wants more, and $\hat{R}$ with
+the effective sample size are what tell you when you have enough.
 
 ```{julia}
 #| label: sample
@@ -263,7 +264,7 @@ overly tight priors can dominate a small dataset, while flat priors on positive
 parameters can let the sampler wander into regions where the ODE misbehaves,
 which is why we guarded the solve and floored the rate. NUTS is far more
 efficient than random-walk MCMC, but each leapfrog step re-solves the ODE and
-differentiates through it, so the method is markedly more expensive than the
+differentiates through it, so the method is more expensive than the
 optimisation of Chapter 8 — the small sample counts here favour speed over the
 precision a production analysis would demand. The non-identifiability of $\beta$
 and $c$ noted previously persists: the posterior for $\beta$ is conditional on

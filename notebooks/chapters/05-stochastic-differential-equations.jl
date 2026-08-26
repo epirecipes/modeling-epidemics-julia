@@ -28,11 +28,17 @@ Gaussian noise.  The two noise columns below correspond to infection and
 recovery, so their stoichiometry preserves \(S+I+R\).
 """
 
-# ╔═╡ 9d41926f-e1e8-4c26-b1f0-3911f7c027d6
+# ╔═╡ aebf4713-408a-4ee9-9138-d43de7f77cce
+@bind step_choice PlutoUI.Slider(1:3; default = 2, show_value = false)
+
+# ╔═╡ 092c8aa7-ea46-4482-b5ff-6817ef06fa60
+@bind transmission PlutoUI.Slider(0.02:0.01:0.10; default = 0.05, show_value = true)
+
+# ╔═╡ 4c7f18d1-77c6-4a41-8e6a-2e6c58c9086f
+@bind horizon PlutoUI.Slider(10:5:40; default = 40, show_value = true)
+
+# ╔═╡ 5366a771-24fd-4727-80ca-4b02388f651a
 begin
-    @bind step_choice PlutoUI.Slider(1:3; default = 2, show_value = false)
-    @bind transmission PlutoUI.Slider(0.02:0.01:0.10; default = 0.05, show_value = true)
-    @bind horizon PlutoUI.Slider(10:5:40; default = 30, show_value = true)
     dt_options = (0.01, 0.02, 0.05)
     dt = dt_options[step_choice]
 end
@@ -138,7 +144,10 @@ chemical-Langevin approximation is no longer biologically interpretable.
 # ╠═29190e7d-56ee-4647-b7b1-fbb2f376f62d
 # ╠═9db38bed-cd2e-4947-b3b4-8cde0c84a3cb
 # ╟─6d4136f6-94ce-4d85-8d95-e81e0b3e38d4
-# ╠═9d41926f-e1e8-4c26-b1f0-3911f7c027d6
+# ╠═aebf4713-408a-4ee9-9138-d43de7f77cce
+# ╠═092c8aa7-ea46-4482-b5ff-6817ef06fa60
+# ╠═4c7f18d1-77c6-4a41-8e6a-2e6c58c9086f
+# ╠═5366a771-24fd-4727-80ca-4b02388f651a
 # ╠═c4cb108c-38c4-48c1-a5c2-3cfa26bdb7e0
 # ╠═f96fe6ed-d5ee-471a-9cac-5b7d24fb4aec
 # ╠═3e4cffab-56fc-4be7-bb54-5fad730f5de9

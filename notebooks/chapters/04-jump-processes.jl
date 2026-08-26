@@ -27,12 +27,14 @@ controls to change the epidemic while the seeded simulation remains
 reproducible.
 """
 
-# ╔═╡ 2505a9fd-c001-4b95-b59a-bfe3bd6ecbf2
-begin
-    @bind transmission PlutoUI.Slider(0.02:0.01:0.10; default = 0.05, show_value = true)
-    @bind initial_infected PlutoUI.Slider(1:20; default = 10, show_value = true)
-    @bind horizon PlutoUI.Slider(10:5:60; default = 40, show_value = true)
-end
+# ╔═╡ 2c2e7ffd-a912-4ac5-b32d-4f580554c884
+@bind transmission PlutoUI.Slider(0.02:0.01:0.10; default = 0.05, show_value = true)
+
+# ╔═╡ d420f419-03f7-41f0-8ff4-82e77087b8a5
+@bind initial_infected PlutoUI.Slider(1:20; default = 10, show_value = true)
+
+# ╔═╡ 8cc7d005-4068-423e-b298-c158477a057d
+@bind horizon PlutoUI.Slider(10:5:60; default = 40, show_value = true)
 
 # ╔═╡ 6d17e08c-7db3-43ae-b8bc-d3a199c912ba
 md"""
@@ -121,7 +123,9 @@ this event history, not create the events.
 # ╠═7e6f32ef-1e69-4c5a-a9b4-9aa8d4e91f5a
 # ╠═0b6bb2cf-f4db-41dd-9afc-20cba6de6f4d
 # ╟─8e28d52c-d88d-4de8-9e8c-2d4e8d60999b
-# ╠═2505a9fd-c001-4b95-b59a-bfe3bd6ecbf2
+# ╠═2c2e7ffd-a912-4ac5-b32d-4f580554c884
+# ╠═d420f419-03f7-41f0-8ff4-82e77087b8a5
+# ╠═8cc7d005-4068-423e-b298-c158477a057d
 # ╟─6d17e08c-7db3-43ae-b8bc-d3a199c912ba
 # ╠═69e9f825-a8bc-4cf1-bd22-d99edc15bb1c
 # ╠═d4207f34-b1dd-4f70-81f8-873ddc33e0fd

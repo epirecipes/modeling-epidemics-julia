@@ -56,8 +56,8 @@ emulator = RadialBasis(β_train, y_train, lb, ub; rad=cubicRadial())
 ```
 
 ::: {.notes}
-The Latin-hypercube design is deliberately small so the approximation error is
-visible and the example remains quick in CI. `RadialBasis` is callable in
+The Latin-hypercube design is small so the approximation error is large enough
+to see and the example stays quick to run. `RadialBasis` is callable in
 Surrogates.jl 7; `cubicRadial()` is the current constructor form.
 :::
 

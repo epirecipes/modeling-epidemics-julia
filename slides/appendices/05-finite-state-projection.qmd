@@ -61,10 +61,10 @@ with $\mathbf{Q}$ the **sparse CTMC generator**.
 > build $\mathbf{Q}$ **transparently** — the method and results are identical.
 
 ::: {.notes}
-This is the honesty slide. The compatibility gap is real and the "fix" would be
-monkey-patching a package's private namespace, which we refuse. The manual
-sparse-generator assembly is a few lines and fully within the standard
-SciML/Julia stack.
+The compatibility gap is real: working around it means reaching into a package's
+private namespace at runtime, which is not something to teach. Building the
+generator by hand takes a few lines, stays inside the standard SciML stack, and
+shows what the package would have assembled anyway.
 :::
 
 ## Assembling the sparse generator

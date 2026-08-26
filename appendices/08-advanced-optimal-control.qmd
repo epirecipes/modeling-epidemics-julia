@@ -197,24 +197,23 @@ discretization error, and Ipopt reports a local solution for this nonlinear
 problem. The budget, bounds, and objective are stylized; real interventions
 have delays, costs, compliance, observation feedback, and integer decisions.
 
-The old `../sir-julia/tutorials/sddp/sddp.jmd` example is intentionally not copied
-as runnable code here. It places SIR updates containing exponentials and
-products of state and control variables inside `SDDP.LinearPolicyGraph` using
-`@NLconstraint`. Current SDDP.jl documents policy graphs for multistage
-linear, mixed-integer linear, and supported quadratic formulations; arbitrary
-nonlinear epidemic dynamics are outside that supported class. Presenting that
-old script as current would be misleading. A valid SDDP treatment would first
-construct a linear or mixed-integer approximation with an explicit error
-analysis, or use a different nonlinear stochastic-control method. See the
+Stochastic dual dynamic programming is a natural thing to reach for next, and it
+does not apply here as it stands. SDDP.jl documents policy graphs for multistage
+linear, mixed-integer linear, and supported quadratic formulations. SIR updates
+put exponentials and products of state and control variables in the constraints,
+which falls outside that class. A valid SDDP treatment would first construct a
+linear or mixed-integer approximation with an explicit error analysis, or use a
+different nonlinear stochastic-control method. See the
 [current SDDP manual](https://sddp.dev/stable/) and
 [@dowson2021] for the supported decomposition setting.
 
 For the continuous formulation used here, consult the
 [InfiniteOpt quick-start guide](https://infiniteopt.github.io/InfiniteOpt.jl/stable/tutorials/quick_start/)
 and the package's [official documentation](https://infiniteopt.github.io/InfiniteOpt.jl/stable/).
-The one-lockdown structural result discussed by Britton and Leskelä
-[@britton2022] is useful context, but it is not used as a fabricated
-closed-form validation of this collocated solve.
+Britton and Leskelä [@britton2022] derive a one-lockdown structural result worth
+reading alongside this appendix. It describes a different problem, so it is
+context for the shape of the answer rather than a closed-form check on the
+solve above.
 
 ## Exercises
 

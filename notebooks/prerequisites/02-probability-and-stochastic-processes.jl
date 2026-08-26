@@ -83,13 +83,13 @@ md"""
 """
 
 # ╔═╡ 47a8f9de-5695-42a3-b207-e37a466263b4
-@bind nsims_ui Slider(50:50:400; default = 200, show_value = true)
+@bind nsims_ui PlutoUI.Slider(50:50:400; default = 200, show_value = true)
 
 # ╔═╡ 7e5d72b2-5c34-488c-ab6d-8f3426859919
-@bind c_ui Slider(4.0:1.0:14.0; default = 10.0, show_value = true)
+@bind c_ui PlutoUI.Slider(4.0:1.0:14.0; default = 10.0, show_value = true)
 
 # ╔═╡ 8045f3d4-d63e-4eb0-a9fa-51d93f48f3a2
-@bind δt_ui Slider([1.0, 0.5, 0.25]; default = 1.0, show_value = true)
+@bind δt_ui PlutoUI.Slider([1.0, 0.5, 0.25]; default = 1.0, show_value = true)
 
 # ╔═╡ 1444c183-bf9c-460d-abfb-db9e69df5bb6
 begin
@@ -149,6 +149,7 @@ md"""
 
 # ╔═╡ ca537bf4-2518-4e57-9034-8bfdf48ecc47
 (course_unit = "p02-probability-and-stochastic-processes", status = "complete")
+
 # ╔═╡ Cell order:
 # ╠═0d39fe3a-5ff5-4462-8f95-c4cabd4678b6
 # ╠═6113098c-3003-402f-8ffd-17a711bddbb4

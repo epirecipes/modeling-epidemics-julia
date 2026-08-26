@@ -246,12 +246,18 @@ population_error = maximum(abs.(vec(sum(abm_states; dims = 1)) .- N))
 @assert all(diff(abm_states[1, :]) .<= 0)
 @assert all(diff(abm_states[3, :]) .>= 0)
 (; population_error, initial_counts = abm_states[:, 1],
-   final_counts = abm_states[:, end])
+   final_counts = abm_states[:, end],
+   peak_abm = maximum(abm_states[2, :]),
+   peak_ode = round(maximum(ode_states[2, :]); digits = 1),
+   largest_gap = round(Int, maximum(abs.(abm_states[2, :] .- ode_states[2, :]))))
 ```
 
-One realization can differ substantially from the ODE. To compare levels
-rather than a single random path, run a small deterministic ensemble. The
-model constructor gives each replicate its own seeded random stream.
+This realization peaks at 188 infectious where the ODE peaks at 158.5, about
+19% higher and 0.9 days earlier, and the largest gap between the two curves is
+31 individuals. One path is not the mean. To compare levels rather than a
+single random path, run a small ensemble of seeded replicates. The runs stay
+stochastic; the seeds only make them reproducible, and the model constructor
+gives each replicate its own random stream.
 
 ```{julia}
 #| label: code-ch06-ensemble
@@ -279,13 +285,25 @@ The comparison is intentionally modest: 16 paths are enough to reveal the
 relationship and keep a teaching render quick, but not enough for a narrow
 confidence interval.
 
-The ensemble mean is not the same object as the ODE solution, and at fixed
-$N$ the difference does not vanish with more replicates or a smaller
-$\Delta t$.
+The ensemble mean is not the same object as the ODE solution, and neither
+adjustment closes the gap on its own. At fixed $N$, adding replicates shrinks
+the Monte Carlo error but leaves the finite-population effects unchanged. As
+$\Delta t\to 0$ the frozen-step error vanishes and the stepped ABM converges
+to the continuous-time stochastic process for that same finite population. Its
+ensemble mean converges to that process's expected trajectory, which is
+generally not the ODE; recovering the ODE also requires a large-population
+limit.
 Individual epidemics take off at random times, so their peaks are spread over
-several time units; averaging them at fixed clock time flattens the mean curve
-below any single path's height. Averaging is therefore not interchangeable
-with taking a maximum, which Exercise 2 makes quantitative.
+several time units. Averaging at fixed clock time therefore lowers the peak of
+the mean curve relative to the mean of the individual pathwise peaks:
+
+$$
+\max_t \bar I(t) \le \overline{\max_t I(t)}.
+$$
+
+That orders the two summaries, not the mean curve against every path: a
+replicate that fades out early can peak below the mean curve. Averaging is not
+interchangeable with taking a maximum, which Exercise 2 makes quantitative.
 
 ## Interpretation and limitations
 
@@ -297,11 +315,15 @@ cannot represent. The price is computational and inferential: agent rules
 need careful calibration, contact mechanisms can be difficult to observe, and
 random seeds do not remove structural uncertainty.
 
-Our synchronous two-phase update avoids an order artifact, but the contact
-rule still samples with replacement and allows self-contact. For $N=1000$
-this is a small approximation; a network model would make contact constraints
-explicit. The model is also discrete in time, so $\Delta t$ should be
-reduced and results checked for timestep sensitivity. Agents.jl's
+Our synchronous two-phase update avoids an order artifact. The contact rule
+samples with replacement, so an agent can draw itself as a contact. A
+susceptible cannot infect itself, so that draw changes nothing, and keeping it
+in the pool is what makes the chance of drawing an infectious contact exactly
+$I_t/N$, the value used in Equation @eq-abm-infection. Excluding it would give
+$I_t/(N-1)$ instead. A network model would replace this convention with
+explicit contact constraints. The model is also discrete in time, so
+$\Delta t$ should be reduced and results checked for timestep sensitivity.
+Agents.jl's
 [agent definition documentation](https://juliadynamics.github.io/Agents.jl/v7.0.3/agents/)
 and [data collection documentation](https://juliadynamics.github.io/Agents.jl/v7.0.3/data/)
 describe the v7 `@agent`, `StandardABM`, and `run!` APIs. The framework and
@@ -345,29 +367,88 @@ necessary.
 
 ### Exercise 2 {#ch06-ex2}
 
-Run the ABM with $\Delta t=0.2$, $0.1$, and $0.05$, keeping the physical time
-horizon fixed at 30 time units. For each value, report two different
-statistics of the infectious peak:
+Run the ABM with $\Delta t=0.2$, $0.1$, and $0.05$, over the same physical
+time span in each case. For each value, report two different statistics of
+the infectious peak:
 
 1. the peak of the ensemble-mean trajectory, $\max_t \bar I(t)$; and
 2. the mean and standard deviation of the per-replicate peaks,
    $\overline{\max_t I(t)}$.
 
+Choose the stopping rule before you name either number a peak. At $t=30$ the
+epidemic is still going, with the ODE holding about 57.7 infectious, so a
+maximum recorded by then may well be the eventual peak, but nothing in the run
+so far establishes that: the path can still climb after the horizon ends, and
+so can the ensemble-mean curve. To report full-epidemic peaks, run every
+replicate for at least 30 time units and carry on until $I=0$. Cap the number
+of steps and raise an error if the cap is ever reached, so that a run which
+fails to finish is reported rather than cut short in silence. Replicates then
+stop at different times, so pad the finished trajectories with $I=0$ onto a
+common time grid before averaging them. If you stop at 30 instead, report both
+numbers as window maxima over $0\le t\le 30$ and name them that way, not as
+full-epidemic peaks.
+
 The deterministic ODE has $R_0=2$, $I_\text{peak}\approx158.5$ at
-$t\approx17.5$. Compare both statistics against that value and explain why
-they differ from each other and why one lies above the ODE peak and the other
-below it. State which part of each gap is attributable to the timestep and
-which is not.
+$t\approx17.5$. Compare both statistics with that value, report whether each
+lies above or below it, and explain the differences you find. The inequality
+above orders the two stochastic summaries against each other; it says nothing
+about where either one sits relative to the ODE, so that has to come from your
+numbers.
+
+One part of each difference can be pinned down. Build the frozen-step
+mean-field map: apply the ABM's own per-step probabilities to deterministic
+mean-field counts, holding the infection probability at its start-of-step
+value for the whole step. This map is not the exact expectation of the ABM, so
+be careful about what it does and does not establish. The gap between its peak
+and the ODE peak isolates the frozen-step discrepancy, measured inside the
+mean-field approximation. The gap that remains between the ABM and the map
+holds everything else: the finite population, the spread of peak times across
+replicates, stochastic maximization (taking a maximum along a noisy path pulls
+the result upward), and whatever interactions those have with the timestep.
 
 Report a standard error for *both* estimates. These need different methods:
 the per-replicate peaks are independent draws, so their mean has the usual
 $\mathrm{sd}/\sqrt{n}$ standard error, but the peak of the ensemble mean is a
-maximum taken over an averaged curve and has no such formula, so resample whole
-replicate trajectories with replacement and recompute it on each bootstrap
-sample. Sixteen replicates give a standard error of roughly $24/\sqrt{16}=6$
-on the mean peak, which is larger than the differences between these three
-timesteps, so treat 16 as a quick exploratory minimum and use substantially
-more replicates before drawing a firm conclusion about $\Delta t$.
+maximum taken over an averaged curve, and that same $\mathrm{sd}/\sqrt{n}$
+formula does not apply to it. Resample whole replicate trajectories with
+replacement instead, and recompute the peak on each bootstrap sample.
+
+In an initial 64-replicate batch, the standard deviation of the per-replicate
+peaks was about 24 to 30 people across the three timesteps. With
+16 replicates that is a standard error of roughly 6 to 7.5 people on a single
+mean. Comparing two timesteps is coarser still: the standard error of the
+difference is about 8.6 to 9.7 people for those same three standard
+deviations, which cannot settle a gap of a few people either way. Treat 16 as
+a quick exploratory minimum.
+
+To plan a longer run, work backwards from the half-width you are willing to
+accept. The number of independent replicates each timestep needs is roughly
+
+$$
+n\approx 2\left(\frac{1.96\,\sigma}{h}\right)^2,
+$$
+
+where $\sigma$ is the standard deviation of the per-replicate peaks and $h$
+is the half-width you want for the approximate 95% confidence interval of the
+difference. The factor of two is there because both estimates carry error.
+The formula assumes the same number of replicates at each timestep and one
+$\sigma$ standing in for both, so it is a planning tool rather than an
+analysis of the runs you end up with. Taking $\sigma=30$ as a cautious
+planning value, $h=5$ people needs
+about 280 replicates per timestep and $h=2$ about 1730. Treat those two
+counts as starting estimates rather than fixed budgets. The value of $\sigma$
+depends on the timestep and on the population size, so run a first batch,
+measure $\sigma$ from it, and put your own value back into the formula before
+committing to a long run.
+
+Reusing the same seeds across timesteps allows a paired comparison instead,
+which is cheaper only if the paired peak differences turn out to vary less than
+the peaks themselves. Two timesteps consume random numbers in different orders,
+so that correlation is not guaranteed. Measure the standard deviation of the
+paired differences on a first batch of runs and use it in place of $\sigma$
+above, dropping the factor of two. That factor is not needed here because the
+paired differences already carry the variation from both simulations, so it
+would count it twice.
 
 ## Companion materials
 

@@ -60,7 +60,7 @@ md"""**Negative-binomial dispersion r** (smaller = more overdispersed):"""
 
 # ╔═╡ 653b11de-f8d1-452d-9a86-44a3e42e2f9a
 @bind dispersion PlutoUI.Select([1.0 => "r = 1", 5.0 => "r = 5", 10.0 => "r = 10",
-    50.0 => "r = 50 (≈ Poisson)"]; default = 10.0)
+    50.0 => "r = 50", 500.0 => "r = 500 (≈ Poisson)"]; default = 10.0)
 
 # ╔═╡ ba54c943-4e2c-4e71-9f15-a772e1732b7e
 md"""**Random seed:**"""

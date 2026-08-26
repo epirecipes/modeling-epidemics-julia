@@ -74,18 +74,74 @@ fig
 
 The reported total is about $40\%$ of the latent total, matching $\rho$. The
 reported curve has the *same temporal shape* as the latent one but a smaller
-amplitude, so it looks like a smaller epidemic. Crucially, the expected report on
-day $t$ is $\rho\, x_t(\beta)$: the reporting fraction and the transmission
-probability both act as multiplicative scalings of the observed counts. A change
-in $\rho$ can be compensated by a change in $\beta$ that rescales incidence, so
-the two cannot be separated from the reported series alone — a practical
-identifiability problem taken up in Chapter 10.
+amplitude, so it looks like a smaller epidemic.
+
+That resemblance is what tempts the conclusion that $\rho$ and $\beta$ are
+interchangeable, and it is worth testing rather than asserting. Reducing $\rho$
+scales the expected counts by a constant; reducing $\beta$ does not, because it
+also slows the epidemic. We find the $\beta$ that reproduces the reported peak
+*height* under full reporting and compare the two expected series. Both sides of
+that comparison are expected curves: we match $\max_t \rho\, x_t(\beta_0)$ rather
+than the largest observed count, since the realised maximum carries sampling
+noise that would blur the very difference we are trying to see.
+
+```{julia}
+#| label: sol-ch07-ex1-identifiability
+function sol_incidence_at(β)
+    solution = solve(remake(sol_prob; p = [β, 10.0, 0.25]), Tsit5(); saveat = 1.0)
+    cumulative = Array(solution)[4, :]
+    return cumulative[2:end] .- cumulative[1:(end - 1)]
+end
+
+β_grid = 0.020:0.0002:0.050
+peak_target = maximum(expected_reported)
+β_matched = β_grid[argmin(abs.(maximum.(sol_incidence_at.(β_grid)) .- peak_target))]
+incidence_matched = sol_incidence_at(β_matched)
+
+(β_matched = β_matched,
+ R₀_matched = round(β_matched * 10 / 0.25; digits = 2),
+ peak_day_reported = argmax(expected_reported),
+ peak_day_matched = argmax(incidence_matched),
+ total_reported = round(sum(expected_reported); digits = 1),
+ total_matched = round(sum(incidence_matched); digits = 1))
+```
+
+```{julia}
+#| label: fig-sol-ch07-ex1-identifiability
+#| fig-cap: "Expected reported incidence at ρ = 0.4 (solid) against a fully reported epidemic whose transmission probability was tuned to match the peak height (dashed). The peaks agree by construction; the timing and the cumulative total do not."
+fig = Figure(size = (760, 420))
+ax = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "expected cases per day")
+lines!(ax, collect(sol_obstimes), expected_reported; color = :darkorange,
+    linewidth = 3, label = "ρ = 0.4, β = 0.05")
+lines!(ax, collect(sol_obstimes), incidence_matched; color = :firebrick,
+    linewidth = 3, linestyle = :dash,
+    label = "ρ = 1, β ≈ $(round(β_matched; digits = 4))")
+axislegend(ax; position = :rt)
+fig
+```
+
+Matching the peak height requires $\beta \approx 0.037$, an $R_0$ near $1.5$
+rather than $2$, and the agreement holds only at the peak. The reported series
+peaks on day 15 and the reduced-$\beta$ series on day 23, and over the 40 days
+the latter produces roughly 496 expected cases against 312. Lowering $\beta$ does
+not merely rescale the curve; it also slows and reshapes the epidemic. Growth
+rate, peak timing and cumulative total all move together, and those are precisely
+the features a fit exploits.
+
+Under the stated model — with $N$, the initial state, $c$ and $\gamma$ known, and
+reporting constant and instantaneous — the series constrains both $\rho$ and
+$\beta$. They may be strongly correlated, but they are not interchangeable and
+not structurally non-identifiable. Short or noisy data can still leave them
+practically weakly identified, particularly if the initial state, population
+size, recovery rate, contact rate or reporting process is also uncertain. The
+distinction between structural and practical identifiability is taken up in
+Chapter 10.
 
 #### Solution to Exercise 2 {#solution-ch07-ex2}
 
 We fix the negative-binomial mean to the latent incidence at the epidemic peak
-and vary the dispersion $r \in \{1, 5, 50\}$, drawing 1000 replicate counts for
-each and estimating the variance-to-mean ratio.
+and vary the dispersion $r \in \{1, 5, 50, 500\}$, drawing 1000 replicate counts
+for each and estimating the variance-to-mean ratio.
 
 ```{julia}
 #| label: sol-ch07-ex2
@@ -100,22 +156,27 @@ function ratio_at(r)
      predicted = round(1 + μ_peak / r; digits = 3))
 end
 
-[ratio_at(r) for r in (1.0, 5.0, 50.0)]
+[ratio_at(r) for r in (1.0, 5.0, 50.0, 500.0)]
 ```
 
 The variance formula $\operatorname{Var}[Y_t] = \rho x_t + (\rho x_t)^2/r$ (with
 $\rho = 1$ here) predicts a variance-to-mean ratio of $1 + \mu_{\text{peak}}/r$.
-The simulated ratios track this prediction closely and fall towards $1$ as $r$
-grows: at $r = 50$ the counts are almost equidispersed, recovering the Poisson
-limit $r \to \infty$, while at $r = 1$ the peak counts are strongly
-overdispersed.
+The simulated ratios track that prediction closely and decrease towards $1$ as
+$r$ grows, but they do so slowly, because the peak mean is itself large at
+roughly 45 cases. At $r = 1$ the peak counts are strongly overdispersed. At
+$r = 50$ the variance is still nearly twice the mean, so this is not yet the
+Poisson limit, even though $r$ looks large in isolation. Only by $r = 500$,
+where $r$ is an order of magnitude above $\mu_{\text{peak}}$, is the ratio close
+to $1$. What counts as "large $r$" is set by the size of the mean, not by $r$
+alone, and the Poisson limit is only reached as $r \to \infty$.
 
 ### Frequentist parameter estimation
 
 The next two solutions reconstruct maximum-likelihood estimation and profile
 intervals on likelihood *grids*, which is transparent and avoids any dependency
-outside the shared environment. Each grid point solves the ODE once, so the grids
-are kept deliberately small for continuous-integration speed.
+outside the shared environment. Each grid point costs one ODE solve, so the grids
+are small: fine enough to locate the interval, coarse enough to run in seconds.
+Refine them if you want the endpoints to more decimal places.
 
 ```{julia}
 #| label: sol-ch08-helpers

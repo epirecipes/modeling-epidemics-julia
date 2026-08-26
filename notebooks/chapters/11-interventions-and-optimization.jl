@@ -27,13 +27,15 @@ simulates a rectangular policy and compares its final cumulative incidence
 with the no-policy counterfactual.
 """
 
-# ╔═╡ 365824a5-3984-4e4a-a8a7-79b6a9796eaf
-begin
-    @bind intervention_start11 PlutoUI.Slider(0:1:25; default = 8, show_value = true)
-    @bind intervention_reduction11 PlutoUI.Slider(0.0:0.05:0.75;
-        default = 0.5, show_value = true)
-    @bind intervention_duration11 PlutoUI.Slider(2:1:15; default = 10, show_value = true)
-end
+# ╔═╡ 6616b485-a374-4e54-81e7-fcbe9f29742d
+@bind intervention_start11 PlutoUI.Slider(0:1:25; default = 8, show_value = true)
+
+# ╔═╡ d6f1872d-fc78-4402-bee8-40cc90b2e606
+@bind intervention_reduction11 PlutoUI.Slider(0.0:0.05:0.75;
+    default = 0.5, show_value = true)
+
+# ╔═╡ 9eaf01e1-0461-4530-a38d-c3ceb7e61b21
+@bind intervention_duration11 PlutoUI.Slider(2:1:15; default = 10, show_value = true)
 
 # ╔═╡ 2d9a5577-c9db-4a8d-bc1a-1b32d2e0d8e0
 begin
@@ -119,7 +121,9 @@ end
 # ╠═802552b4-06aa-4224-a8e4-c2a72ad45bc9
 # ╠═983c632c-dd6e-4257-a7dd-7a7317a4bbaa
 # ╟─10e0ae67-3437-46c6-9b53-4208a186e62f
-# ╠═365824a5-3984-4e4a-a8a7-79b6a9796eaf
+# ╠═6616b485-a374-4e54-81e7-fcbe9f29742d
+# ╠═d6f1872d-fc78-4402-bee8-40cc90b2e606
+# ╠═9eaf01e1-0461-4530-a38d-c3ceb7e61b21
 # ╠═2d9a5577-c9db-4a8d-bc1a-1b32d2e0d8e0
 # ╠═0f48a36b-7dd0-4f5a-a6d3-82b5e6edb3dc
 # ╠═e0c456bc-0153-4fbb-bb4d-e6dca00e4e6e

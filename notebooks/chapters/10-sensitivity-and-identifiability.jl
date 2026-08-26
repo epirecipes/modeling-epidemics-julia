@@ -24,6 +24,12 @@ md"""
 This notebook explores how the infectious peak changes over a parameter range.
 The finite-difference derivative is local; the heat map is a small global
 range experiment. Both use deterministic ODE solves.
+
+Raw derivatives are plotted beside dimensionless elasticities: the fractional
+change in I per fractional change in a parameter. Wherever they are nonzero the
+raw β and c curves are a factor c/β = 200 apart, which is a units effect rather
+than a difference in influence, since the model uses only the product βc.
+Rescaling removes it and the two curves then coincide exactly.
 """
 
 # ╔═╡ 09c00763-7c1b-4af4-8488-3679ccbd8806
@@ -31,9 +37,7 @@ range experiment. Both use deterministic ODE solves.
 
 # ╔═╡ c2df82d0-6b65-4b7c-86dd-c10d399fc86f
 begin
-    course_root = normpath(joinpath(@__DIR__, "..", ".."))
-    include(joinpath(course_root, "src", "EpiModelingCourse.jl"))
-    using .EpiModelingCourse
+    using EpiModelingCourse
 
     const N10 = BASELINE_PARAMETERS.N
     const u010 = [BASELINE_INITIAL_STATE.S, BASELINE_INITIAL_STATE.I,
@@ -57,6 +61,13 @@ begin
             saveat = times10, abstol = 1e-8, reltol = 1e-8))
     end
 
+    # Dense interpolation on a sub-daily grid, since the peak falls between days.
+    function peak_infectious10(p)
+        solution = solve(ODEProblem(sir10!, u010, (0.0, 40.0), p), Tsit5();
+            abstol = 1e-8, reltol = 1e-8)
+        maximum(solution(t)[2] for t in 0.0:0.05:40.0)
+    end
+
     base10 = trajectory10(p010)
     local_sensitivity10 = Matrix{Float64}(undef, length(times10), 3)
     for j in 1:3
@@ -68,17 +79,27 @@ begin
         local_sensitivity10[:, j] =
             (trajectory10(plus)[2, :] - trajectory10(minus)[2, :]) ./ (2δ)
     end
+    # Elasticities: fractional change in I per fractional change in a parameter.
+    elasticity10 = hcat(
+        (p010[j] .* local_sensitivity10[:, j] ./ base10[2, :] for j in 1:3)...,
+    )
 end
 
 # ╔═╡ 8c4d7c0c-bf3f-4d4d-94bb-335cf994a6cb
 begin
-    fig_local10 = Figure(size = (800, 420))
+    fig_local10 = Figure(size = (960, 400))
     ax_local10 = Axis(fig_local10[1, 1], xlabel = "time",
-        ylabel = "∂I/∂parameter", title = "Local infectious-state sensitivity")
+        ylabel = "∂I/∂θⱼ", title = "Raw derivatives (unit-dependent)")
+    ax_elastic10 = Axis(fig_local10[1, 2], xlabel = "time",
+        ylabel = "(θⱼ/I) ∂I/∂θⱼ", title = "Elasticities (dimensionless)")
     for (j, label) in enumerate(["β", "c", "γ"])
-        lines!(ax_local10, times10, local_sensitivity10[:, j], label = label)
+        style = j == 2 ? :dash : :solid
+        lines!(ax_local10, times10, local_sensitivity10[:, j], label = label,
+            linestyle = style)
+        lines!(ax_elastic10, times10, elasticity10[:, j], label = label,
+            linestyle = style)
     end
-    axislegend(ax_local10)
+    axislegend(ax_elastic10)
     fig_local10
 end
 
@@ -89,7 +110,7 @@ begin
     gamma_range10 = range(p010[3] * (1 - sensitivity_span / 100),
         p010[3] * (1 + sensitivity_span / 100); length = 7)
     peak_surface10 = [
-        maximum(trajectory10([β, p010[2], γ])[2, :])
+        peak_infectious10([β, p010[2], γ])
         for γ in gamma_range10, β in beta_range10
     ]
     fig_surface10 = Figure(size = (800, 440))
@@ -109,14 +130,17 @@ begin
     finite_difference10 = (trajectory10(p_plus10)[2, end] - base10[2, end]) / ε10
     derivative_error10 = abs(finite_difference10 -
         local_sensitivity10[end, 1]) / (1 + abs(local_sensitivity10[end, 1]))
+    elasticity_gap10 = maximum(abs.(elasticity10[:, 1] .- elasticity10[:, 2]))
     @assert conservation_error10 < 1e-6
     @assert derivative_error10 < 1e-3
+    @assert elasticity_gap10 < 1e-6
     (
         course_unit = "ch10-sensitivity-and-identifiability",
         status = "complete",
         sensitivity_span_percent = sensitivity_span,
         conservation_error = conservation_error10,
         finite_difference_relative_error = derivative_error10,
+        elasticity_gap = elasticity_gap10,
         identifiability_note = "incidence identifies β*c, not β and c separately",
     )
 end

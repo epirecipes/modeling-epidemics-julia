@@ -39,12 +39,11 @@ precompile against the resolved `OrdinaryDiffEq` component stack
 UndefVarError: `standardtag` not defined in `OrdinaryDiffEqDifferentiation`
 ```
 
-so it is intentionally not included as a direct course dependency. Rather than fabricate output, this
-appendix runs a fully executable **error-quantification core** with the standard
-solver stack, and shows the current `ProbNumDiffEq.jl` API in a **non-executed**
-block (`eval: false`) so the intended workflow is documented accurately against
-the audited package version. When the packages are realigned, the gated block
-runs as written.
+so it is not a course dependency. This appendix therefore runs a fully executable
+**error-quantification core** on the standard solver stack, and shows the current
+`ProbNumDiffEq.jl` API in a **non-executed** block (`eval: false`). Read that
+block as the workflow you would use once the packages line up again, at which
+point it runs as written.
 :::
 
 ## Model assumptions and classification

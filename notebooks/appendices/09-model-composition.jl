@@ -48,7 +48,7 @@ stochastic reaction model.
 """
 
 # ╔═╡ 84e1caf3-e809-447d-8ca3-651202d3ed89
-@bind cross_mixing Slider(0.0:0.1:1.0; default = 0.5, show_value = true)
+@bind cross_mixing PlutoUI.Slider(0.0:0.1:1.0; default = 0.5, show_value = true)
 
 # ╔═╡ 2d05f568-7257-4e96-a972-d55726bfc535
 begin

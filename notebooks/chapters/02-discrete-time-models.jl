@@ -82,13 +82,13 @@ Horizon fixed at 40 days; seeds `1:nsims` keep the ensemble reproducible.
 """
 
 # ╔═╡ 180bd361-54a1-4324-8edf-08fac7a85f99
-@bind δt_ui Slider([1.0, 0.5, 0.25]; default = 1.0, show_value = true)
+@bind δt_ui PlutoUI.Slider([1.0, 0.5, 0.25]; default = 1.0, show_value = true)
 
 # ╔═╡ bc04ca12-a6e3-427f-b3c0-a2bd73de4c68
-@bind nsims_ui Slider(50:50:400; default = 200, show_value = true)
+@bind nsims_ui PlutoUI.Slider(50:50:400; default = 200, show_value = true)
 
 # ╔═╡ c0de5689-1c3f-4daf-ac94-f88b188da985
-@bind c_ui Slider(4.0:1.0:14.0; default = 10.0, show_value = true)
+@bind c_ui PlutoUI.Slider(4.0:1.0:14.0; default = 10.0, show_value = true)
 
 # ╔═╡ 50496868-d2a8-4641-8216-417dd62fb286
 begin
@@ -153,6 +153,7 @@ md"""
 
 # ╔═╡ 5480ae15-f262-45a1-a701-824ab7f2b365
 (course_unit = "ch02-discrete-time-models", status = "complete")
+
 # ╔═╡ Cell order:
 # ╠═b5346d49-231d-4996-9740-1bf819a85255
 # ╠═0129f82b-6b57-4128-acf6-5002dcd69f64
