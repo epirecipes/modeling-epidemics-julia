@@ -25,6 +25,11 @@ By the end of this unit you should be able to:
 - compute the mean and variance of a Binomial random variable;
 - define the Markov property and explain why the binomial SIR chain has it;
 - convert continuous transition rates into per-step probabilities;
+- derive the exponential waiting time from a constant hazard, and recognise
+  $1 - e^{-r\delta t}$ as its distribution function;
+- state the memoryless property and explain what it assumes about a disease;
+- given several competing events, give the distribution of the time to the next
+  one and the probability of which one occurs;
 - simulate an ensemble of stochastic epidemics reproducibly with `Distributions`
   and `StableRNGs`;
 - compare the ensemble mean against a deterministic expectation.
@@ -80,6 +85,55 @@ $$ {#eq-p02-chain}
 
 Because every individual moves *forward* through S→I→R and none are created or
 destroyed, $S_{t+1}+I_{t+1}+R_{t+1} = S_t+I_t+R_t = N$ for all $t$.
+
+### Waiting times and the exponential distribution
+
+@eq-p02-probs arrived as a conversion rule. It is worth seeing where it comes
+from, because the same object drives every continuous-time model later in the
+course.
+
+Suppose one particular event — this susceptible becoming infected, say — happens
+at a constant **hazard** $r$: in any short interval it occurs with probability
+$r\,\mathrm{d}t$, regardless of what has already happened. Let $T$ be the time
+until it does. Splitting $[0,t]$ into $n$ equal pieces and letting $n\to\infty$,
+
+$$
+\Pr(T > t) = \lim_{n\to\infty}\left(1 - \frac{rt}{n}\right)^{n} = e^{-rt},
+$$ {#eq-p02-survival}
+
+so $T$ follows an **exponential distribution** with rate $r$ and mean $1/r$. Its
+distribution function is $\Pr(T \le t) = 1 - e^{-rt}$ — which is exactly
+@eq-p02-probs at $t = \delta t$. The per-step probability used above is the
+probability that the waiting time lands inside the step.
+
+The exponential distribution is **memoryless**:
+
+$$
+\Pr(T > s + t \mid T > s) = \frac{e^{-r(s+t)}}{e^{-rs}} = e^{-rt} = \Pr(T > t).
+$$ {#eq-p02-memoryless}
+
+Someone infectious for a week is no closer to recovering than someone infected
+this morning. That is a real assumption about the disease, and it is what makes
+the counts $(S_t, I_t, R_t)$ a sufficient description of the state: no clock has
+to be carried for each individual.
+
+When several kinds of event compete — infection at rate $a_1$, recovery at rate
+$a_2$ — each has its own exponential clock $T_j$, and the first to ring wins.
+Writing $a_0=\sum_j a_j$ for the total rate,
+
+$$
+\min_j T_j \sim \operatorname{Exponential}(a_0), \qquad
+\Pr(J=j) = \frac{a_j}{a_0}.
+$$ {#eq-p02-competing}
+
+So *when* the next event happens and *which* event it is are separate questions,
+answered by one exponential draw and one categorical draw. Those two draws are
+the whole of the Gillespie algorithm in @sec-jump-processes.
+
+Counting events rather than timing them gives the companion object: if
+successive gaps are independent Exponential$(r)$ variables, the number of events
+in $[0,t]$ is Poisson with mean $rt$. That is the distribution the
+observation-model chapter puts on reported case counts.
 
 ## Julia implementation
 
@@ -151,6 +205,42 @@ axislegend(ax; position = :rt)
 fig
 ```
 
+### Sampling the waiting times directly
+
+The chain above asks "did it happen during this step?". @eq-p02-survival lets us
+ask "when will it happen?" instead, which is what the continuous-time chapters
+do. Sampling a waiting time and choosing between competing events needs no new
+machinery — `Exponential(1/r)` in `Distributions` is parameterised by its mean.
+
+```{julia}
+#| label: p02-waiting-times
+rng_wait = StableRNG(11)
+r = 0.25                                  # recovery hazard, γ
+δt_wait = 1.0                             # one day, as in the chain above
+draws = rand(rng_wait, Exponential(1 / r), 200_000)
+
+mean_wait = sum(draws) / length(draws)    # should be 1/r
+within_step = count(<=(δt_wait), draws) / length(draws)  # should be 1 - exp(-r δt)
+(; mean_wait = round(mean_wait; digits = 3), expected_mean = 1 / r,
+   within_step = round(within_step; digits = 4),
+   from_formula = round(rate_to_proportion(r, δt_wait); digits = 4))
+```
+
+With two events competing, the winner is chosen in proportion to its rate
+(@eq-p02-competing). Drawing one clock each and taking the earlier one must
+reproduce those proportions:
+
+```{julia}
+#| label: p02-competing-events
+a₁, a₂ = 3.0, 1.0                          # infection and recovery propensities
+a₀ = a₁ + a₂
+rng_race = StableRNG(12)
+first_is_infection = [rand(rng_race, Exponential(1 / a₁)) <
+                      rand(rng_race, Exponential(1 / a₂)) for _ in 1:200_000]
+(; simulated = round(sum(first_is_infection) / length(first_is_infection); digits = 4),
+   predicted = round(a₁ / a₀; digits = 4))
+```
+
 ## Validation
 
 For a single Binomial draw the sample mean over many replicates must approach
@@ -190,8 +280,16 @@ were mishandled; here susceptibles and infectious individuals are treated in
 separate binomials, which is exact only in the limit of small $\delta t$. It
 also assumes infections and recoveries within a step are independent. The
 exact, event-by-event alternative — the Gillespie algorithm of @gillespie1977 —
-is developed in the continuous-time Markov chapter. For the distributions API
-see the [Distributions.jl documentation](https://juliastats.org/Distributions.jl/stable/).
+is developed in @sec-jump-processes, and it is built from @eq-p02-survival and
+@eq-p02-competing rather than from a step width: instead of asking whether an
+event occurred during $\delta t$, it samples when the next one occurs and which
+one it is. The same waiting-time picture returns twice more. The stochastic
+differential equation chapter replaces individual events with a continuous
+Gaussian increment, valid when events are frequent enough that no single one
+matters; and the observation-model chapter counts events per reporting interval,
+which is where the Poisson distribution above reappears. For the distributions
+API see the
+[Distributions.jl documentation](https://juliastats.org/Distributions.jl/stable/).
 
 ## Exercises
 

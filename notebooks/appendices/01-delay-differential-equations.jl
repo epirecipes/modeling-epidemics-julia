@@ -35,9 +35,9 @@ pre-computed or pasted in.
 
 # ╔═╡ a48ce48b-5d69-44ac-b766-09dbe1c0e6b4
 md"""
-τ (fixed recovery delay): $(@bind τ Slider(1.0:0.5:10.0; default = 4.0, show_value = true))
+τ (fixed recovery delay): $(@bind τ PlutoUI.Slider(1.0:0.5:10.0; default = 4.0, show_value = true))
 
-I(0) (initial infections, seeded at t = 0): $(@bind I0 Slider(1:1:50; default = 10, show_value = true))
+I(0) (initial infections, seeded at t = 0): $(@bind I0 PlutoUI.Slider(1:1:50; default = 10, show_value = true))
 """
 
 # ╔═╡ 85eb8c0c-6bde-4f83-a9ad-68873a3c9966

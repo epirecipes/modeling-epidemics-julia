@@ -66,13 +66,13 @@ initial number infected. The reactive output recomputes the reproduction number
 """
 
 # ╔═╡ 07b520ab-e1b9-4a6f-baf5-5972fa4eb066
-@bind β_ui Slider(0.01:0.005:0.10; default = 0.05, show_value = true)
+@bind β_ui PlutoUI.Slider(0.01:0.005:0.10; default = 0.05, show_value = true)
 
 # ╔═╡ 69adda8a-fffa-43e8-98a7-01a1280dc334
-@bind c_ui Slider(1.0:1.0:20.0; default = 10.0, show_value = true)
+@bind c_ui PlutoUI.Slider(1.0:1.0:20.0; default = 10.0, show_value = true)
 
 # ╔═╡ 61a48731-15bd-4825-ab04-28cbde813542
-@bind I0_ui Slider(1:1:400; default = 10, show_value = true)
+@bind I0_ui PlutoUI.Slider(1:1:400; default = 10, show_value = true)
 
 # ╔═╡ d99acdeb-7b39-47a9-8593-3ba7c32b62a6
 begin
@@ -94,7 +94,7 @@ saturates towards 1.
 """
 
 # ╔═╡ c0199edb-1cca-42e4-a777-6cc9d1f1bd14
-@bind r_ui Slider(0.1:0.1:3.0; default = 1.0, show_value = true)
+@bind r_ui PlutoUI.Slider(0.1:0.1:3.0; default = 1.0, show_value = true)
 
 # ╔═╡ f5a07aad-0bcf-43c1-8d04-e93363f955bd
 let
@@ -116,7 +116,7 @@ versions. Change the seed to get a different — but reproducible — stream.
 """
 
 # ╔═╡ fd63fc57-50f4-4259-b7d7-43958eea9d07
-@bind seed_ui Slider(1:100; default = 24, show_value = true)
+@bind seed_ui PlutoUI.Slider(1:100; default = 24, show_value = true)
 
 # ╔═╡ 62033df1-95ac-44ba-9071-671f33f9500e
 rand(StableRNG(seed_ui), 5)
@@ -155,6 +155,7 @@ md"""
 
 # ╔═╡ a5c3fead-9b7a-4e6f-aa8e-669439ced39f
 (course_unit = "p01-julia-essentials", status = "complete")
+
 # ╔═╡ Cell order:
 # ╠═93ff1999-cabb-4389-b948-e224c2282e10
 # ╠═8157289c-06f3-4b3d-af0e-1f40e112cef9

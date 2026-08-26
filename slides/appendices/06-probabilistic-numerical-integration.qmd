@@ -37,10 +37,10 @@ of a real package-compatibility gap flagged on the next slide.
   installed source, so it runs as written once the packages are realigned.
 
 ::: {.notes}
-This is the integrity slide: we neither fabricate probabilistic output nor
-monkey-patch a broken import. The deterministic core teaches exactly the
-quantity — time-varying numerical error — that the filter's posterior standard
-deviation is designed to estimate.
+Show the load error, then move on quickly: the point of the session is the
+quantity, not the packaging. The deterministic core teaches exactly what the
+filter's posterior standard deviation is designed to estimate, which is
+time-varying numerical error.
 :::
 
 ## Model and the quantity of interest

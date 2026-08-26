@@ -26,15 +26,26 @@ md"""
 Each `Person` is a stateful individual.  The two-phase update first reads all
 old statuses and stores `next_status`; the model step then commits them.  This
 prevents activation order from changing who can transmit.
+
+This notebook starts from 500 people with 5 infected, half the 1000 and 10 of
+the chapter.  Halving both keeps the same starting proportion infected, so the
+epidemic reaches about the same final size, and the smaller population keeps
+each slider change quick enough to explore.  Fewer agents also means more
+noise: the height and timing of the peak move further from seed to seed than
+they do in the chapter.
 """
 
-# ╔═╡ 8ba12ff3-2ec7-4286-9cfb-a0ffdf8b700d
-begin
-    @bind population PlutoUI.Slider(100:50:300; default = 200, show_value = true)
-    @bind initial_infected PlutoUI.Slider(1:10; default = 5, show_value = true)
-    @bind contact_rate PlutoUI.Slider(4.0:1.0:14.0; default = 10.0, show_value = true)
-    @bind horizon PlutoUI.Slider(10:5:40; default = 30, show_value = true)
-end
+# ╔═╡ 238accad-5aa0-4cb6-8b2b-a403da8430d0
+@bind population PlutoUI.Slider(100:50:500; default = 500, show_value = true)
+
+# ╔═╡ 8e396acc-ad78-4c44-afb6-82c7b6db6c66
+@bind initial_infected PlutoUI.Slider(1:10; default = 5, show_value = true)
+
+# ╔═╡ 966785e5-2ac5-48fb-a81e-7f5832e26c26
+@bind contact_rate PlutoUI.Slider(4.0:1.0:14.0; default = 10.0, show_value = true)
+
+# ╔═╡ bb5f836a-1549-4976-91f1-4ccf5b3a40fe
+@bind horizon PlutoUI.Slider(10:5:40; default = 30, show_value = true)
 
 # ╔═╡ 59a8f381-2b02-44ec-84b9-d6e1a32f3d65
 begin
@@ -149,7 +160,10 @@ only one status at every recorded step.
 # ╠═e3c4ef43-1852-4e2a-a531-04e201cb2745
 # ╠═e18a72cb-31b8-48a5-8cba-7f5ea4b2280e
 # ╟─70e6c414-e8c4-4643-bb51-527bff4b047f
-# ╠═8ba12ff3-2ec7-4286-9cfb-a0ffdf8b700d
+# ╠═238accad-5aa0-4cb6-8b2b-a403da8430d0
+# ╠═8e396acc-ad78-4c44-afb6-82c7b6db6c66
+# ╠═966785e5-2ac5-48fb-a81e-7f5832e26c26
+# ╠═bb5f836a-1549-4976-91f1-4ccf5b3a40fe
 # ╠═59a8f381-2b02-44ec-84b9-d6e1a32f3d65
 # ╠═7765cfb5-cb4e-450b-a19f-dd8f88067365
 # ╠═956e7e93-a51d-41c1-8eef-008f4d27542a

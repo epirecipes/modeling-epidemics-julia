@@ -191,9 +191,10 @@ function loss(θ)
 end
 ```
 
-Training is kept deliberately small so the appendix renders quickly in CI: a
-short run of `Adam` to make rapid early progress, followed by a few `BFGS`
-iterations to polish the fit. A callback records the loss history.
+Training is kept short enough to run while you watch: a brief run of `Adam` to
+make rapid early progress, followed by a few `BFGS` iterations to polish the fit.
+A callback records the loss history, which is where you look to decide whether
+more iterations would buy anything.
 
 ```{julia}
 #| label: a04-train

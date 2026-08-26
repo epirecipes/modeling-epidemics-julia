@@ -205,7 +205,7 @@ orange bars: that gap is interaction. Here the first-order shares sum to roughly
 0.85 — nearer 0.89 on a far larger design — so of the order of a tenth of the
 variance belongs to no parameter individually. Both panels depend entirely on
 the box; widen the bounds and the
-ranking can change, which is the honest caveat to state out loud.
+ranking can change, which is the caveat to state out loud.
 
 One caveat that the next slide will sharpen. Beta and c get separate bars here
 only because we sampled them as two independent uniforms, and the sizes of those
@@ -330,7 +330,7 @@ the two is how people end up reporting a confident estimate of a quantity their
 data never contained.
 
 Then hand over to tomorrow: sensitivity tells you which parameter to spend effort
-on, and the intervention session asks what to actually do about it. Flag that
+on, and the intervention session asks what to do about it. Flag that
 Part C of the worksheet is where the reporting-fraction result gets proved, and
 that the two inference chapters it points at are self-study, not sessions here.
 :::

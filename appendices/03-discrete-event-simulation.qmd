@@ -66,14 +66,22 @@ without the agent-based model chapter's time-step discretization.
 ## Equations
 
 Each susceptible individual's next contact is scheduled after an
-$\mathrm{Exponential}(1/c)$ waiting time; when that contact fires, a
-uniformly random other individual is chosen, and infection occurs with
-probability $\beta$ if the alter is infectious:
+$\mathrm{Exponential}(1/c)$ waiting time; when that contact fires, an
+individual is drawn uniformly from the population, and infection occurs with
+probability $\beta$ if that alter is infectious:
 
 $$
 T_\text{contact} \sim \mathrm{Exponential}(1/c), \qquad
 \Pr(\text{infect} \mid \text{contact with infectious alter}) = \beta.
 $$ {#eq-a03-contact}
+
+The draw ranges over all $N$ individuals, including the one doing the sampling.
+A draw that lands on itself, or on any susceptible or recovered individual,
+passes without transmission. Counting those null draws is what gives the force
+of infection its familiar form: a susceptible contacts an infectious individual
+at rate $c \, I/N$, and each such contact infects with probability $\beta$, so
+individuals leave $S$ at rate $\beta c I / N$. Both implementations below draw
+partners this way, which is why the same deterministic curve describes them.
 
 Each infectious individual's recovery fires after an independent
 $\mathrm{Exponential}(1/\gamma)$ waiting time:
@@ -203,10 +211,7 @@ end
 @resumable function live(sim::Simulation, person::SIRPerson, m::SIRModel, rng)
     while person.status == :S
         @yield timeout(sim, rand(rng, Exponential(1 / m.c)))      # eq-a03-contact
-        alter = person
-        while alter === person
-            alter = rand(rng, m.people)
-        end
+        alter = rand(rng, m.people)          # uniform over all N, person included
         if alter.status == :I && rand(rng) < m.β
             person.status = :I
             record!(m)
@@ -245,7 +250,7 @@ run(cs_model.sim, tf)
 
 ```{julia}
 #| label: fig-a03-trajectories
-#| fig-cap: "Two independent discrete-event realizations of the same SIR process — Agents.jl's EventQueueABM and ConcurrentSim's process model — against the deterministic ODE mean field. The EventQueueABM curve is coarser because its adata collection samples the model once per unit time by default, while ConcurrentSim's manual bookkeeping records every individual event."
+#| fig-cap: "Two independent discrete-event realisations of the same SIR process — Agents.jl's EventQueueABM and ConcurrentSim's process model — against the deterministic ODE mean field. The EventQueueABM curve is coarser because its adata collection samples the model once per unit time by default, while ConcurrentSim's manual bookkeeping records every individual event."
 function sir_ode!(du, u, p, t)
     S, I, R = u
     β, c, γ = p
@@ -260,7 +265,7 @@ sol_ode = solve(ODEProblem(sir_ode!, [990.0, 10.0, 0.0], (0.0, tf), (β, c, γ))
 
 fig = Figure(size = (720, 440))
 ax = Axis(fig[1, 1]; xlabel = "time", ylabel = "infectious count",
-          title = "Two discrete-event realizations vs the ODE mean field")
+          title = "Two discrete-event realisations vs the ODE mean field")
 stairs!(ax, eq_data.time, eq_data.infected_status; color = :firebrick, linewidth = 2,
         label = "I (EventQueueABM)")
 stairs!(ax, cs_model.ta, cs_model.Ia; color = :steelblue, linewidth = 2,
@@ -313,7 +318,7 @@ ode_final_R = sol_ode.u[end][3]
 All checks pass: both implementations conserve $N$ exactly, both respect the
 one-way state ordering, and the 20-run ensemble mean final size is within
 10% of the deterministic prediction — consistent given the ensemble is small
-and some realizations have not fully burned out by $t=40$.
+and some realisations have not fully burned out by $t=40$.
 
 ## Interpretation and limitations
 
@@ -334,11 +339,10 @@ Both frameworks share a structural limitation relative to the aggregated
 jump-process chapter: scheduling and executing $O(N)$ individual events is
 more expensive than resampling a single aggregate "what happens next," so
 neither scales as well to very large populations. The specific transmission
-rule used here — every susceptible polls a uniformly random alter — is also
-deliberately inefficient (it costs one event per susceptible regardless of
-how few individuals are infectious), matching the reference tutorials this
-appendix is based on; a production-oriented implementation would instead
-schedule new infection attempts only from currently infectious individuals.
+rule used here, every susceptible polling a uniformly random alter, also costs
+one event per susceptible however few individuals are infectious. A
+production-oriented implementation would instead schedule new infection
+attempts only from currently infectious individuals.
 
 Finally, notice that nothing here required an exponential recovery time.
 `AgentEvent`'s `timing` argument accepts any function

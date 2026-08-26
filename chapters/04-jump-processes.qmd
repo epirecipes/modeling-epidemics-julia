@@ -95,8 +95,9 @@ $\mathbb{E}[SI]\ne\mathbb{E}[S]\mathbb{E}[I]$.
 ## Julia implementation
 
 The course environment contains Catalyst 16.2.1 and JumpProcesses 9.29.1.
-The reaction network below is deliberately visible: its species are the
-coordinates of $X$, and its reaction rates are the propensities above.
+The reaction network below is written out rather than hidden behind a helper: its
+species are the coordinates of $X$, and its reaction rates are the propensities
+above.
 Catalyst's current `JumpProblem` constructor creates the compatible
 JumpProcesses representation; `Direct()` selects Gillespie's direct
 aggregator and `SSAStepper()` advances from jump to jump. No fixed numerical

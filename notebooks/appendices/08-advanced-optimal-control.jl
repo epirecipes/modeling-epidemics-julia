@@ -43,7 +43,7 @@ population-level.
 """
 
 # ╔═╡ 623f5f4a-8d98-4472-8fb7-95a539940bb9
-@bind intervention_budget Slider(0.0:0.5:3.0; default = 2.0, show_value = true)
+@bind intervention_budget PlutoUI.Slider(0.0:0.5:3.0; default = 2.0, show_value = true)
 
 # ╔═╡ 5a6f01f3-6bf3-4292-bd74-7b6afac01442
 function solve_control(budget; support_count = 15)
@@ -126,10 +126,11 @@ Increasing the budget gives the optimizer more intervention pressure, subject
 to the pointwise bound. Collocation and Ipopt provide a local numerical
 solution; repeat with more supports to assess transcription sensitivity.
 
-The nonlinear SIR dynamics are deliberately **not** passed to
-`SDDP.LinearPolicyGraph`: current SDDP requires affine constraints/objectives.
-An SDDP proxy must be a separately documented linear approximation, not a claim
-to solve this nonlinear control problem.
+Stochastic dual dynamic programming does not apply to this problem as it
+stands. `SDDP.LinearPolicyGraph` requires affine constraints and objectives,
+while SIR dynamics put products of state and control in the constraints. An SDDP
+treatment would start from a linear or mixed-integer approximation with an
+explicit error analysis.
 """
 
 # ╔═╡ Cell order:

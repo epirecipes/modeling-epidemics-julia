@@ -138,9 +138,15 @@ for unit in units
         occursin("{#solution-$id-ex$number}", solutions) || push!(errors, "$id is missing solution $number.")
     end
 
-    occursin("$(section)/$(stem).html", resources) || push!(errors, "$id book link is missing from resources.qmd.")
-    occursin("slides/$(section)/$(stem).html", resources) || push!(errors, "$id slide link is missing from resources.qmd.")
-    occursin("notebook-exports/$(section)/$(stem).html", resources) || push!(errors, "$id notebook preview link is missing from resources.qmd.")
+    # resources.qmd is the workshop link hub and lists the taught units only. The
+    # self-study units reach their companions through each book page's own
+    # "Companion materials" section and the self-study map on workshop.qmd.
+    if track == "workshop"
+        occursin("$(section)/$(stem).html", resources) || push!(errors, "$id book link is missing from resources.qmd.")
+        occursin("slides/$(section)/$(stem).html", resources) || push!(errors, "$id slide link is missing from resources.qmd.")
+        occursin("notebook-exports/$(section)/$(stem).html", resources) || push!(errors, "$id notebook preview link is missing from resources.qmd.")
+        occursin("worksheets/$(section)/$(stem).qmd", resources) || push!(errors, "$id worksheet link is missing from resources.qmd.")
+    end
 
     book_status == "complete" && occursin(r"\bpending\b", lowercase(book)) &&
         push!(errors, "$id book is complete but still contains pending content.")

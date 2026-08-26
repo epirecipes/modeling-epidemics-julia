@@ -62,13 +62,13 @@ below 1 and the epidemic fails to take off.
 """
 
 # ╔═╡ f92c10f8-c80a-4869-aba6-0e6ffba9c78a
-@bind β_ui Slider(0.01:0.005:0.10; default = 0.05, show_value = true)
+@bind β_ui PlutoUI.Slider(0.01:0.005:0.10; default = 0.05, show_value = true)
 
 # ╔═╡ b1d9dda9-3aa1-41b6-96c1-61e66935c92e
-@bind c_ui Slider(2.0:1.0:16.0; default = 10.0, show_value = true)
+@bind c_ui PlutoUI.Slider(2.0:1.0:16.0; default = 10.0, show_value = true)
 
 # ╔═╡ d729cd77-b14b-4b9c-9ff7-c5c75b1b55e0
-@bind γ_ui Slider(0.1:0.05:0.6; default = 0.25, show_value = true)
+@bind γ_ui PlutoUI.Slider(0.1:0.05:0.6; default = 0.25, show_value = true)
 
 # ╔═╡ 6b88430c-6cc7-4f82-80d4-67abfe108148
 begin
@@ -138,6 +138,7 @@ md"""
 
 # ╔═╡ 51e8bca4-dc6e-49af-a0f1-3aaabc4199b1
 (course_unit = "ch01-foundations", status = "complete")
+
 # ╔═╡ Cell order:
 # ╠═8ca2287b-252c-47d6-827d-a16293f7765e
 # ╠═4cdea50e-8056-41ee-a90a-cf29da2d9b36

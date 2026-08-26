@@ -43,7 +43,7 @@ uncorrected history.
 # ╔═╡ a395554d-f61f-4255-834c-3b8714e6befe
 md"""
 Random seed (passed to the **global** `Random.seed!`, not `rng=`, per the
-book chapter's caveat): $(@bind seed Slider(1:10; default = 4, show_value = true))
+book chapter's caveat): $(@bind seed PlutoUI.Slider(1:10; default = 4, show_value = true))
 
 Fixed step size `dt` (adaptive stepping fails at the history discontinuity,
 so this is fixed, not tuned for accuracy): $(@bind dt Select([0.05, 0.1, 0.2, 0.4]; default = 0.1))

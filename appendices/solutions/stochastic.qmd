@@ -22,6 +22,7 @@ N, β, c, γ = 1000, 0.05, 10.0, 0.25
 κ = β * c / N
 network = @reaction_network begin
     κ, S + I₁ --> 2I₁
+    κ, S + I₂ --> I₁ + I₂
     2γ, I₁ --> I₂
     2γ, I₂ --> R
 end
@@ -41,46 +42,59 @@ integer_valued = all(x -> isapprox(x, round(x)), states)
 (; mass_error, nonnegative, integer_valued)
 ```
 
-The infection propensity remains $\kappa SI_1$; the second infectious
-compartment only changes the recovery path.  The conservation check is exact
-because every reaction removes one individual from one compartment and adds
-one to another.  Compared with one exponential infectious period, the
-two-stage construction reduces unrealistically short and long durations while
-preserving the mean.
+Both stages transmit, so the total force of infection is
+$\kappa S(I_1+I_2)$ and new infections always enter $I_1$.  The rates
+$2\gamma$ preserve the total mean infectious duration at $1/\gamma$.  Allowing
+both stages to transmit at the same per-capita rate makes the mean
+transmitting duration equal to that total duration and therefore preserves
+$R_0=\beta c/\gamma=2$; if only $I_1$ transmitted, the mean transmitting
+duration and $R_0$ would both be halved.  The conservation check is exact because
+every reaction removes one individual from one compartment and adds one to
+another.  Compared with one exponential infectious period, the two-stage
+construction reduces unrealistically short and long durations while preserving
+the mean.
 
 #### Solution to Exercise 2 {#solution-ch04-ex2}
 
-For a pure birth--death count $Z$, a `DiscreteProblem` and two
-`ConstantRateJump`s are sufficient.  The death affect function guards the
-boundary; its constant rate is a deliberately simple toy approximation.
+For an immigration--death count $Z$, a `DiscreteProblem` and two
+`ConstantRateJump`s are sufficient.  Arrivals occur at the constant rate
+$\lambda$, so their propensity does not depend on $Z$; departures occur at
+rate $\mu$ per individual present, so their propensity is $\mu Z$.  Both are
+`ConstantRateJump`s because neither rate depends explicitly on time.
 
 ```{julia}
 using JumpProcesses
 using StableRNGs
 
-function birth!(integrator)
+function arrival!(integrator)
     integrator.u[1] += 1
 end
-function death!(integrator)
-    integrator.u[1] = max(integrator.u[1] - 1, 0)
+function departure!(integrator)
+    integrator.u[1] -= 1
 end
 
+λ, μ = 0.8, 0.1
 toy = DiscreteProblem([5], (0.0, 20.0), nothing)
-birth_rate(u, p, t) = 0.8
-death_rate(u, p, t) = 0.8
-birth_jump = ConstantRateJump(birth_rate, birth!)
-death_jump = ConstantRateJump(death_rate, death!)
+arrival_rate(u, p, t) = λ              # constant immigration
+departure_rate(u, p, t) = μ * u[1]     # per-individual departure
+arrival_jump = ConstantRateJump(arrival_rate, arrival!)
+departure_jump = ConstantRateJump(departure_rate, departure!)
 toy_problem = JumpProblem(
-    toy, Direct(), birth_jump, death_jump;
+    toy, Direct(), arrival_jump, departure_jump;
     rng = StableRNG(20250712),
 )
 toy_solution = solve(toy_problem, SSAStepper())
 @assert minimum(reduce(vcat, toy_solution.u)) >= 0
 ```
 
-To add vaccination to SIR, introduce the transition $S\to R$ with
-propensity $a_{\mathrm{vac}}=\nu S$.  A state-dependent propensity is a
-`VariableRateJump`:
+No boundary guard is needed in `departure!`: the propensity $\mu Z$ vanishes
+at $Z=0$, so the departure jump cannot fire from the empty state and the count
+cannot go negative.
+
+To add vaccination to SIR, introduce the transition $S\to R$ with propensity
+$a_{\mathrm{vac}}=\nu S$.  With $\nu$ constant, all three propensities depend
+only on the state and are constant between events, so each is a
+`ConstantRateJump` and the direct method applies unchanged:
 
 ```{julia}
 function infection!(integrator)
@@ -98,31 +112,25 @@ end
 
 ν = 0.01
 sir = DiscreteProblem([990, 10, 0], (0.0, 40.0), nothing)
-jumps = (
-    VariableRateJump(
-        (u, p, t) -> κ*u[1]*u[2], infection!;
-        urate = (u, p, t) -> 125.0,
-        rateinterval = (u, p, t) -> 40.0,
-    ),
-    VariableRateJump(
-        (u, p, t) -> γ*u[2], recovery!;
-        urate = (u, p, t) -> 250.0,
-        rateinterval = (u, p, t) -> 40.0,
-    ),
-    VariableRateJump(
-        (u, p, t) -> ν*u[1], vaccinate!;
-        urate = (u, p, t) -> 10.0,
-        rateinterval = (u, p, t) -> 40.0,
-    ),
+infection_jump = ConstantRateJump(
+    (u, p, t) -> κ * u[1] * u[2], infection!
 )
+recovery_jump = ConstantRateJump(
+    (u, p, t) -> γ * u[2], recovery!
+)
+vaccination_jump = ConstantRateJump(
+    (u, p, t) -> ν * u[1], vaccinate!
+)
+
 vaccinated_problem = JumpProblem(
-    sir, Coevolve(), jumps...;
-    dep_graph = [[1, 2, 3], [1, 2, 3], [1, 2, 3]],
+    sir, Direct(),
+    infection_jump, recovery_jump, vaccination_jump;
     rng = StableRNG(20250713),
 )
 vaccinated_solution = solve(vaccinated_problem, SSAStepper(); saveat = 0.2)
 vaccinated_states = Array(vaccinated_solution)
 @assert maximum(abs.(vec(sum(vaccinated_states; dims = 1)) .- 1000)) == 0
+@assert minimum(vaccinated_states) >= 0
 ```
 
 The mean-field equations become
@@ -132,18 +140,56 @@ $$
 \dot R=\gamma I+\nu S.
 $$
 
-If $\nu$ depends on calendar time, the rate is no longer constant.  A
-`VariableRateJump` with a time argument (as above) is appropriate, or the
-process can be simulated in pieces over intervals on which the campaign rate
-is constant.
+Updating the ODE comparison means carrying the same $-\nu S$ and $+\nu S$
+terms in the drift, then reading the two side by side:
+
+```{julia}
+using OrdinaryDiffEq
+
+function vaccination_drift!(du, u, p, t)
+    κ, γ, ν = p
+    infection = κ * u[1] * u[2]
+    du[1] = -infection - ν * u[1]
+    du[2] = infection - γ * u[2]
+    du[3] = γ * u[2] + ν * u[1]
+    return nothing
+end
+
+vaccinated_ode = solve(
+    ODEProblem(vaccination_drift!, [990.0, 10.0, 0.0], (0.0, 40.0), (κ, γ, ν)),
+    Tsit5(); saveat = 0.2,
+)
+vaccinated_ode_states = Array(vaccinated_ode)
+(; jump_peak_I = maximum(vaccinated_states[2, :]),
+   ode_peak_I = round(maximum(vaccinated_ode_states[2, :]); digits = 1),
+   jump_final_R = vaccinated_states[3, end],
+   ode_final_R = round(vaccinated_ode_states[3, end]; digits = 1))
+```
+
+One stochastic path is not expected to match the mean-field curve; the
+comparison is a sanity check that adding the same term to both descriptions
+moves them in the same direction, not a precision test.
+
+If $\nu=\nu(t)$, vaccination is a `VariableRateJump`.  With a known upper
+bound for $\nu(t)$ over each interval, it can be encoded as a bounded
+`VariableRateJump` and simulated using `Coevolve()` with `SSAStepper()`; the
+supplied `urate` and `rateinterval` must bound $\nu(s)S$ throughout
+that interval.  Without convenient bounds, use a general `VariableRateJump`
+with a continuous base problem and solver.  A piecewise-constant campaign can
+instead be handled in successive intervals or with scheduled parameter
+changes; a callback that changes parameters mid-simulation must then call
+`reset_aggregated_jumps!(integrator)`, because the aggregator caches the
+current propensities and the time of the next event and would otherwise keep
+using the pre-change values until the next jump fires.
 
 ### Stochastic differential equations
 
 #### Solution to Exercise 1 {#solution-ch05-ex1}
 
 The experiment keeps the model, seed, and output grid fixed while changing the
-Euler--Maruyama step.  Conservation is a property of the reaction-level noise,
-whereas nonnegativity is not guaranteed by any finite `dt`.
+Euler--Maruyama step.  Conservation is a structural property of the
+reaction-level noise, whereas nonnegativity is not guaranteed by any finite
+`dt`.
 
 ```{julia}
 using StochasticDiffEq
@@ -191,16 +237,44 @@ results = run_sde.( (0.1, 0.05, 0.01) )
 results
 ```
 
-Reducing `dt` reduces discretization error and usually makes boundary
-crossing less frequent, but a Gaussian increment has unbounded support for
-every positive step size.  A negative value can therefore still occur.  If
-nonnegativity is essential, use the integer CTMC or a method with an explicit
-nonnegative boundary treatment rather than silently clipping the output.
+The conservation error stays at roundoff level for every step size, and this
+is not a statement about accuracy: each column of $G$ sums to zero, so both
+the drift and every Euler increment lie in the population-conserving subspace
+whatever `dt` is.  Nonnegativity has no such structural protection.  From a
+fixed state strictly inside the nonnegative region, reducing `dt` generally
+reduces the probability and the size of a one-step discretization overshoot.
+It does not make the diffusion nonnegative.  This model starts at $R=0$ while
+the recovery diffusion coefficient is already nonzero, so negative $R$ values
+remain possible as `dt` is refined — and their first-step probability need not
+decrease.  Writing $a_2=\gamma I$ for the recovery propensity at $t=0$, the
+first Euler--Maruyama step gives
+$$
+R_{\Delta t}=a_2\Delta t+\sqrt{a_2\Delta t}\,Z,\qquad Z\sim\operatorname{Normal}(0,1),
+$$
+
+so $P(R_{\Delta t}<0)=\Phi(-\sqrt{a_2\Delta t})$, which *increases* towards
+$1/2$ as $\Delta t\to0$.  With $a_2=\gamma I(0)=2.5$ that probability is about
+$0.31$ at $\Delta t=0.1$, $0.36$ at $0.05$, and $0.44$ at $0.01$.  Refinement
+removes discretization overshoot from the interior; it cannot remove boundary
+crossings intrinsic to the Gaussian diffusion.  If nonnegativity is essential,
+use the integer CTMC or a principled boundary-preserving method rather than
+silently clipping the output.
+
+The three runs share a seed but not a Wiener path.  Each solve draws its
+random numbers on its own time grid, so the differences in `minimum_state`
+above mix discretization effects with different Brownian realizations and are
+not a pathwise convergence measurement.  To measure strong convergence,
+generate the noise once and reuse it across the solves with `NoiseWrapper`
+from `DiffEqNoiseProcess`.
 
 #### Solution to Exercise 2 {#solution-ch05-ex2}
 
 Independent state noise has a diagonal $3\times3$ diffusion.  The comparison
-below uses the same drift and seed as the reaction-level SDE.
+below uses the same drift and seed as the reaction-level SDE.  The shared seed
+makes both runs reproducible; it does not give them a common Wiener path,
+because the two models have different noise dimensions and different diffusion
+matrices — two Wiener processes against three.  The trajectory comparison is
+therefore illustrative rather than pathwise.
 
 ```{julia}
 using StochasticDiffEq
@@ -246,22 +320,46 @@ $$
 Q_{12}=Q_{21}=-a_1,\qquad Q_{23}=Q_{32}=-a_2,\qquad Q_{13}=0.
 $$
 
-The diagonal model sets all off-diagonal covariances to zero.  It also gives
-the total $S+I+R$ a nonzero noise term, so its conservation error is not a
-roundoff diagnostic.  Its infected trajectory is a different stochastic
-model, not merely a noisier numerical solve.
+The two terms lost are therefore $\operatorname{Cov}(dS,dI)=-a_1\,dt$ and
+$\operatorname{Cov}(dI,dR)=-a_2\,dt$: an infection moves one person out of $S$
+and into $I$, and a recovery moves one out of $I$ and into $R$, so those pairs
+of increments are perfectly anticorrelated at the reaction level.  The
+diagonal model sets both to zero while keeping the marginal variances
+$a_1$, $a_1+a_2$, and $a_2$.  Summing the diagonal increments then gives
+$$
+\operatorname{Var}(dS+dI+dR)=\bigl(a_1+(a_1+a_2)+a_2\bigr)dt=2(a_1+a_2)\,dt,
+$$
+
+instead of the zero the reaction-level model gives, which is exactly why the
+total population no longer stays at $N$.  Its conservation error is therefore
+not a roundoff diagnostic, and its infected trajectory is a different
+stochastic model, not merely a noisier numerical solve.
+
+The two conservation errors are directly comparable, because conservation is
+structural and holds path by path.  The reported `infected_difference` is not:
+with no common Wiener path behind the two solves, it measures one arbitrary
+pair of realizations rather than the discrepancy between the models.  To
+quantify that discrepancy, run ensembles of both and compare the mean,
+standard deviation, or full distribution of the peak $I$, as the chapter does
+for the jump process and the reaction-level SDE.
 
 ### Agent-based models
 
 #### Solution to Exercise 1 {#solution-ch06-ex1}
 
 The grid model changes the contact assumption: a susceptible samples only
-agents in its Moore neighborhood.  `nearby_agents` excludes the focal agent,
-and `GridSpace` supplies positions through the Agents.jl 7 `@agent` API.
+agents in its Moore neighborhood.  `GridSpaceSingle` holds at most one agent
+per cell, so filling every cell of a periodic $40\times25$ grid gives the same
+$N=1000$ population as the chapter, with exactly eight neighbors each and no
+boundary special cases.  `GridAgent{2}` supplies `pos`, and `:chebyshev` is
+the metric under which radius 1 is the Moore neighborhood.  The radius is a
+model property here only so the same code can answer the final part of the
+question.
 
 ```{julia}
 using Agents
 using Distributions
+using Random
 using Statistics
 using StableRNGs
 
@@ -273,10 +371,8 @@ end
 function grid_agent_step!(person, model)
     person.next_status = person.status
     if person.status == :S
-        neighbors = collect(nearby_agents(person, model, 1))
-        k = rand(abmrng(model), Poisson(model.c * model.Δt))
-        for _ in 1:k
-            isempty(neighbors) && break
+        neighbors = collect(nearby_agents(person, model, model.radius))
+        for _ in 1:rand(abmrng(model), Poisson(model.c * model.Δt))
             contact = rand(abmrng(model), neighbors)
             if contact.status == :I && rand(abmrng(model)) < model.β
                 person.next_status = :I
@@ -295,41 +391,193 @@ function grid_model_step!(model)
     end
 end
 
-space = GridSpace((20, 20); periodic = false)
 grid_S(model) = count(p.status == :S for p in allagents(model))
 grid_I(model) = count(p.status == :I for p in allagents(model))
 grid_R(model) = count(p.status == :R for p in allagents(model))
-model = StandardABM(
-    GridPerson, space;
-    agent_step! = grid_agent_step!,
-    model_step! = grid_model_step!,
-    properties = (β = 0.05, c = 10.0, γ = 0.25, Δt = 0.1),
-    rng = StableRNG(20250714),
-)
-for id in 1:200
-    position = (rand(abmrng(model), 1:20), rand(abmrng(model), 1:20))
-    status = id <= 5 ? :I : :S
-    add_agent!(position, model; status, next_status = status)
+
+function run_grid(seed, radius; max_steps = 2000)
+    space = GridSpaceSingle((40, 25); periodic = true, metric = :chebyshev)
+    model = StandardABM(
+        GridPerson, space;
+        agent_step! = grid_agent_step!,
+        model_step! = grid_model_step!,
+        properties = (β = 0.05, c = 10.0, γ = 0.25, Δt = 0.1, radius = radius),
+        rng = StableRNG(seed),
+    )
+    for position in positions(model)
+        add_agent!(position, model; status = :S, next_status = :S)
+    end
+    for id in shuffle(abmrng(model), collect(allids(model)))[1:10]
+        model[id].status = :I
+        model[id].next_status = :I
+    end
+    S_history = Int[grid_S(model)]
+    I_history = Int[grid_I(model)]
+    R_history = Int[grid_R(model)]
+    for _ in 1:max_steps
+        grid_I(model) == 0 && break
+        step!(model, 1)
+        push!(S_history, grid_S(model))
+        push!(I_history, grid_I(model))
+        push!(R_history, grid_R(model))
+    end
+    @assert grid_I(model) == 0 "increase max_steps: epidemic has not ended"
+    return hcat(S_history, I_history, R_history)'
 end
-_, data = run!(
-    model,     200;
-    mdata = [grid_S, grid_I, grid_R],
-    showprogress = false,
-)
-counts = Matrix(data[:, [:grid_S, :grid_I, :grid_R]])'
-@assert maximum(abs.(vec(sum(counts; dims = 1)) .- 200)) == 0
+
+counts = run_grid(20250714, 1)
+@assert maximum(abs.(vec(sum(counts; dims = 1)) .- 1000)) == 0
+@assert counts[:, 1] == [990, 10, 0]
+@assert all(diff(counts[1, :]) .<= 0)
+
+grid_summary = map((1, 5)) do radius
+    runs = [run_grid(6000 + k, radius) for k in 1:8]
+    final_sizes = [path[3, end] for path in runs]
+    (; radius, neighbors = (2radius + 1)^2 - 1,
+       mean_final_size = mean(final_sizes), sd = round(std(final_sizes); digits = 1))
+end
 ```
 
-The well-mixed derivation no longer applies: contacts are not uniform over all
-$N$ agents, and the infection probability depends on local occupancy and
-boundary effects.  Conservation still holds because the update changes status
-but never creates or removes an agent.
+The well-mixed model of the chapter, run to the same extinction criterion and
+with the same eight seeds, is the reference the grid results are compared
+against.
+
+```{julia}
+@agent struct MixedPerson(NoSpaceAgent)
+    status::Symbol
+    next_status::Symbol
+end
+
+function mixed_agent_step!(person, model)
+    person.next_status = person.status
+    if person.status == :S
+        for _ in 1:rand(abmrng(model), Poisson(model.c * model.Δt))
+            contact = random_agent(model)
+            if contact.status == :I && rand(abmrng(model)) < model.β
+                person.next_status = :I
+                break
+            end
+        end
+    elseif person.status == :I &&
+           rand(abmrng(model)) < 1 - exp(-model.γ * model.Δt)
+        person.next_status = :R
+    end
+end
+
+function run_mixed(seed; max_steps = 2000)
+    model = StandardABM(
+        MixedPerson;
+        agent_step! = mixed_agent_step!,
+        model_step! = grid_model_step!,
+        properties = (β = 0.05, c = 10.0, γ = 0.25, Δt = 0.1),
+        rng = StableRNG(seed),
+    )
+    for id in 1:1000
+        status = id <= 10 ? :I : :S
+        add_agent!(MixedPerson(; id, status, next_status = status), model)
+    end
+    for _ in 1:max_steps
+        grid_I(model) == 0 && break
+        step!(model, 1)
+    end
+    @assert grid_I(model) == 0 "increase max_steps: epidemic has not ended"
+    return grid_R(model)
+end
+
+mixed_final_sizes = [run_mixed(6000 + k) for k in 1:8]
+well_mixed_reference = (;
+    mean_final_size = mean(mixed_final_sizes),
+    sd = round(std(mixed_final_sizes); digits = 1),
+)
+```
+
+```{julia}
+(; grid = grid_summary, well_mixed = well_mixed_reference)
+```
+
+Conservation still holds, because the update changes a status but never
+creates or removes an agent.  The epidemic, however, usually stays localized
+and much smaller: with the eight-cell neighborhood the mean final size over
+eight seeds is a small fraction of the well-mixed reference printed above,
+and the spread across seeds is enormous: a standard deviation above 100,
+with some seeds fizzling after a few dozen infections and others reaching a
+couple of hundred.  This is not a small correction to mass action but a
+qualitatively different regime.
+
+The well-mixed reference itself should be compared against the exact ODE final
+size, which solves $s_\infty=s_0e^{-R_0(1-s_\infty)}$ with $s_0=0.99$ rather
+than the $1-x=e^{-R_0x}$ form, the latter being the negligible-initial-
+infection approximation:
+
+```{julia}
+function ode_final_size(s₀, R₀)
+    s = 0.5
+    for _ in 1:500
+        s = s₀ * exp(-R₀ * (1 - s))
+    end
+    return round(1000 * (1 - s); digits = 1)
+end
+
+(; exact = ode_final_size(0.99, 2.0), negligible_i₀ = ode_final_size(1.0, 2.0))
+```
+
+The assumption that fails is the one behind
+$\Pr(\text{contact is infectious})=I_t/N$ in Equation @eq-abm-infection:
+that a contact is a uniform draw from the whole population, so that the
+*global* prevalence is the right infection risk.  On the grid a susceptible
+draws from eight fixed neighbors, so what matters is the *local* prevalence,
+and the two decouple.  Neighborhoods overlap heavily (an infective's
+neighbors are largely each other's neighbors), so an agent's contacts are
+rapidly used up on people its infector has already reached.
+
+It is worth being precise about what has and has not stayed fixed.  The
+parameter combination $\beta c/\gamma=2$ is unchanged, but that number is the
+*mass-action* reproduction number; it is not the spatial model's $R_0$.  With
+a finite neighborhood of degree $d$, repeated contacts land on the same few
+people, so the number of *distinct* susceptibles an index case reaches is
+smaller.  Writing $p=1-e^{-c\Delta t\beta/d}$ for the per-step probability of
+transmitting to one particular neighbor and $q=1-e^{-\gamma\Delta t}$ for the
+per-step recovery probability, the chance that a given neighbor is infected
+before the focal agent recovers is $T=p/(p+q-pq)$:
+
+```{julia}
+function transmissibility(d; c = 10.0, β = 0.05, γ = 0.25, Δt = 0.1)
+    p = 1 - exp(-c * Δt * β / d)
+    q = 1 - exp(-γ * Δt)
+    T = p / (p + q - p * q)
+    return (; d, T = round(T; digits = 4),
+              index_case = round(d * T; digits = 3),
+              later_case = round((d - 1) * T; digits = 3))
+end
+
+transmissibility.((8, 120))
+```
+
+An isolated index case at radius 1 therefore makes about 1.62 distinct
+infections rather than 2, and every later case draws from a neighborhood
+already reached by its own infector, leaving at most $(d-1)T\approx1.42$ even
+before the heavy clustering of the Moore lattice is taken into account.  That
+margin above 1 is thin enough that local depletion and correlation can push
+the effective reproduction number to or below 1, which is why so many seeds
+fizzle.
+
+Widening the neighborhood is the direct test of that explanation: at radius 5
+each agent has 120 neighbors.  The pool is still fixed (it never refreshes),
+but it is large enough that repeated-contact depletion and local correlation
+become weak, $dT$ rises to about 1.99, and the mean final size returns to the
+well-mixed value within the seed-to-seed scatter of both.  Mass action is
+recovered in the limit of a large neighborhood, which is exactly the limit in
+which "uniform over the population" becomes a fair description of local
+mixing.
 
 #### Solution to Exercise 2 {#solution-ch06-ex2}
 
 The physical horizon is held at 30 time units, so each run uses
-`round(Int, 30 / Δt)` updates.  A small seeded ensemble reports the peak
-distribution for each timestep.
+`round(Int, 30 / Δt)` updates.  Each timestep gets its own seeded ensemble,
+and each ensemble is reduced twice: once by averaging the trajectories and
+then taking a maximum, and once by taking each trajectory's maximum and then
+averaging.  400 replicates keep the standard error near 1 person, well below
+the differences being compared.
 
 ```{julia}
 @agent struct Person(NoSpaceAgent)
@@ -361,7 +609,7 @@ end
 
 infected_count(model) = count(p.status == :I for p in allagents(model))
 
-function initialize_gridless(seed, Δt, nsteps)
+function infectious_path(seed, Δt, nsteps)
     model = StandardABM(
         Person;
         agent_step!,
@@ -369,8 +617,8 @@ function initialize_gridless(seed, Δt, nsteps)
         properties = (β = 0.05, c = 10.0, γ = 0.25, Δt = Δt),
         rng = StableRNG(seed),
     )
-    for id in 1:200
-        status = id <= 5 ? :I : :S
+    for id in 1:1000
+        status = id <= 10 ? :I : :S
         add_agent!(Person(; id, status, next_status = status), model)
     end
     _, data = run!(
@@ -381,20 +629,134 @@ function initialize_gridless(seed, Δt, nsteps)
     return collect(data.infected_count)
 end
 
-summaries = map((0.2, 0.1, 0.05)) do Δt
-    peaks = [
-        maximum(initialize_gridless(5000 + replicate, Δt, round(Int, 30 / Δt)))
-        for replicate in 1:16
+nreplicates = 400
+nbootstrap = 400
+fadeout_threshold = 50
+peak_summary = map((0.2, 0.1, 0.05)) do Δt
+    paths = [
+        infectious_path(9000 + replicate, Δt, round(Int, 30 / Δt))
+        for replicate in 1:nreplicates
     ]
-    (; Δt, mean_peak = mean(peaks), sd_peak = std(peaks))
+    trajectories = reduce(hcat, paths)
+    pathwise_peaks = maximum.(paths)
+    mean_path = vec(mean(trajectories; dims = 2))
+    boot_rng = StableRNG(4242)
+    bootstrap_peaks = [
+        maximum(vec(mean(
+            trajectories[:, rand(boot_rng, 1:nreplicates, nreplicates)]; dims = 2,
+        )))
+        for _ in 1:nbootstrap
+    ]
+    (; Δt,
+       peak_of_mean = round(maximum(mean_path); digits = 1),
+       se_peak_of_mean = round(std(bootstrap_peaks); digits = 2),
+       mean_of_peaks = round(mean(pathwise_peaks); digits = 1),
+       sd_of_peaks = round(std(pathwise_peaks); digits = 1),
+       se_mean_of_peaks = round(std(pathwise_peaks) / sqrt(nreplicates); digits = 2),
+       fadeouts = count(peak -> peak < fadeout_threshold, pathwise_peaks),
+       mean_excluding_fadeouts = round(
+           mean(filter(>=(fadeout_threshold), pathwise_peaks)); digits = 1,
+       ))
 end
-summaries
 ```
 
-The output is a distribution over realizations, not a single deterministic
-peak.  Changing $\Delta t$ changes both the numerical update frequency and
-the discrete-time biological interpretation: the contact and recovery
-probabilities are recalculated at a different interval.  Therefore timestep
-sensitivity is not purely a solver error study.  A useful reference is the
-continuous-time SIR ODE peak, but agreement is expected only as the
-well-mixed, small-step approximation becomes appropriate.
+The two standard errors are computed differently on purpose.  The per-replicate
+peaks are independent draws, so `se_mean_of_peaks` is the ordinary
+$\mathrm{sd}/\sqrt{n}$.  `peak_of_mean` is a maximum taken *after* averaging,
+which has no closed-form standard error, so it is bootstrapped by resampling
+whole trajectories with replacement and recomputing the statistic each time.
+
+```{julia}
+peak_summary
+```
+
+The two columns are different statistics, and the ODE peak of $158.5$ falls
+between them at every timestep.  `mean_of_peaks` estimates
+$\mathbb{E}[\max_t I(t)]$ and sits above; `peak_of_mean` estimates
+$\max_t\mathbb{E}[I(t)]$ and sits below.  The ordering is not an accident:
+the maximum is a convex function, so Jensen's inequality forces
+$\max_t\mathbb{E}[I(t)]\le\mathbb{E}[\max_t I(t)]$ for any ensemble.
+
+Peak-time variation is the dominant reason the ensemble-mean curve is
+flattened.  Here a fadeout is defined operationally as a run that never
+reaches 50 simultaneous infectives.  Such runs are rare but not absent: the
+`fadeouts` column counts a handful out of 400, and they are genuine early
+extinctions in which the epidemic never grew beyond its 10 seed infectives.
+That rate is the expected order of magnitude: treating the seeds as
+independent branching processes, all ten die out with probability
+$R_0^{-10}\approx0.1\%$.  The remaining runs take off at different moments,
+and individual peaks land anywhere from about $t=12$ to $t=30$.  Averaging at
+fixed clock time therefore adds up curves that are not aligned, and the
+resulting mean is flatter and lower than any of them.  Aligning the paths on
+their own peaks before averaging recovers `mean_of_peaks` exactly.
+
+The fadeouts are far too few to account for the gap: `mean_excluding_fadeouts`
+differs from `mean_of_peaks` by at most about one person, so removing them
+would leave the picture unchanged.  Ruling out an extinction mixture
+is not, however, the same as ruling out every stochastic effect.  Demographic
+noise, variation in path height as well as timing, and the fact that
+$\mathbb{E}[SI]\neq\mathbb{E}[S]\mathbb{E}[I]$ all contribute to the
+difference between the ensemble and any deterministic curve.
+
+Only part of the movement down the table is a timestep effect, and the two
+parts can be separated by removing the randomness.  The deterministic
+mean-field map that the ABM approximates for large $N$ applies exactly the
+same frozen-within-a-step update rule, so its distance from the ODE is pure
+discretization error.
+
+```{julia}
+function mean_field_peak(Δt)
+    S, I = 990.0, 10.0
+    peak = I
+    for _ in 1:round(Int, 30 / Δt)
+        new_infections = S * (1 - exp(-10.0 * 0.05 * Δt * I / 1000))
+        new_recoveries = I * (1 - exp(-0.25 * Δt))
+        S -= new_infections
+        I += new_infections - new_recoveries
+        peak = max(peak, I)
+    end
+    return round(peak; digits = 1)
+end
+
+[(; Δt, map_peak = mean_field_peak(Δt)) for Δt in (0.2, 0.1, 0.05, 0.01)]
+```
+
+The map's peak approaches the ODE's $158.5$ from above and roughly halves its
+error each time $\Delta t$ halves: that is the timestep component, and it is
+worth only a few people at $\Delta t=0.1$.  The update freezes the state over
+each interval: agents infected during a step cannot recover or transmit until
+the next one, while agents selected to recover remain infectious for the
+whole current step.  These approximations act in opposing directions; for
+these parameters their net effect biases the map's peak upward.
+
+Everything else in the table is stochastic and will not go away.  Measuring
+the two ensemble statistics against the map at the same $\Delta t$ separates
+the pieces:
+
+```{julia}
+[(; s.Δt,
+   map_peak = mean_field_peak(s.Δt),
+   smearing = round(s.mean_of_peaks - s.peak_of_mean; digits = 1),
+   max_inflation = round(s.mean_of_peaks - mean_field_peak(s.Δt); digits = 1),
+   net_deficit = round(s.peak_of_mean - mean_field_peak(s.Δt); digits = 1))
+ for s in peak_summary]
+```
+
+The net deficit of `peak_of_mean` against the map is twelve to thirteen
+people, but it is not a single effect: it is twenty to twenty-three people of
+temporal smearing, partly offset by seven to ten people of upward inflation in
+the pathwise maximum.  Quoting the net figure alone would hide both of the
+larger quantities that produce it.  None of the three shrinks systematically as
+$\Delta t$ falls, which is the point: neither statistic converges to $158.5$,
+and refining $\Delta t$ moves `peak_of_mean` further below the ODE peak rather
+than towards it.  Reading the whole difference from $158.5$ as numerical error
+would therefore be a mistake.
+
+Changing $\Delta t$ also changes the model, not only its accuracy: the contact
+and recovery probabilities are re-derived for a different interval, so this is
+not purely a solver-error study.  `peak_of_mean` is the closest like-for-like
+comparison with the ODE trajectory, since the ODE state is a population mean,
+but at fixed finite $N$ it is not expected to equal the ODE peak.  Agreement
+should only be expected in the joint limit of small $\Delta t$ and large $N$,
+where finite-population stochastic effects, including peak-time scatter,
+become negligible.

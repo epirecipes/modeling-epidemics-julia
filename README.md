@@ -1,68 +1,98 @@
 # Modeling Epidemics with Julia
 
-An executable course that develops epidemic models from assumptions and equations through simulation, inference, and decision-making in Julia.
+An executable course that develops epidemic models from their assumptions and
+equations through simulation, inference, and decision-making in Julia. Every
+model is built up from what it assumes about a population, written as
+equations, implemented in Julia, and then checked against something known.
 
-The course contains 3 optional prerequisites, 12 core chapters, and 9 advanced appendices. Each teaching unit has a Quarto book page, Reveal.js slides, a Pluto notebook, and two exercises with solutions.
+## Start here
 
-## Local setup
+**Attending the workshop?** Work through [Setting up](setup.qmd) before Day 1.
+It takes about half an hour, most of which is waiting for downloads, and doing
+it in advance means the first session starts with you writing model code rather
+than installing software. Then see [the schedule](workshop.qmd) for what is
+taught when, and [the session resources](resources.qmd) for the chapter,
+slides and worksheet of each taught session.
 
-Requirements:
+**Working through the course on your own?** Start with the same
+[Setting up](setup.qmd) page, then read from [the introduction](index.qmd)
+onward. The workshop pages are safe to ignore: every chapter links its own
+slides and notebook at the end, and each has two exercises with worked
+solutions.
 
-- Julia 1.12
-- Quarto 1.9 or newer
+## What's inside
+
+Twenty-four teaching units: 3 optional prerequisites covering Julia,
+probability and calculus, 12 core chapters running from the SIR model to a
+complete data-to-decision case study, and 9 advanced appendices extending the
+same ideas to delays, scientific machine learning, probabilistic numerics,
+control, and model composition.
+
+Each unit comes as four things:
+
+- a **chapter** that derives the model and implements it;
+- a **slide deck** summarising it;
+- a **Pluto notebook** with sliders, for changing a parameter and watching the
+  figures move;
+- **two exercises** with full solutions.
+
+Ten of the twenty-four units are taught live over three days, and each of those
+also has a **worksheet**: a partly written Quarto file you fill in during the
+session.
+
+## Getting the materials
+
+Full instructions, including what to do when a step fails, are in
+[Setting up](setup.qmd). In short:
 
 ```bash
+git clone https://github.com/epirecipes/modeling-epidemics-julia.git
+cd modeling-epidemics-julia
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
-julia --project=environments/ch08 -e 'using Pkg; Pkg.instantiate()'
 ```
 
-## Build and validation
+Then open that folder in VSCode with *File* → *Open Folder*, opening the
+folder itself rather than an individual file. If you do not use git, download
+the repository as a ZIP and unzip it somewhere you can find again.
 
-```bash
-# Render the book and all slide decks.
-quarto render
+The install step downloads every package the course uses, at the versions it
+was tested with. Expect ten to twenty minutes, and do it before you travel
+rather than on workshop wifi.
 
-# Export every Pluto notebook to static HTML.
-julia --project=. scripts/export_notebooks.jl
+## Where things are
 
-# Check the 24-unit artifact contract and 48 exercise/solution pairs.
-julia --project=. scripts/check_structure.jl
+| Folder | What is in it |
+|---|---|
+| `prerequisites/`, `chapters/`, `appendices/` | the book pages, in reading order |
+| `worksheets/` | the fill-in files for the taught sessions |
+| `slides/` | the slide deck for every unit |
+| `notebooks/` | the Pluto notebooks |
+| `notebook-exports/` | static previews of those notebooks, no install needed |
+| `data/` | the capstone dataset, with its checksum and provenance |
 
-# Verify the capstone dataset and checksum.
-julia --project=. scripts/check_data.jl
+## Contributing
 
-# Reject obsolete package imports and third-party monkey-patches.
-julia --project=. scripts/check_deprecated_apis.jl
+Corrections and improvements are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md)
+for how to build, render and validate the course.
 
-# Check figure captions, slide notes, notebook interactivity, solutions, and citations.
-julia --project=. scripts/check_editorial_contract.jl
+## License and citation
 
-# Run shared model and data tests.
-julia --project=. -e 'using Pkg; Pkg.test()'
+This book is developed by the epirecipes organization and builds upon material
+from the [`epirecipes/sir-julia`](https://github.com/epirecipes/sir-julia)
+repository.
+
+The book, its source files, and accompanying code are distributed under the
+MIT License. Copyright (c) 2020–2026 epirecipes.
+
+### How to cite
+
+```bibtex
+@misc{epirecipes_modeling_epidemics_julia,
+  author       = {Montes-Olivas, Sandra and
+                  Frost, Simon D. W.},
+  title        = {Modeling Epidemics with Julia: From Methods to Decisions},
+  year         = {2026},
+  url          = {https://github.com/epirecipes/modeling-epidemics-julia},
+  note         = {MIT-licensed course materials}
+}
 ```
-
-## Self-contained PDF
-
-The PDF build renders the complete book, renders all 24 decks with Beamer, appends the decks after the book, embeds fonts, and compresses the result:
-
-```bash
-julia --project=. scripts/build_combined_pdf.jl
-```
-
-The output is `dist/modeling-epidemics-with-julia-complete.pdf`, with a matching SHA-256 file. The build requires Quarto/TinyTeX, `pdfunite`, and Ghostscript. To recombine already-rendered intermediate PDFs without re-executing the course:
-
-```bash
-julia --project=. scripts/build_combined_pdf.jl --skip-render
-```
-
-Open the interactive notebooks with:
-
-```bash
-julia --project=. -e 'using Pluto; Pluto.run()'
-```
-
-## Publication
-
-`.github/workflows/publish.yml` renders the committed freeze results with the `publish` Quarto profile and deploys `_site/` through GitHub Pages. After adding a GitHub remote, configure the repository's Pages source as **GitHub Actions** and push `main`.
-
-The sibling `../sir-julia/` repository is outside this course repository and is used only as local reference material.

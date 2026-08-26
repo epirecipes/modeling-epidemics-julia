@@ -93,7 +93,7 @@ primitives for queueing and contention — more bookkeeping, more generality.
 
 ```{julia}
 #| label: fig-slide-a03-trajectories
-#| fig-cap: "Single EventQueueABM and ConcurrentSim realizations against the deterministic ODE mean field."
+#| fig-cap: "Single EventQueueABM and ConcurrentSim realisations against the deterministic ODE mean field."
 #| echo: false
 
 using Agents, ConcurrentSim, ResumableFunctions, Random, Distributions, OrdinaryDiffEq, CairoMakie
@@ -134,10 +134,7 @@ end
 @resumable function live(sim, person, m, rng)
     while person.status == :S
         @yield timeout(sim, rand(rng, Exponential(1 / m.c)))
-        alter = person
-        while alter === person
-            alter = rand(rng, m.people)
-        end
+        alter = rand(rng, m.people)
         if alter.status == :I && rand(rng) < m.β
             person.status = :I
             push!(m.ta, now(sim)); push!(m.Ia, count(p -> p.status == :I, m.people))

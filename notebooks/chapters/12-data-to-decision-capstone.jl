@@ -31,11 +31,11 @@ If the CSV is unavailable, a deterministic SIR trajectory with the same schema
 is used; no network request is made. Sliders explore a conditional policy.
 """
 
-# ╔═╡ 4b4773cb-d102-4f0b-8d3f-fa639f1d20d2
-begin
-    @bind policy_start12 PlutoUI.Slider(0.0:0.5:4.0; default = 1.0, show_value = true)
-    @bind policy_reduction12 PlutoUI.Slider(0.0:0.1:0.8; default = 0.5, show_value = true)
-end
+# ╔═╡ de216038-3dd7-4865-bebe-146184a12995
+@bind policy_start12 PlutoUI.Slider(0.0:0.5:4.0; default = 1.0, show_value = true)
+
+# ╔═╡ a97fd0d7-245f-40db-bf9a-5f6d04b7c5fa
+@bind policy_reduction12 PlutoUI.Slider(0.0:0.1:0.8; default = 0.5, show_value = true)
 
 # ╔═╡ 5cb729e9-4f4f-44cf-b88a-c87f48ee72db
 begin
@@ -187,7 +187,8 @@ end
 # ╠═9ae06a3f-c63a-4fd3-8648-aab037c12fc1
 # ╠═a5b80b48-2fc3-4bd2-9130-f80f4c1f6af9
 # ╟─07f973e7-1dce-43a5-be0e-ff7ae40028dc
-# ╠═4b4773cb-d102-4f0b-8d3f-fa639f1d20d2
+# ╠═de216038-3dd7-4865-bebe-146184a12995
+# ╠═a97fd0d7-245f-40db-bf9a-5f6d04b7c5fa
 # ╠═5cb729e9-4f4f-44cf-b88a-c87f48ee72db
 # ╠═5dbbd9c0-8145-4a2d-9cc3-e57dfcca08cf
 # ╠═1f90a1aa-076e-46ca-9c54-3c5f1cf3cd82

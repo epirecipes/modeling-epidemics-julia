@@ -93,9 +93,9 @@ chain = sample(StableRNG(2), bayes_sir(data, prob09), NUTS(0.8),
 ```
 
 ::: {.notes}
-Three hundred draws over two chains keep the deck fast in CI while still giving a
-meaningful $\hat R$. NUTS differentiates through the ODE solve via
-`SciMLSensitivity`.
+Three hundred draws over two chains run fast enough to demonstrate live while
+still giving a meaningful $\hat R$. Say out loud that a real analysis wants more.
+NUTS differentiates through the ODE solve via `SciMLSensitivity`.
 :::
 
 ## Posterior and predictive check

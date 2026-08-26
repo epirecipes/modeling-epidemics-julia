@@ -1,191 +1,93 @@
-# Course resources {.unnumbered}
+# Workshop resources {.unnumbered}
 
-Each teaching unit has a book page, slide deck, Pluto source, and static notebook preview. Units are grouped below by [workshop](workshop.qmd)(taught live), or provided for self-study.
+Welcome to the workshop! Below you will find the materials for all ten taught sessions, organised in the order they will be presented.
 
-Taught sessions also have a worksheet. Worksheets are not published pages: they are files in the repository, meant to be opened and completed in your editor, with solutions added at the end of each workshop day.
+For each session, you will use three resources:
 
-The capstone uses the versioned [Eyam plague dataset](data/eyam_plague_1666.csv) with [provenance metadata](data/eyam_plague_1666.toml).
+*   **Book:** Each chapter includes a more detailed exploration of the subject with code. You can read this if you are stuck or something is not clear.
+*   **Slides:** The presentation slides shown in the room at the start of each session.
+*   **Worksheet:** The file you will fill in during the workshop. It is in your course folder under `worksheets/`, and that is the copy to open in VS Code. Clicking the link downloads the same Quarto (`.qmd`) file.
 
-## Workshop track
+**Optional: Interactive Pluto Notebooks**
 
-Proposed schedule, see the [workshop programme](workshop.qmd) for the full day-by-day.
+Each session also includes an optional Pluto notebook, which provides the chapter model but adds sliders for exploring parameters. These are not required to complete the workshop.
+
+The **Pluto preview** is a saved copy of the notebook: it shows the model at its default values, and its sliders do not move. To change a parameter and see the figures update, open the **Pluto source** in Pluto. Pluto is installed along with the other course packages, so it is ready to use; the [Setting up](setup.qmd) guide shows how to start it.
+
+---
+
+## Day 1
 
 ### Julia essentials for modelers — Day 1, Session 1
 
 - [Book](prerequisites/01-julia-essentials.html)
 - [Slides](slides/prerequisites/01-julia-essentials.html)
-- [Pluto preview](notebook-exports/prerequisites/01-julia-essentials.html)
-- [Pluto source](notebooks/prerequisites/01-julia-essentials.jl)
-- Worksheet: `worksheets/prerequisites/01-julia-essentials.qmd`
+- [Worksheet](worksheets/prerequisites/01-julia-essentials.qmd)
+- Optional: [Pluto preview](notebook-exports/prerequisites/01-julia-essentials.html) · [Pluto source](notebooks/prerequisites/01-julia-essentials.jl)
 
 ### Foundations: SIR theory and the Julia workflow — Day 1, Session 2
 
 - [Book](chapters/01-foundations.html)
 - [Slides](slides/chapters/01-foundations.html)
-- [Pluto preview](notebook-exports/chapters/01-foundations.html)
-- [Pluto source](notebooks/chapters/01-foundations.jl)
-- Worksheet: `worksheets/chapters/01-foundations.qmd`
+- [Worksheet](worksheets/chapters/01-foundations.qmd)
+- Optional: [Pluto preview](notebook-exports/chapters/01-foundations.html) · [Pluto source](notebooks/chapters/01-foundations.jl)
 
 ### Ordinary differential equations — Day 1, Session 3
 
 - [Book](chapters/03-ordinary-differential-equations.html)
 - [Slides](slides/chapters/03-ordinary-differential-equations.html)
-- [Pluto preview](notebook-exports/chapters/03-ordinary-differential-equations.html)
-- [Pluto source](notebooks/chapters/03-ordinary-differential-equations.jl)
-- Worksheet: `worksheets/chapters/03-ordinary-differential-equations.qmd`
+- [Worksheet](worksheets/chapters/03-ordinary-differential-equations.qmd)
+- Optional: [Pluto preview](notebook-exports/chapters/03-ordinary-differential-equations.html) · [Pluto source](notebooks/chapters/03-ordinary-differential-equations.jl)
 
 ### Discrete-time models — Day 1, Session 4
 
 - [Book](chapters/02-discrete-time-models.html)
 - [Slides](slides/chapters/02-discrete-time-models.html)
-- [Pluto preview](notebook-exports/chapters/02-discrete-time-models.html)
-- [Pluto source](notebooks/chapters/02-discrete-time-models.jl)
-- Worksheet: `worksheets/chapters/02-discrete-time-models.qmd`
+- [Worksheet](worksheets/chapters/02-discrete-time-models.qmd)
+- Optional: [Pluto preview](notebook-exports/chapters/02-discrete-time-models.html) · [Pluto source](notebooks/chapters/02-discrete-time-models.jl)
+
+## Day 2
 
 ### Continuous-time Markov chains and jump processes — Day 2, Session 1
 
 - [Book](chapters/04-jump-processes.html)
 - [Slides](slides/chapters/04-jump-processes.html)
-- [Pluto preview](notebook-exports/chapters/04-jump-processes.html)
-- [Pluto source](notebooks/chapters/04-jump-processes.jl)
-- Worksheet: `worksheets/chapters/04-jump-processes.qmd`
+- [Worksheet](worksheets/chapters/04-jump-processes.qmd)
+- Optional: [Pluto preview](notebook-exports/chapters/04-jump-processes.html) · [Pluto source](notebooks/chapters/04-jump-processes.jl)
 
 ### Stochastic differential equations — Day 2, Session 2
 
 - [Book](chapters/05-stochastic-differential-equations.html)
 - [Slides](slides/chapters/05-stochastic-differential-equations.html)
-- [Pluto preview](notebook-exports/chapters/05-stochastic-differential-equations.html)
-- [Pluto source](notebooks/chapters/05-stochastic-differential-equations.jl)
-- Worksheet: `worksheets/chapters/05-stochastic-differential-equations.qmd`
+- [Worksheet](worksheets/chapters/05-stochastic-differential-equations.qmd)
+- Optional: [Pluto preview](notebook-exports/chapters/05-stochastic-differential-equations.html) · [Pluto source](notebooks/chapters/05-stochastic-differential-equations.jl)
 
 ### Observation models and simulated data — Day 2, Session 3
 
 - [Book](chapters/07-observation-models.html)
 - [Slides](slides/chapters/07-observation-models.html)
-- [Pluto preview](notebook-exports/chapters/07-observation-models.html)
-- [Pluto source](notebooks/chapters/07-observation-models.jl)
-- Worksheet: `worksheets/chapters/07-observation-models.qmd`
+- [Worksheet](worksheets/chapters/07-observation-models.qmd)
+- Optional: [Pluto preview](notebook-exports/chapters/07-observation-models.html) · [Pluto source](notebooks/chapters/07-observation-models.jl)
 
 ### Sensitivity and identifiability — Day 2, Session 4
 
 - [Book](chapters/10-sensitivity-and-identifiability.html)
 - [Slides](slides/chapters/10-sensitivity-and-identifiability.html)
-- [Pluto preview](notebook-exports/chapters/10-sensitivity-and-identifiability.html)
-- [Pluto source](notebooks/chapters/10-sensitivity-and-identifiability.jl)
-- Worksheet: `worksheets/chapters/10-sensitivity-and-identifiability.qmd`
+- [Worksheet](worksheets/chapters/10-sensitivity-and-identifiability.qmd)
+- Optional: [Pluto preview](notebook-exports/chapters/10-sensitivity-and-identifiability.html) · [Pluto source](notebooks/chapters/10-sensitivity-and-identifiability.jl)
+
+## Day 3
 
 ### Interventions and optimization — Day 3, Session 1
 
 - [Book](chapters/11-interventions-and-optimization.html)
 - [Slides](slides/chapters/11-interventions-and-optimization.html)
-- [Pluto preview](notebook-exports/chapters/11-interventions-and-optimization.html)
-- [Pluto source](notebooks/chapters/11-interventions-and-optimization.jl)
+- [Worksheet](worksheets/chapters/11-interventions-and-optimization.qmd)
+- Optional: [Pluto preview](notebook-exports/chapters/11-interventions-and-optimization.html) · [Pluto source](notebooks/chapters/11-interventions-and-optimization.jl)
 
 ### Agent-based models — Day 3, Session 2
 
 - [Book](chapters/06-agent-based-models.html)
 - [Slides](slides/chapters/06-agent-based-models.html)
-- [Pluto preview](notebook-exports/chapters/06-agent-based-models.html)
-- [Pluto source](notebooks/chapters/06-agent-based-models.jl)
-
-## Self-study
-
-Materials made available for self-study (not taught live at the workshop).
-
-### Probability and stochastic processes
-
-- [Book](prerequisites/02-probability-and-stochastic-processes.html)
-- [Slides](slides/prerequisites/02-probability-and-stochastic-processes.html)
-- [Pluto preview](notebook-exports/prerequisites/02-probability-and-stochastic-processes.html)
-- [Pluto source](notebooks/prerequisites/02-probability-and-stochastic-processes.jl)
-
-### Calculus and numerical methods
-
-- [Book](prerequisites/03-calculus-and-numerical-methods.html)
-- [Slides](slides/prerequisites/03-calculus-and-numerical-methods.html)
-- [Pluto preview](notebook-exports/prerequisites/03-calculus-and-numerical-methods.html)
-- [Pluto source](notebooks/prerequisites/03-calculus-and-numerical-methods.jl)
-
-### Frequentist parameter estimation
-
-- [Book](chapters/08-parameter-estimation.html)
-- [Slides](slides/chapters/08-parameter-estimation.html)
-- [Pluto preview](notebook-exports/chapters/08-parameter-estimation.html)
-- [Pluto source](notebooks/chapters/08-parameter-estimation.jl)
-
-### Bayesian inference
-
-- [Book](chapters/09-bayesian-inference.html)
-- [Slides](slides/chapters/09-bayesian-inference.html)
-- [Pluto preview](notebook-exports/chapters/09-bayesian-inference.html)
-- [Pluto source](notebooks/chapters/09-bayesian-inference.jl)
-
-### Data-to-decision capstone
-
-- [Book](chapters/12-data-to-decision-capstone.html)
-- [Slides](slides/chapters/12-data-to-decision-capstone.html)
-- [Pluto preview](notebook-exports/chapters/12-data-to-decision-capstone.html)
-- [Pluto source](notebooks/chapters/12-data-to-decision-capstone.jl)
-
-### Delay differential equations
-
-- [Book](appendices/01-delay-differential-equations.html)
-- [Slides](slides/appendices/01-delay-differential-equations.html)
-- [Pluto preview](notebook-exports/appendices/01-delay-differential-equations.html)
-- [Pluto source](notebooks/appendices/01-delay-differential-equations.jl)
-
-### Stochastic delay differential equations
-
-- [Book](appendices/02-stochastic-delay-differential-equations.html)
-- [Slides](slides/appendices/02-stochastic-delay-differential-equations.html)
-- [Pluto preview](notebook-exports/appendices/02-stochastic-delay-differential-equations.html)
-- [Pluto source](notebooks/appendices/02-stochastic-delay-differential-equations.jl)
-
-### Discrete-event simulation
-
-- [Book](appendices/03-discrete-event-simulation.html)
-- [Slides](slides/appendices/03-discrete-event-simulation.html)
-- [Pluto preview](notebook-exports/appendices/03-discrete-event-simulation.html)
-- [Pluto source](notebooks/appendices/03-discrete-event-simulation.jl)
-
-### Universal differential equations
-
-- [Book](appendices/04-universal-differential-equations.html)
-- [Slides](slides/appendices/04-universal-differential-equations.html)
-- [Pluto preview](notebook-exports/appendices/04-universal-differential-equations.html)
-- [Pluto source](notebooks/appendices/04-universal-differential-equations.jl)
-
-### Finite-state projection
-
-- [Book](appendices/05-finite-state-projection.html)
-- [Slides](slides/appendices/05-finite-state-projection.html)
-- [Pluto preview](notebook-exports/appendices/05-finite-state-projection.html)
-- [Pluto source](notebooks/appendices/05-finite-state-projection.jl)
-
-### Probabilistic numerical integration
-
-- [Book](appendices/06-probabilistic-numerical-integration.html)
-- [Slides](slides/appendices/06-probabilistic-numerical-integration.html)
-- [Pluto preview](notebook-exports/appendices/06-probabilistic-numerical-integration.html)
-- [Pluto source](notebooks/appendices/06-probabilistic-numerical-integration.jl)
-
-### Surrogate and emulator models
-
-- [Book](appendices/07-surrogate-models.html)
-- [Slides](slides/appendices/07-surrogate-models.html)
-- [Pluto preview](notebook-exports/appendices/07-surrogate-models.html)
-- [Pluto source](notebooks/appendices/07-surrogate-models.jl)
-
-### Advanced optimal control
-
-- [Book](appendices/08-advanced-optimal-control.html)
-- [Slides](slides/appendices/08-advanced-optimal-control.html)
-- [Pluto preview](notebook-exports/appendices/08-advanced-optimal-control.html)
-- [Pluto source](notebooks/appendices/08-advanced-optimal-control.jl)
-
-### Model composition and structured populations
-
-- [Book](appendices/09-model-composition.html)
-- [Slides](slides/appendices/09-model-composition.html)
-- [Pluto preview](notebook-exports/appendices/09-model-composition.html)
-- [Pluto source](notebooks/appendices/09-model-composition.jl)
+- [Worksheet](worksheets/chapters/06-agent-based-models.qmd)
+- Optional: [Pluto preview](notebook-exports/chapters/06-agent-based-models.html) · [Pluto source](notebooks/chapters/06-agent-based-models.jl)

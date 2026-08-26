@@ -309,13 +309,15 @@ Every worksheet also opens with a table of the symbols it uses, ready to copy.
 
 **The interactive notebooks.** Every unit also comes as a Pluto notebook with
 sliders, linked at the end of its chapter and, for the taught sessions, on the
-[workshop resources](resources.qmd) page. Pluto is not installed by
-`Pkg.instantiate()`; add it separately when you want it:
+[workshop resources](resources.qmd) page. Step 5 already installed Pluto, so
+starting it is one line:
 
 ```bash
-julia --project=. -e 'using Pkg; Pkg.add("Pluto")'
 julia --project=. -e 'using Pluto; Pluto.run()'
 ```
+
+It opens in your browser. Use *Open a notebook* and give it a path such as
+`notebooks/chapters/01-foundations.jl`.
 
 A Pluto notebook is not a script that runs top to bottom. Its cells form a
 network: change one, and every cell that depends on it re-runs by itself. That

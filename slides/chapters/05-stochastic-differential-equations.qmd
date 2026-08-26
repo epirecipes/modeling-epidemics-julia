@@ -116,7 +116,7 @@ which is structural rather than luck. The smallest state is the diagnostic that 
 on this seed a compartment goes slightly negative, because nothing in a Gaussian
 increment prevents it near a boundary. At a thousand people a fraction of a
 person is a rounding-scale excursion and the picture is still trustworthy; the
-same model at ten infectious people is not, and that is the honest limit of the
+same model at ten infectious people is not, and that is the limit of the
 approximation. Note also that clipping the state after the solve does not repair
 this: it changes the probability law rather than the model.
 :::

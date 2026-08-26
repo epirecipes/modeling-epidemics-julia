@@ -6,8 +6,10 @@
 
 We extend the in-place kernel with a fourth state $C$ whose derivative is the
 force of infection times $S$, i.e. the instantaneous incidence $\lambda S$. Since
-new infections *leave* $S$ at exactly the rate they *enter* $C$, we expect
-`du[4] == -du[1]`.
+new infections *leave* $S$ at exactly the rate they are *added to the cumulative
+count* $C$, we expect `du[4] == -du[1]`. Note that $C$ is a running total rather
+than a compartment holding people: starting it at $C(0) = 0$ makes it count
+infections occurring after $t = 0$, and nothing ever leaves it.
 
 ```{julia}
 #| label: sol-p01-ex1
@@ -49,11 +51,18 @@ fraction = count(<(q), draws) / length(draws)   # broadcasting via count(<(q), �
 (target = q, observed = fraction, absolute_error = abs(fraction - q))
 ```
 
-The observed fraction sits within about $0.01$ of the target. Because the stream
-is produced by a *local* `StableRNG(2024)`, whose algorithm is fixed across Julia
-versions and platforms, every reader obtains the identical `draws` vector and the
-identical fraction — the figure is bit-for-bit reproducible, unlike one seeded
-through the global `default_rng()`.
+The observed fraction sits within about $0.01$ of the target. Two properties get
+it there. The stream is *local*, so nothing else drawing random numbers in the
+same session can shift it, which a stream taken from the global `default_rng()`
+cannot promise. And `StableRNG`'s algorithm is fixed across Julia versions and
+platforms, so every reader obtains the identical `draws` vector.
+
+That is a guarantee about the draws, not about everything computed from them.
+Here the two coincide, because counting and dividing are exact enough that the
+fraction comes out identical as well. A longer floating-point computation on the
+same identical draws can still differ in its last digits between platforms, so
+"same seed" is worth reading as "same inputs", not "same answer to every
+decimal".
 
 ### Probability and stochastic processes
 
@@ -206,7 +215,20 @@ are preferred.
 #### Solution to Exercise 1 {#solution-ch01-ex1}
 
 Holding $\beta = 0.05$ and $\gamma = 0.25$, $R_0 = \beta c/\gamma$ scales linearly
-with the contact rate. The threshold $R_0 = 1$ occurs at $c = \gamma/\beta = 5$.
+with the contact rate, so $R_0 = 1$ at $c = \gamma/\beta = 5$. Prevalence grows
+from the outset only when the *effective* reproduction number $R_0 s_0$, which
+counts the susceptibles an infectious person can actually reach, exceeds one.
+With $s_0 = 0.99$ that needs a slightly larger contact rate:
+
+$$
+R_0 s_0 > 1
+\quad\Longleftrightarrow\quad
+c > \frac{\gamma}{\beta s_0} = \frac{0.25}{0.05 \times 0.99} \approx 5.0505.
+$$
+
+The table reports the attack rate $1 - s_\infty$, which with $r_0 = 0$ is the
+fraction infected at or after $t=0$ and so includes the 1% seed, alongside
+$s_0 - s_\infty$, the fraction infected strictly after $t=0$.
 
 ```{julia}
 #| label: sol-ch01-ex1
@@ -214,24 +236,41 @@ using NonlinearSolve, DataFrames
 
 β, γ, N = 0.05, 0.25, 1000.0     # c is the swept quantity, so no parameter tuple here
 s₀ = 990.0 / N
-attack(R0) = 1 - solve(NonlinearProblem((s, r) -> s - s₀ * exp(-r * (1 - s)), 0.2, R0), NewtonRaphson()).u
+s_inf(R0) = solve(NonlinearProblem((s, r) -> s - s₀ * exp(-r * (1 - s)), 0.2, R0), NewtonRaphson()).u
+cs = (4, 6, 8, 10)
 
-DataFrame(c = [4, 6, 8, 10],
-          R0 = [β * c / γ for c in (4, 6, 8, 10)],
-          attack_rate = [round(attack(β * c / γ); digits = 3) for c in (4, 6, 8, 10)])
+DataFrame(c = collect(cs),
+          R0 = [β * c / γ for c in cs],
+          R0_s0 = [round(β * c / γ * s₀; digits = 3) for c in cs],
+          attack_rate = [round(1 - s_inf(β * c / γ); digits = 3) for c in cs],
+          newly_infected = [round(s₀ - s_inf(β * c / γ); digits = 3) for c in cs])
 ```
 
-For $c = 4$ we have $R_0 = 0.8 < 1$ and the attack rate ($\approx 0.045$) barely
-exceeds the initial 1% seed — the few initial infections cannot sustain a chain
-of transmission, so no epidemic occurs. For $c \ge 6$ ($R_0 \ge 1.2$) a genuine
-epidemic develops and the attack rate climbs steeply with $R_0$. The switch
-happens exactly at $c = 5$, where $R_0 = 1$: below it each infection produces
-fewer than one secondary case on average.
+For $c = 4$ we have $R_0 = 0.8$ and $R_0 s_0 = 0.792 < 1$: prevalence falls from
+day zero, so there is no growing epidemic wave, and the $\approx 0.045$ attack
+rate is the initial 1% seed plus the $\approx 0.035$ it infects on the way out.
+For $c \ge 6$ ($R_0 s_0 \ge 1.19$) a wave develops and the attack rate climbs
+steeply with $R_0$.
+
+The two thresholds sit at different contact rates. $R_0 = 1$ at $c = 5$, which is
+the threshold for a fully susceptible population; initial growth here requires
+$c > 5.0505$, because at $c = 5$ the effective reproduction number is already
+$R_0 s_0 = 0.99$ and $I$ declines from the outset.
+
+That initial-growth threshold is sharp, but the final size is not: it varies
+continuously across the threshold and stays large below it when the initial seed
+is 1%. At $c = 5$ the final-size relation still gives
+$1 - s_\infty \approx 0.135$,
+because the 1% who are already infectious must recover in the end, and infect
+others while they do. Reading $R_0 = 1$ as a clean split into "epidemic" and "no
+epidemic" describes the limit of a very small seed in a fully susceptible
+population.
 
 #### Solution to Exercise 2 {#solution-ch01-ex2}
 
-We locate the infectious peak and read off the susceptible fraction there; theory
-predicts $S/N = 1/R_0$.
+We locate the infectious peak, report its time, and read off the susceptible
+fraction there; theory predicts $S/N = 1/R_0$ whenever the peak is interior, that
+is, at a positive time. At the baseline it is, because $R_0 s_0 = 1.98 > 1$.
 
 ```{julia}
 #| label: sol-ch01-ex2
@@ -245,32 +284,45 @@ u0 = [990.0, 10.0, 0.0]
 p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
 sol = solve(ODEProblem(sir_ode!, u0, (0.0, 80.0), p), Tsit5(); saveat = 0.1)
 I = sol[2, :]; R0 = p.β * p.c / p.γ
-peak_ok = isapprox(sol[1, argmax(I)] / p.N, 1 / R0; atol = 0.01)
+peak_index = argmax(I)
+peak_time = sol.t[peak_index]                       # time of the infectious peak
+peak_ok = isapprox(sol[1, peak_index] / p.N, 1 / R0; rtol = 0.01)   # 1% relative
 
 p_crit = merge(p, (γ = 0.5,))        # R0 = 1
 sol_crit = solve(ODEProblem(sir_ode!, u0, (0.0, 80.0), p_crit), Tsit5(); saveat = 0.1)
-(R0 = R0, S_over_N_at_peak = sol[1, argmax(I)] / p.N, threshold_ok = peak_ok,
+I_crit = sol_crit[2, :]
+(R0 = R0, peak_time = peak_time, S_over_N_at_peak = sol[1, peak_index] / p.N,
+ threshold_ok = peak_ok,
  peak_I_baseline = round(maximum(I); digits = 1),
- peak_I_R0eq1 = round(maximum(sol_crit[2, :]); digits = 1))
+ peak_I_R0eq1 = round(maximum(I_crit); digits = 1),
+ peak_time_R0eq1 = sol_crit.t[argmax(I_crit)])
 ```
 
-At the baseline $R_0 = 2$ the susceptible fraction at the peak equals $1/R_0 = 0.5$
-to within 1%, confirming @eq-ch01-threshold. Raising $\gamma$ to $0.5$ makes
-$R_0 = 1$: the growth rate $\lambda S - \gamma I$ is negative from the outset
-because $S/N = 0.99 < 1 = 1/R_0$ only marginally, and prevalence merely decays
-from its initial value — there is no epidemic wave, only monotone extinction of
-the initial infectives.
+At the baseline $R_0 = 2$ the peak falls at $t \approx 17.5$ and the susceptible
+fraction there equals $1/R_0 = 0.5$ to within 1% relative error, confirming
+@eq-ch01-threshold.
+
+Raising $\gamma$ to $0.5$ makes $R_0 = 1$, and the growth rate $\lambda S -
+\gamma I$ is negative from the outset because $S/N = 0.99 < 1 = 1/R_0$: prevalence
+falls from its initial value and keeps falling, with no epidemic wave. The reported
+peak is therefore $I(0) = 10$ at $t = 0$, and $S/N$ there is $0.99$, not $1/R_0$.
+This is the edge case of the peak condition: $S/N = 1/R_0$ locates an *interior*
+peak, one at a positive time, and such a peak exists only when $R_0 s_0 > 1$.
+When it does not, the largest value of $I$ is the one at $t = 0$ and the equality
+says nothing.
 
 ### Discrete-time models
 
 #### Solution to Exercise 1 {#solution-ch02-ex1}
 
 We compare the deterministic map and the stochastic-chain mean against a
-high-accuracy ODE reference at $\delta t = 1$ and $\delta t = 0.25$.
+high-accuracy ODE reference at $\delta t = 1$ and $\delta t = 0.25$, using the
+same 200-member ensemble as the chapter and reporting the Monte Carlo error on
+each mean.
 
 ```{julia}
 #| label: sol-ch02-ex1
-using Distributions, StableRNGs, OrdinaryDiffEq
+using Distributions, StableRNGs, OrdinaryDiffEq, Statistics
 rate_to_proportion(r, δt) = -expm1(-r * δt)
 function map_step(s, p, δt)
     S, I, R = s
@@ -295,33 +347,69 @@ function sir_ode!(du, u, p, t)
     du[1] = -λ * S; du[2] = λ * S - p.γ * I; du[3] = p.γ * I; return nothing
 end
 p = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
-ode_peak = maximum(solve(ODEProblem(sir_ode!, [990.0, 10, 0], (0.0, 40.0), p), Tsit5(); saveat = 0.05)[2, :])
+ode_peak = maximum(solve(ODEProblem(sir_ode!, [990.0, 10, 0], (0.0, 40.0), p), Tsit5();
+                         saveat = 0.05, reltol = 1e-10, abstol = 1e-10)[2, :])
 
-function peaks(δt; nsims = 60)
+function peaks(δt; nsims = 200)
     n = round(Int, 40 / δt)
     map_peak = maximum(run_traj((s, p, d) -> map_step(s, p, d), [990, 10, 0], p, δt, n)[2, :])
     ens = [run_traj(chain_step, [990, 10, 0], p, δt, n; extra = (StableRNG(s),)) for s in 1:nsims]
-    chain_mean_peak = maximum(vec(sum(reduce(hcat, (t[2, :] for t in ens)); dims = 2)) ./ nsims)
-    (map_peak = round(map_peak; digits = 1), chain_mean_peak = round(chain_mean_peak; digits = 1))
+    I_paths = reduce(hcat, (t[2, :] for t in ens))          # (n+1) × nsims
+    mean_I = vec(mean(I_paths; dims = 2))
+    k = argmax(mean_I)                                      # where the mean curve peaks
+    (map_peak = round(map_peak; digits = 1),
+     chain_mean_peak = round(mean_I[k]; digits = 1),
+     mc_error = round(std(I_paths[k, :]) / sqrt(nsims); digits = 1),
+     fadeouts = count(t -> any(iszero, t[2, :]), ens))
 end
 
 (ode_peak = round(ode_peak; digits = 1), dt1 = peaks(1.0), dt025 = peaks(0.25))
 ```
 
-The deterministic map at $\delta t = 0.25$ lands much closer to the ODE peak
-($\approx 158$) than at $\delta t = 1$, because the map is a first-order
-(forward-Euler-like) discretisation whose error shrinks with the step. The
-stochastic-chain mean lies close to the map at each step size — it is the map's
-random counterpart — but its peak is additionally *lowered* by peak-timing
-jitter: individual epidemics crest at slightly different times, so averaging them
-flattens the ensemble-mean peak, which can therefore sit even nearer to (or just
-below) the ODE value than the map does. Either way, refining $\delta t$ moves both
-discrete peaks toward the continuous-time reference.
+The **map** carries only time-discretisation error, and it shrinks with the step:
+the peak falls from $200.9$ at $\delta t = 1$ to $169.1$ at $\delta t = 0.25$,
+against the ODE's $158.5$. It sits *above* the ODE at both step sizes. That
+overshoot comes from how one step handles infection and recovery together, not
+from the force of infection being held fixed on its own: someone infected during
+a step cannot also recover in it, and the rate-to-proportion conversion reduces
+the two flows by different amounts.
+
+The **ensemble mean** is a different kind of number, because it is estimated
+rather than computed. It carries the discretisation error too, plus the effects
+of working with whole people, differences in when each epidemic crests, any
+realisations that fade out, and Monte Carlo error. The timing difference is one
+important contributor: averaging curves whose peaks fall on different days
+flattens the result, so the peak of the mean comes out below the *mean of the
+individual peaks*. It is not below every realisation's peak, since a run that
+fades early peaks far lower than the mean curve does. Here the `fadeouts` column
+reports zero at both step sizes, so that particular contributor is absent from
+this ensemble: at $R_0 = 2$ starting from ten infectious people, fade-out within
+40 days is rare enough that 200 runs contain none.
+
+Now compare each gap with the reported Monte Carlo error, which is about 2 at
+both step sizes. At $\delta t = 1$ the mean peak of $190.8$ sits about 10 below
+the map, five standard errors, which is a real separation. At $\delta t = 0.25$
+the mean of $154.0$ looks as though it has fallen below the ODE's $158.5$, but
+that gap is only about two standard errors:
+
+```{julia}
+#| label: sol-ch02-ex1-precision
+(with_200 = peaks(0.25), with_2000 = peaks(0.25; nsims = 2000))
+```
+
+Ten times as many runs shrinks the error by a factor of about three and moves
+the estimate to roughly $157.8 \pm 0.7$, within about one standard error of the
+ODE peak. The apparent drop below the ODE at 200 runs was mostly noise.
+
+Refining $\delta t$ moves the map towards the ODE, and it moves the chain towards
+the continuous-time Markov chain, which is a different limit. Either way, a claim
+about where the stochastic mean sits relative to the ODE needs an ensemble large
+enough to resolve the difference being claimed.
 
 #### Solution to Exercise 2 {#solution-ch02-ex2}
 
-Extinction probability is the fraction of realisations reaching $I = 0$ before day
-40, computed at two contact rates.
+The extinction probability is estimated by the fraction of realisations that
+reach $I = 0$ by day 40, at two contact rates.
 
 ```{julia}
 #| label: sol-ch02-ex2
@@ -346,13 +434,23 @@ establishes. This fade-out is a purely stochastic phenomenon: the deterministic
 map, lacking integer counts, always predicts a (small) deterministic outbreak and
 can never reach exactly zero.
 
+Both figures are estimates from 200 runs, and the two need different care. At
+$c = 6$ the fraction is $0.065$, with a standard error of
+$\sqrt{q(1-q)/200} \approx 0.017$, so the third digit means nothing. At $c = 10$
+no run faded at all, and that does not make the probability zero: seeing none in
+200 is consistent with a true probability up to roughly $3/200$, or about 1.5%.
+Reporting "0%" from an ensemble this size claims more than it can support.
+
 ### Ordinary differential equations
 
 #### Solution to Exercise 1 {#solution-ch03-ex1}
 
 We sweep the lockdown strength, using a `ContinuousCallback` on $\mathrm{d}I/
-\mathrm{d}t$ to detect turning points, and report the epidemic peak (largest $I$
-among detected events).
+\mathrm{d}t$ to detect smooth turning points. Root-finding alone is not enough
+here: at $t_1$ and $t_2$ the slope of $I$ jumps, so a maximum can sit exactly at
+a switching time without the derivative ever passing through zero. We therefore
+compare the callback's events with $I$ at the switching times and at both ends of
+the span, and take the largest of those candidates.
 
 ```{julia}
 #| label: sol-ch03-ex1
@@ -372,29 +470,48 @@ function peak_under(β_lock)
     set = CallbackSet(PresetTimeCallback([t1], i -> set_β!(i, β_lock)),
                       PresetTimeCallback([t2], i -> set_β!(i, 0.05)),
                       peak_cb)
-    solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5();
-          callback = set, reltol = 1e-8, abstol = 1e-8)
-    t_peak, I_peak = argmax(e -> e[2], events)
-    (t_peak = round(t_peak; digits = 2), I_peak = round(I_peak; digits = 1))
+    sol_run = solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5();
+                    callback = set, reltol = 1e-8, abstol = 1e-8)
+
+    # smooth turning points, plus the places root-finding cannot report
+    candidates = vcat(events,
+                      [(t, sol_run(t)[2]) for t in (first(tspan), t1, t2, last(tspan))])
+    t_glob, I_glob = argmax(last, candidates)
+    t_turn, I_turn = argmax(last, events)
+    (β_lock = β_lock,
+     peak_time = round(t_glob; digits = 2), peak_I = round(I_glob; digits = 1),
+     turning_time = round(t_turn; digits = 2), turning_I = round(I_turn; digits = 1))
 end
 
-DataFrame(β_lock = [0.045, 0.035, 0.025, 0.015],
-          peak_time = [peak_under(b).t_peak for b in (0.045, 0.035, 0.025, 0.015)],
-          peak_I = [peak_under(b).I_peak for b in (0.045, 0.035, 0.025, 0.015)])
+DataFrame([peak_under(b) for b in (0.045, 0.035, 0.025, 0.015)])
 ```
 
-Stronger lockdowns (smaller $\beta_\text{lock}$) do not simply lower the peak: the
-detected peak height and timing behave *non-monotonically*. Moderate lockdowns
-(e.g. $\beta_\text{lock}=0.035$) suppress transmission during the window, cutting
-the peak while it still occurs near the intervention. But very strong lockdowns
-defer the epidemic almost entirely: with growth stifled between days 10 and 30,
-susceptibles are "saved" and the wave resurges *after* the lockdown lifts —
-pushing the peak time out to ~50–60 days and, because a larger susceptible pool
-is preserved, allowing the rebound peak to climb again for the most aggressive
-setting. This is the flatten-*and-delay* trade-off with a sting in the tail: a
-temporary intervention reshapes and postpones the epidemic rather than removing
-it, and the strongest short lockdown is not necessarily the one with the lowest
-overall peak.
+The two columns tell different stories.
+
+**The largest value of $I$** falls as the lockdown strengthens: 134.0, 93.1,
+86.0, 86.0. The last two are identical, and both occur at $t = 10$, the moment
+the lockdown starts: the curve turns a corner there instead of arching over a
+smooth top, which is why root-finding on the slope never sees it. Growth survives
+the switch only while
+$\beta_\text{lock}\, c\, S / N > \gamma$, and with $S(10) = 819$ that needs
+$\beta_\text{lock} > \gamma N / (c\,S(10)) \approx 0.031$. For
+$\beta_\text{lock} = 0.025$ and $0.015$ the effective reproduction number drops
+below 1 the instant the lockdown begins, so $I$ turns immediately, and the
+largest value it ever reaches is the one it had at $t = 10$: 86.0, whatever the
+lockdown strength beyond that point.
+
+**The turning point the callback finds** behaves quite differently. For the two
+weaker lockdowns it *is* the global peak. For the two stronger ones it is the
+rebound after release, and there the ordering reverses: $\beta_\text{lock}=0.025$
+rebounds to 37.1 on day 46.5, while the stronger $\beta_\text{lock}=0.015$
+rebounds higher, to 52.5 on day 58.1. A harder lockdown saves more susceptibles,
+so more are left to infect when it lifts.
+
+So the flatten-and-delay trade-off is real, but it applies to the rebound rather
+than to the overall maximum. A temporary intervention reshapes and postpones the
+epidemic rather than removing it, and reporting only the callback's event would
+have made the two strongest lockdowns look like the mildest epidemics, when in
+fact both reach 86 infectious people on the day they begin.
 
 #### Solution to Exercise 2 {#solution-ch03-ex2}
 
