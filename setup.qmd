@@ -105,6 +105,23 @@ Restart VSCode afterwards. To confirm the extension works, open the command pale
 
 If the extension cannot find Julia, see [VSCode cannot find Julia](#vscode-cannot-find-julia) below.
 
+::: {.callout-note}
+## The Revise message when the REPL starts
+
+When you start the Julia REPL in VSCode, you may see the following setup message:
+
+> Julia is configured to load Revise when the REPL starts, but Revise is not installed.
+
+[Revise.jl](https://timholy.github.io/Revise.jl/stable/) lets Julia pick up edits to the source of a package you have already loaded, without restarting the REPL. However, nothing in this course edits package source, so you do not need it.
+
+You can leave the message and close it each time it appears, or stop VSCode looking for Revise each time you start the REPL:
+
+1. Open the settings with `Cmd`/`Ctrl`+`,`.
+2. Search for `julia.useRevise`, shown as *Julia › Execution: Use Revise*.
+3. Clear the checkbox.
+4. Stop the Julia REPL and start it again.
+:::
+
 ## 3. Install Quarto
 
 The chapters and worksheets are Quarto documents. You need both the Quarto program and its VSCode extension: the extension is what runs a single code cell while you read, and the program is what turns a finished worksheet into an HTML report.
