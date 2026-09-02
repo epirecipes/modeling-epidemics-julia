@@ -67,6 +67,50 @@ solve(prob, Tsit5(); callback = peak_cb, reltol = 1e-8, abstol = 1e-8)
  round(maximum(sol_lock[2, :]); digits = 1))
 ```
 
+## One problem, many compatible tools {.smaller}
+
+```{julia}
+#| label: s-ch03-composability
+#| echo: true
+# saveat fixes the output grid, so the algorithms are compared on the same points.
+peak_I(args...; kw...) = round(maximum(solve(args...; saveat = 0.25, kw...)[2, :]);
+                               digits = 1)
+
+scenario = remake(prob; p = merge(p, (β = 0.035,)))   # same problem, new parameters
+
+(tsit = peak_I(prob, Tsit5()),                        # one algorithm
+ vern = peak_I(prob, Vern7()),                        # another, same problem
+ lower_β = peak_I(scenario, Tsit5()),                 # a scenario
+ lockdown = peak_I(prob, Tsit5(); callback = cb))
+```
+
+- `ODEProblem` holds the *problem*; the algorithm is chosen separately.
+- Sensitivity, estimation and inference packages take the same `prob`.
+
+::: {.notes}
+This is the concrete version of the composability claim asserted in the Julia
+essentials session. Nothing here is a new model: `prob` and `cb` were built two
+slides ago, and every line reuses them.
+
+The mechanism, said plainly: `ODEProblem` stores the scientific problem
+separately from the algorithm used to solve it. Multiple dispatch examines the
+types of both the problem and the algorithm and calls a compatible
+implementation. Other packages build on the same problem and solution types, so
+there is usually less package-specific conversion code between stages of a
+workflow. `remake` is the same idea for the data: a new problem that shares
+everything except what you changed.
+
+Give the qualification, because someone will otherwise over-generalise it.
+Composability does not mean every Julia package automatically works with every
+other package. It means packages can implement shared interfaces and extend one
+another without modifying the original package. Where an interface is not
+shared, you write the glue like anywhere else.
+
+Tsit5 and Vern7 agree here because the problem is not stiff; the point is that
+swapping the algorithm changed one word and no model code. Do not claim a
+performance win from the swap, there is none to show at this size.
+:::
+
 ## Generated result
 
 ```{julia}
