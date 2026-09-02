@@ -4,28 +4,279 @@ course-unit: p01-julia-essentials
 status: complete
 ---
 
-## Why Julia
+## Epidemic modelling workflow
 
-- Scientific computing is usually split across **two languages** — a convenient
-  one to write the analysis, a fast one for the parts that are too slow.
-- Julia is interactive and dynamically typed like R, but **compiles to native
-  code**: the model kernel you write is the code that runs inside the solver.
-- Epidemic models are run thousands of times over — ensembles, sensitivity
-  sweeps, inference — so this is not an abstract concern.
+```{julia}
+#| label: fig-s-p01-pipeline
+#| echo: false
+#| fig-cap: "A connected modelling workflow from surveillance data to intervention decisions."
+using CairoMakie, EpiModelingCourse
 
-## Why this unit matters
+# A schematic drawn in a 0-100 square: boxes, elbow connectors, arrowheads.
+palette = course_palette()
 
-- The course reuses one object throughout: the SIR model of Kermack & McKendrick (1927).
-- Before solving it we need a precise slice of Julia:
-  - the **REPL** and its modes;
-  - **in-place kernels** `f!(du, u, p, t)`, the form this course uses (SciML
-    also accepts out-of-place `f(u, p, t)`);
-  - **broadcasting** and comprehensions to evaluate models on a grid;
-  - **named tuples** for parameters, read by field, and **multiple dispatch**;
-  - **reproducible randomness** with `StableRNGs`.
-- Goal: the vocabulary, not a language tour.
+const FIGURE_HEIGHT = 430
+const CONNECTOR = (:grey45, 0.9)
+const DESCRIPTOR = :grey35
+
+outcomes = [
+    (85, palette.susceptible, "Simulate",
+        "deterministic · stochastic ·\nindividual-based models"),
+    (62, palette.incidence, "Infer",
+        "observation models · calibration ·\nBayesian inference · identifiability"),
+    (39, palette.recovered, "Compare scenarios",
+        "alternative assumptions · uncertainty ·\nintervention strategies"),
+    (16, palette.infected, "Design interventions",
+        "objectives · constraints · optimisation"),
+]
+
+# Font sizes are pixels and box geometry is in data units, so convert one to the
+# other and stack the lines from the top of a vertically centred block.
+line_height(fontsize) = fontsize * 100 / FIGURE_HEIGHT * 1.25
+line_count(text) = count(==('\n'), text) + 1
+
+function box!(ax, cx, cy, w, h, colour, entries; gap = 1.0)
+    poly!(ax, Rect2f(cx - w / 2, cy - h / 2, w, h);
+        color = :white, strokecolor = colour, strokewidth = 2)
+    heights = [line_count(text) * line_height(fontsize)
+               for (text, fontsize, _) in entries]
+    y = cy + (sum(heights) + gap * (length(entries) - 1)) / 2
+    for ((text, fontsize, textcolour), height) in zip(entries, heights)
+        text!(ax, cx, y; text, align = (:center, :top), fontsize,
+            font = textcolour === colour ? :bold : :regular, color = textcolour)
+        y -= height + gap
+    end
+    return nothing
+end
+
+# Arrowheads are markers rather than arrow plots: the connectors are elbows,
+# so only the final segment needs a head.
+head!(ax, x, y) = scatter!(ax, [x], [y];
+    marker = :rtriangle, markersize = 13, color = CONNECTOR)
+
+with_theme(course_theme()) do
+    fig = Figure(size = (960, FIGURE_HEIGHT))
+    ax = Axis(fig[1, 1])
+    hidedecorations!(ax)
+    hidespines!(ax)
+    limits!(ax, 0, 100, 0, 100)
+
+    box!(ax, 8, 50, 14, 20, :grey35, [("Surveillance\ndata", 15, :grey35)])
+    box!(ax, 30, 50, 26, 26, :grey20,
+        [("Modelling workflow", 19, :grey20),
+         ("data · model code · algorithms", 12, DESCRIPTOR)])
+    for (cy, colour, title, descriptor) in outcomes
+        box!(ax, 66, cy, 32, 19, colour,
+            [(title, 17, colour), (descriptor, 12, DESCRIPTOR)])
+    end
+    box!(ax, 93, 50, 12, 20, :grey35, [("Intervention\ndecision", 15, :grey35)])
+
+    ys = [cy for (cy, _, _, _) in outcomes]
+
+    # Data into the model.
+    lines!(ax, [15.0, 17.2], [50.0, 50.0]; color = CONNECTOR, linewidth = 2)
+    head!(ax, 17.6, 50)
+
+    # The workflow fans out to the four tasks.
+    lines!(ax, [43.0, 46.5], [50.0, 50.0]; color = CONNECTOR, linewidth = 2)
+    lines!(ax, [46.5, 46.5], [minimum(ys), maximum(ys)]; color = CONNECTOR, linewidth = 2)
+    for cy in ys
+        lines!(ax, [46.5, 49.2], [cy, cy]; color = CONNECTOR, linewidth = 2)
+        head!(ax, 49.6, cy)
+    end
+
+    # The four tasks merge into one decision.
+    for cy in ys
+        lines!(ax, [82.0, 85.0], [cy, cy]; color = CONNECTOR, linewidth = 2)
+    end
+    lines!(ax, [85.0, 85.0], [minimum(ys), maximum(ys)]; color = CONNECTOR, linewidth = 2)
+    lines!(ax, [85.0, 86.6], [50.0, 50.0]; color = CONNECTOR, linewidth = 2)
+    head!(ax, 87.0, 50)
+
+    fig
+end
+```
+
+::: {.notes}
+Calibration and Bayesian inference are not sessions, and the
+programme points at the LSHTM course "Model Fitting and Inference for Infectious Disease Dynamics" instead. Identifiability sits in this box because it asks what the data could tell you about the parameters, and that half is taught. The observation-model, parameter-estimation and Bayesian-inference chapters are written and available for self-study, the interventions session makes the connection in passing because the optimiser that finds the best intervention is the same machinery that finds the best-fitting parameters.
+:::
+
+## What we want when modelling? {.smaller}
+
+::: {style="margin-top: 3.5em;"}
+
+| What we want | What Julia offers |
+|---|---|
+| Models that are easy to inspect and modify | Scientific models written as ordinary Julia code |
+| Thousands of simulations and scenarios | Compiled performance |
+| Simulation, fitting and intervention analysis | Tools designed to work together in one language |
+| Analyses that colleagues can reproduce | Recorded packages, versions and random seeds |
+:::
+
+::: {.notes}
+
+:::
+
+## Can't we do the same in other languages? {.smaller}
+
+::: {style="margin-top: 1.5em;"}
+Yes you can. Comparable models can be built, simulated and fitted in R, Python and
+elsewhere. The methods are not unique to Julia.
+
+What Julia brings together:
+
+- Model code can remain generic. Multiple dispatch selects an applicable method from the argument types, and those types give the compiler information it can use to optimise execution.
+- Julia’s scientific packages make use of shared types and interfaces. This often allows a problem specification to be reused with compatible solvers and embedded in sensitivity, optimisation and inference workflows.
+
+Together, these features can mean less duplicated model code and less
+framework-specific integration code when moving between stages of an analysis.
+
+:::
+::: {.notes}
+None of these tasks is unique to Julia. R and Python can also support epidemic modelling. Julia becomes particularly attractive when we are developing a custom model and need to run it repeatedly. The code describing transmission can remain readable Julia code, while Julia compiles it for efficient execution. We can then connect that model to simulation, fitting, uncertainty analysis and intervention design without maintaining a separate low-level implementation.
+:::
+
+## If you are interested in performance...
+
+These serial microbenchmarks compare implementations of the same small numerical algorithms.
+
+```{julia}
+#| label: fig-s-p01-benchmarks
+#| echo: false
+#| fig-cap: "Run time relative to C on the JuliaLang micro-benchmark suite: grey points are individual benchmarks, the large point is their geometric mean. Data: JuliaLang/Microbenchmarks, 2022."
+using CSV, DataFrames, CairoMakie, EpiModelingCourse
+
+const BENCH_DIR = joinpath(pkgdir(EpiModelingCourse), "data")
+geomean(x) = exp(sum(log, x) / length(x))
+pretty_name = Dict("c" => "C", "julia" => "Julia", "lua" => "LuaJIT",
+    "fortran" => "Fortran", "java" => "Java", "javascript" => "JavaScript",
+    "matlab" => "Matlab", "mathematica" => "Mathematica", "python" => "Python",
+    "octave" => "Octave", "r" => "R", "rust" => "Rust", "go" => "Go")
+language_colour(l) = l == "julia" ? :firebrick : l == "c" ? :steelblue : :grey35
+
+# Times as a multiple of C, over the benchmarks C itself ran.
+function relative_to_c(table)
+    ctime = Dict(r.benchmark => r.time for r in eachrow(table[table.language .== "c", :]))
+    kept = table[[haskey(ctime, r.benchmark) for r in eachrow(table)], :]
+    kept.rel = [r.time / ctime[r.benchmark] for r in eachrow(kept)]
+    return kept
+end
+
+bench22 = relative_to_c(CSV.read(joinpath(BENCH_DIR, "language_benchmarks_2022.csv"), DataFrame))
+summary22 = sort!(combine(groupby(bench22, :language), :rel => geomean => :gmean), :gmean)
+order = summary22.language
+position = Dict(l => i for (i, l) in enumerate(order))
+
+with_theme(course_theme()) do
+    fig = Figure(size = (960, 450))
+    ax = Axis(fig[1, 1]; yscale = log10, ylabel = "run time / C time",
+        xticks = (1:length(order), [pretty_name[l] for l in order]),
+        xticklabelrotation = pi / 6, xticklabelsize = 19, yticklabelsize = 18,
+        ylabelsize = 21)
+    hlines!(ax, [1.0]; color = (:black, 0.35), linestyle = :dash)
+    scatter!(ax, [position[r.language] for r in eachrow(bench22)], bench22.rel;
+        color = (:grey70, 0.55), markersize = 9)
+    scatter!(ax, 1:length(order), summary22.gmean;
+        color = [language_colour(l) for l in order], markersize = 21)
+    fig
+end
+```
+
+- Julia's geometric-mean runtime is about **1.2× C** in this snapshot.
+- It does not predict the speed of every application.
+- It does show that custom numerical loops need not be rewritten in a
+  lower-level language.
+
+::: {.notes}
+These are micro-benchmarks: small tasks such as recursive Fibonacci, integer parsing and the Mandelbrot set. The benchmark documentation says so itself, that these are not comprehensive application benchmarks, and that they test common language patterns using serial implementations. 
+The vertical axis is logarithmic, so each gridline is a factor of ten, and the grey points show that a single language spans a wide range across tasks. Data from the JuliaLang Microbenchmarks repository, 2022; the ordering has been stable for years, but present the values as a snapshot rather than a current measurement.
+Why this matters here: epidemic models are run thousands of times over, in ensembles, sensitivity sweeps and inference, so the cost of the inner loop is not an abstract concern.
+:::
+
+## If you are interested in code size...
+
+```{julia}
+#| label: fig-s-p01-codelength
+#| echo: false
+#| fig-cap: "Run time against source length for the same benchmark suite, one point per language. Data from 2016, which is the last year source lengths were published with the timings."
+bench16 = relative_to_c(CSV.read(joinpath(BENCH_DIR, "language_benchmarks_2016.csv"), DataFrame))
+summary16 = combine(groupby(bench16, :language),
+    :rel => geomean => :gmean, :kb => first => :kb)
+label_left = ("c", "fortran", "java", "python", "r")
+
+with_theme(course_theme()) do
+    fig = Figure(size = (960, 450))
+    ax = Axis(fig[1, 1]; yscale = log10, xlabel = "source length (KB)",
+        ylabel = "run time / C time", xlabelsize = 21, ylabelsize = 21,
+        xticklabelsize = 18, yticklabelsize = 18)
+    scatter!(ax, summary16.kb, summary16.gmean;
+        color = [language_colour(l) for l in summary16.language], markersize = 17)
+    text!(ax, summary16.kb, summary16.gmean;
+        text = [pretty_name[l] for l in summary16.language],
+        align = [(l in label_left ? :right : :left, :center) for l in summary16.language],
+        offset = [(l in label_left ? -13 : 13, 0) for l in summary16.language],
+        fontsize = 17, color = [language_colour(l) for l in summary16.language])
+    xlims!(ax, 2.0, 13.0)
+    ylims!(ax, 0.7, 700)
+    fig
+end
+```
+
+::: {.notes}
+This is the older figure, 2016, because source lengths stopped being published alongside the timings after that. Nothing since has moved Julia out of that corner, but present it as a historical snapshot. Both axes matter: languages on the left are compact, languages at the bottom are fast, and before Julia you generally chose one or the other. 
+:::
+
+## This session
+
+- In this session we will cover:
+  - Finding your way around *VSCode*;
+  - The *REPL* and its modes;
+  - *Broadcasting* over a grid;
+  - *In-place kernels*;
+  - Figures using `CairoMakie`;
+  - *Named tuples* for parameters, and *multiple dispatch*;
+  - *Reproducible randomness* with `StableRNGs`.
+
+::: {.notes}
+
+:::
+
+## Finding your way around VS Code {.smaller}
+
+::: {style="margin-top: 2.5em;"}
+| Where | What you will use it for |
+|---|---|
+| *Explorer*, left | the course folder — open the *folder*, not a single file |
+| *Editor*, centre | the `.qmd` worksheet you are working in |
+| *Panel*, bottom | the Julia REPL and the terminal, as tabs |
+| *Plot pane* | figures, appears when the first one is drawn |
+
+- The command palette, `Cmd`/`Ctrl`+`Shift`+`P`, reaches everything:
+  *Julia: Start REPL*, *Quarto: Render*.
+- The folder you open is how Julia and Quarto know which project you are in.
+
+:::
+::: {.notes}
+Show this live rather than reading it: open the folder, start the REPL from the
+palette, run one cell, let the plot pane appear.
+
+Coming from RStudio, two things are different and both cause the same confusion.
+RStudio has four fixed panes; VS Code shows whatever is open, so the REPL is not
+there until you start it. And RStudio's menus are replaced by the command
+palette, which is worth demonstrating once because it is how they will find
+anything they cannot see.
+
+The failure that costs the most time is opening a single file instead of the
+folder. Julia and Quarto both take the open folder as the project, so a worksheet
+opened on its own will not find the course environment. If someone reports a
+missing package, check this before anything else, together with the environment
+name at the `pkg>` prompt.
+:::
 
 ## The REPL has four modes {.smaller}
+
+REPL stands for Read, Evaluate, Print, and Loop
 
 Type one character at an empty prompt; `Backspace` returns.
 
@@ -38,137 +289,270 @@ Type one character at an empty prompt; `Backspace` returns.
 
 - The package prompt names the **active environment** — check it first when a
   package seems missing. Start Julia with `--project=.` from the repo root.
-- Greek letters are ordinary names: `\beta`⇥ → `β`, `\gamma`⇥ → `γ`,
-  `\lambda`⇥ → `λ`. ASCII works identically.
 
-## The running model {.smaller}
+::: {.notes}
+Demonstrate the four modes live rather than reading the table: enter and leave
+each one, and show `?expm1` in particular, since help mode answers most "what
+arguments does this take" questions faster than a web search and works offline.
+Point out the environment name in the package prompt, which the next slide picks
+up: a package that appears to be missing almost always means the project
+environment was never activated, and a plain `julia` starts in the default
+environment wherever it is launched.
+:::
 
-Deterministic, continuous-time, population SIR with force of infection
-$\lambda = \beta c I/N$:
+## Your environment
 
-$$
-\frac{\mathrm{d}S}{\mathrm{d}t} = -\lambda S,\quad
-\frac{\mathrm{d}I}{\mathrm{d}t} = \lambda S - \gamma I,\quad
-\frac{\mathrm{d}R}{\mathrm{d}t} = \gamma I.
-$$ {#eq-s-p01-sir}
+::: {style="margin-top: 1.5em;"}
+- `Project.toml` — the packages this project asks for.
+- `Manifest.toml` — the exact version of every package resolved.
+- `Pkg.instantiate()` rebuilds that set anywhere. You ran it in setup.
+- The `pkg>` prompt names your environment. "Not installed" usually means "not here".
 
-The three right-hand sides sum to zero, so $S+I+R=N$ is conserved.
-Rate → per-step probability for later discretisation:
-$p(r,\delta t)=1-e^{-r\,\delta t}$.
+:::
+::: {.notes}
+If someone hits a package error today it is almost certainly the environment, not the installation: a bare `julia` starts in the default environment wherever it is launched, so the fix is `--project=.` from the repository root, or `] activate .`. The setup page has this under "a package seems to be missing". Worth saying plainly what the Manifest adds: it pins the resolved version of every package rather than naming the packages. R has renv, so this is not a Julia exclusive. The difference is that project and manifest environments are part of Julia's standard package workflow rather than an add-on.
+:::
 
-## Julia API: an in-place kernel
+## Running code as you read
 
-`u = [S, I, R]` maps onto @eq-s-p01-sir; `p` carries $(\beta,c,\gamma,N)$.
+::: {style="margin-top: 1.5em;"}
+Chapters and worksheets are Quarto documents: prose with cells like this one.
 
 ```{julia}
-#| label: s-p01-kernel
+#| label: s-p01-firstcell
 #| echo: true
-function sir_ode!(du, u, p, t)
-    S, I, R = u                    # state: positional
-    λ = p.β * p.c * I / p.N        # parameters: by field
-    du[1] = -λ * S                # dS/dt
-    du[2] = λ * S - p.γ * I       # dI/dt
-    du[3] = p.γ * I               # dR/dt
+2 + 2
+```
+
+- `Ctrl`/`Cmd`+`Shift`+`Enter` runs the cell the cursor sits in.
+- Output appears in the REPL, figures in the plot pane.
+- In a plain `.jl` file, `Shift`+`Enter` sends a single line instead.
+
+:::
+::: {.notes}
+Do this live rather than describing it: put the cursor in a cell, run it, and show the REPL waking up the first time. Warn them that the first cell of a session is slow because the plotting stack compiles, and that this is once per session, not once per cell. If the REPL is not running, the shortcut starts one.
+:::
+
+## Julia code can stay close to the mathematics {.smaller}
+
+::: {.columns}
+::: {.column width="42%"}
+Force of infection:
+
+$$
+\lambda = \beta c \frac{I}{N}
+$$
+
+Compartmental rates:
+
+$$
+\frac{\mathrm{d}S}{\mathrm{d}t} = -\lambda S
+$$
+
+$$
+\frac{\mathrm{d}I}{\mathrm{d}t} = \lambda S - \gamma I
+$$
+
+$$
+\frac{\mathrm{d}R}{\mathrm{d}t} = \gamma I
+$$
+:::
+
+::: {.column width="58%"}
+```julia
+function sir_ode!(du, u, (; β, c, γ, N), t)
+    S, I, R = u
+
+    λ = β * c * I / N
+
+    du[1] = -λ * S
+    du[2] =  λ * S - γ * I
+    du[3] =  γ * I
+    return nothing
+end
+```
+
+::: {style="font-size: 0.6em;"}
+| | |
+|---|---|
+| $\beta$ | transmission probability per contact |
+| $c$ | contacts per person per day |
+| $\gamma$ | recovery rate, per day |
+| $N$ | population size, $S + I + R$ |
+:::
+
+::: {style="margin-top: 1em;"}
+- Greek letters are ordinary variable names: `\beta`⇥ → `β`, `\gamma`⇥ → `γ`, `\lambda`⇥ → `λ`. Plain ASCII names works as well.
+:::
+:::
+
+:::
+::: {.notes}
+The point is that you can read the implementation against the equations line by line, which is how you check a model you did not write.
+
+This is not a Julia distinction. R allows non-ASCII identifiers in a UTF-8 locale, and Python has allowed them since PEP 3131, so
+this is not a capability other languages lack. What Julia adds is that the LaTeX-style tab completion is built into the REPL and the editor tooling, and that the convention is common enough that package APIs use these names themselves. It is a readability and convention argument, not a composability one.
+:::
+
+## Broadcasting: the dot {.smaller}
+
+Broadcasting allows to perform operations elementwise, and can be called implicitly by "dot" operations. For example:
+```{julia}
+#| label: s-p01-broadcast
+#| echo: true
+cases = [12, 40, 7]
+pop   = [1000, 5000, 800]
+
+per_100k = 1e5 .* cases ./ pop
+```
+
+Or to functions like:
+
+```{julia}
+#| label: s-p02-broadcast
+#| echo: true
+incidence_per_100k(case_count, population) =
+    100_000 * case_count / population
+
+cases      = [12, 40, 7]
+populations = [1000, 5000, 800]
+
+per_100k = incidence_per_100k.(cases, populations)
+```
+
+::: {.notes}
+In many languages you vectorise because loops are slow, so the vectorised form is forced on you whether or not it expresses the model clearly. Here a loop compiles to the same thing, so broadcasting is a choice about readability. That matters most when a mechanism does not vectorise neatly: you can write it as ordinary scalar code and loops
+without paying for it.
+:::
+
+## In place: `!` and `.=` {.smaller}
+
+::: {style="margin-top: 2.5em;"}
+```{julia}
+#| label: s-p01-inplace
+#| echo: true
+
+function incidence_per_100k!(out, cases, populations)
+    out .= incidence_per_100k.(cases, populations)
     return nothing
 end
 
-u0 = [990.0, 10.0, 0.0]
-p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
-du = zeros(3); sir_ode!(du, u0, p, 0.0); du
+out = zeros(length(cases))
+
+incidence_per_100k!(out, cases, populations)
+
+out == per_100k  
 ```
 
-State is read by position, parameters by name — `p.β`, never `p[1]`.
+- The `!` signals that the function modifies an argument
+- `.=` computes and writes each element directly into the existing `out` array
+- The result is stored in `out`, not returned. Solvers can reuse this array across repeated calls, avoiding a new output array each time
+:::
+::: {.notes}
+The `!` signals that the function modifies an argument, and `.=` computes and writes each element directly into the existing `out` array. The result is stored in `out`, not returned. Solvers can reuse this array across repeated calls, avoiding a new output array each time.
+:::
 
-## Broadcasting & a figure from code
+## A figure from code
 
 ```{julia}
-#| label: fig-s-p01-rate
+#| label: fig-s-p01-per100k
 #| echo: true
-#| fig-cap: "Rate-to-proportion $1-e^{-r\\delta t}$ for a fast ($r=1$) and slow ($r=0.25$) rate: broadcasting evaluates the curve with no explicit loop."
+#| fig-cap: "Reported cases per 100 000 people, three regions."
 using CairoMakie
-rate_to_proportion(r, δt) = -expm1(-r * δt)   # stable 1 - exp(-r δt)
-δts = 0.0:0.05:2.0
-fig = Figure(size = (760, 360))
-ax = Axis(fig[1, 1]; xlabel = "δt", ylabel = "event probability")
-lines!(ax, δts, rate_to_proportion.(1.0, δts);  linewidth = 3, label = "r = 1.0")
-lines!(ax, δts, rate_to_proportion.(0.25, δts); linewidth = 3, label = "r = 0.25")
-axislegend(ax; position = :rb); fig
+fig = Figure(size = (740, 330))
+ax = Axis(fig[1, 1]; ylabel = "cases per 100 000",
+    xticks = (1:3, ["North", "South", "East"]))
+barplot!(ax, 1:3, per_100k)
+fig
 ```
 
-## Dispatch & reproducible randomness
+## Named tuples and multiple dispatch {.smaller}
 
+::: {style="margin-top: 2.5em;"}
 ```{julia}
 #| label: s-p01-dispatch
 #| echo: true
-using StableRNGs
-foi(I::Number, p)         = p.β * p.c * I / p.N
-foi(u::AbstractVector, p) = foi(u[2], p)      # read I from the state
+p = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)   # read by name, never by position
 
-rng = StableRNG(2024)               # local, version-stable stream
-(foi(10.0, p), foi(u0, p), rand(rng, 3))
+force_of_infection(p, I::Number)         = p.β * p.c * I / p.N
+force_of_infection(p, I::AbstractVector) = p.β .* p.c .* I ./ p.N
+
+(force_of_infection(p, 10), force_of_infection(p, [10, 50, 200]))
 ```
 
-One name, two methods, no `if` inspecting the arguments. You will rarely *write*
-dispatch here — but it is why `solve(prob, Tsit5())` needs no glue: the method is
-chosen by the types of both arguments, so swapping in a stiff solver, a
-sensitivity package, or an inference package leaves your kernel untouched.
-
-## Validation
-
-The derivatives must sum to zero (conservation) and `rate_to_proportion`
-must stay a valid probability and match its Taylor limit $p\approx r\,\delta t$:
-
-```{julia}
-#| label: s-p01-check
-#| echo: true
-sir_ode!(du, u0, p, 0.0)
-conserved = isapprox(sum(du), 0.0; atol = 1e-12)
-taylor    = isapprox(rate_to_proportion(0.25, 1e-6), 0.25e-6; rtol = 1e-3)
-(conserved, taylor)
-```
-
-Both `true`: the kernel conserves population and the conversion is well behaved.
-
-## Limitations & takeaways
-
-- **Scope:** this is not a full Julia course — no package management beyond
-  `using`, no profiling, metaprogramming, user-defined `struct`s, or parametric
-  types.
-- **Takeaways:**
-  - write mutating kernels with the `f!(du, u, p, t)` signature, the in-place
-    form this course uses throughout;
-  - broadcast with `.` to fuse away intermediates; use `expm1` for stability;
-  - state by position (`S, I, R = u`), parameters by field (`p.β`);
-  - dispatch is why `solve` composes with a compatible problem/algorithm pair
-    without glue code;
-  - seed a *local* `StableRNG` to fix the random stream everywhere.
-- Next: we *solve* the model in **Foundations**.
-
-::: {.notes}
-Demonstrate the four REPL modes live rather than reading the table — enter and
-leave each one, and show `?expm1` in particular, since help mode answers most
-"what arguments does this take" questions faster than a web search and works
-offline. Point out the environment name in the package prompt; a package that
-appears to be missing almost always means the project environment was never
-activated: a plain `julia` starts in the default environment wherever you launch
-it, so `--project=.` or `] activate .` is the fix.
-Emphasise that the `!` suffix is a convention, not syntax, and that in-place
-kernels avoid per-evaluation allocations across the thousands of solver calls.
-Spend a moment on the two reading conventions — state destructured positionally,
-parameters read by field — because every chapter from here follows it, and a
-reordered positional parameter tuple is the failure that still runs and returns
-wrong numbers. On dispatch, resist the urge to teach the type system: the point
-participants need is that `solve(prob, Tsit5())` works without glue code, which
-is what makes the solver swap in later chapters a one-word change.
-Stress that `StableRNG` output is fixed across Julia versions, unlike the global
-default RNG, which is why every stochastic figure in the course is reproducible.
-Point listeners to the book for the full narrative and to the Pluto notebook to
-vary the baseline interactively.
+::: {style="font-size: 0.6em;"}
+| Call                                   | Method selected     |
+| -------------------------------------- | ------------------- |
+| `force_of_infection(p, 10)`            | `I::Number`         |
+| `force_of_infection(p, [10, 50, 200])` | `I::AbstractVector` |
 :::
 
-## Learn more
+- Both definitions are methods of the same function. Julia selects the applicable method from the positional argument types
+- The type of `I` determines whether the scalar or vector method is used
 
-- Book chapter: [Julia essentials for modelers](../../prerequisites/01-julia-essentials.html)
-- Pluto notebook: [`01-julia-essentials.jl`](../../notebooks/prerequisites/01-julia-essentials.jl)
-- [Julia manual](https://docs.julialang.org/en/v1/) ·
-  [CairoMakie](https://docs.makie.org/stable/)
+:::
+::: {.notes}
+On the named tuple, the failure worth naming is the quiet one. A positional parameter tuple that someone reorders still runs, and returns wrong numbers with no error. Reading by field cannot fail that way. Part A of the worksheet asks them to think about exactly this.
+
+On dispatch, the example is built so the *second* argument decides, because the habit from other languages is to expect the first argument, or a receiver object, to own the behaviour. It does not here. That is what lets a solver package written by one group and a problem type written by another meet without either importing the other's opinions, which is the second bullet on the "can we do the same in other languages" slide.
+
+Resist teaching the type system. The one consequence they need today is that `solve(prob, Tsit5())` needs no glue code, so handing the same model to a different algorithm, a sensitivity package or an inference package later leaves the model untouched. The ODE session demonstrates it on a real problem, so today it is enough to assert.
+:::
+
+## Reproducible randomness {.smaller}
+
+::: {style="margin-top: 2.5em;"}
+```{julia}
+#| label: s-p01-rng
+#| echo: true
+
+using StableRNGs
+
+seed = 123
+
+draws_a = rand(StableRNG(seed), 1)
+draws_b = rand(StableRNG(seed), 1)
+draws_c = rand(StableRNG(seed + 1), 1)
+
+println("draws_a == draws_b: ", draws_a == draws_b)
+println("draws_a != draws_c: ", draws_a != draws_c)
+println("draws_a: ", draws_a, " draws_b: ", draws_b, " draws_c: ", draws_c)
+```
+
+- A random-number generator produces a sequence
+- The seed determines where that sequence starts 
+- Recreating `StableRNG(123)` reproduces the same draws
+- The generator advances when it is used, so another call using the same generator produces the next values in the sequence
+:::
+
+::: {.notes}
+The contrast worth drawing is with a global seed. `StableRNGs` fixes the stream
+across Julia versions, where the built-in generator may legitimately change
+between releases, which is why every stochastic figure in this course reproduces.
+Passing the generator as an argument also makes the source of randomness visible
+at the call site instead of depending on whatever ran before it.
+:::
+
+## The workflow will feel familiar
+
+::: {style="margin-top: 2.5em;"}
+| In R | Here |
+|---|---|
+| RStudio | Julia for VS Code |
+| `renv` | `Project.toml` + `Manifest.toml` |
+| R Markdown | Quarto, supports several languages |
+| `data.frame` | `DataFrames.jl` |
+| `ggplot2` |  `CairoMakie` |
+:::
+
+::: {.notes}
+R has renv and targets, and Quarto is the same tool in both languages. The next two slides show the argument rather than asserting it, and the ODE session demonstrates it on a real problem.
+:::
+
+## Next:
+
+::: {style="margin-top: 3.5em;"}
+- Go to the worksheet folder and open the `prerequisites/01-julia-essentials.qmd` worksheet.
+- Follow the instructions and complete the exercises.
+- Let us know if you have any questions!
+:::
