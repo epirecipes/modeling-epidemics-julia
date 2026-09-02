@@ -44,3 +44,6 @@ appendices/solutions/*.html
 /modeling-epidemics-with-julia.tex
 
 /.quarto/
+
+# Quarto VS Code extension virtual documents for the language server.
+.vdoc.*
