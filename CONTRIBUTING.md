@@ -5,8 +5,26 @@ see [Setting up](setup.qmd) instead.
 
 ## Requirements
 
-- Julia 1.12
+- Julia 1.12.5, exactly
 - Quarto 1.9 or newer
+
+The Julia version is a pin, not a floor. `Manifest.toml` records
+`julia_version = "1.12.5"`, CI reads that line to choose its Julia, and Quarto's
+Julia engine refuses to execute a document when the running Julia differs at all,
+failing the whole render with `Julia version mismatch in notebook file`. A juliaup
+channel such as `1.12` tracks the newest patch release, so it drifts off the pin
+the moment a new one ships.
+
+Install the pinned version and point Quarto at it:
+
+```bash
+juliaup add 1.12.5
+export QUARTO_JULIA="$HOME/.julia/juliaup/julia-1.12.5+0.aarch64.apple.darwin14/Julia-1.12.app/Contents/Resources/julia/bin/julia"
+```
+
+That path is the macOS/aarch64 layout, where juliaup installs an app bundle rather
+than a `bin/` directory. `juliaup default 1.12.5` works too, but changes the default
+for every Julia project on the machine.
 
 Two environments must be instantiated. The second serves chapter 8 alone,
 which needs a package that conflicts with the rest of the course:
