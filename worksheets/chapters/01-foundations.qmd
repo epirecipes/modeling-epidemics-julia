@@ -9,12 +9,11 @@ status: draft
 
 **~45 minutes**
 
-In the last session you wrote the SIR kernel but never ran it. Here you hand it
-to a solver and get an epidemic curve out, then check that curve against two
-things the theory predicts in advance: that the population is conserved, and
-that the infectious peak, which at the baseline arrives after a spell of growth,
-sits exactly where the susceptible fraction falls through $1/R_0$. Part B
-defines $R_0$.
+In the last worksheet you defined the SIR function and evaluated it once at the 
+initial state ($t=0$), but never solved it. Here you will hand it to a solver 
+and get an epidemic curve out, then check that curve against two things the theory 
+predicts in advance: that the population is conserved, and that the infectious peak 
+comes exactly when the susceptible fraction drops to $1/R_0$.
 
 Nothing here changes the model. The ordinary differential equations session is
 where the model starts responding to interventions; today is about getting a
@@ -74,8 +73,7 @@ Plain ASCII names work exactly as well if you prefer them.
 
 ## Setup
 
-This is your kernel from the last session, given back so that nobody is held up
-retyping work they have already done. Note the two reading
+This is your kernel from the last session. Note the two reading
 conventions it uses, because everything below follows them: the **state** `u` is
 positional (`S, I, R = u`), the **parameters** `p` are read by field (`p.β`).
 
@@ -171,12 +169,8 @@ isempty(I) || println("peak infectious: ", round(maximum(I), digits = 1),
 ::: {.callout-tip collapse="true"}
 ## Hint — Part A
 
-```julia
-I = sol[2, :]
-```
-
-`I` is the second compartment, so the first index is `2`; the `:` means "every
-stored time". Compare the `S` line directly above it.
+`I` is the second compartment, and the `:` means "every
+stored time". 
 
 The conservation check uses `sol.u` rather than `sol[i, :]` because it needs
 each *whole* state at once: it adds $S+I+R$ at each time and compares with $N$.
@@ -219,10 +213,9 @@ $$
 
 The epidemic grows only while $S/N > 1/R_0$. That makes a sharp, checkable
 prediction: once the curve has grown, it turns over at the *exact moment* the
-susceptible fraction crosses $1/R_0$, not near it, at it. The baseline does grow
-first, because $R_0 S(0)/N = 1.98 > 1$. If that product were below 1 there would
-be no crossing to find: $I$ would fall from day zero and its largest value would
-be $I(0)$.
+susceptible fraction crosses $1/R_0$. The baseline does grow first, because 
+$R_0 S(0)/N = 1.98 > 1$. If that product were below 1 there would be no crossing 
+to find: $I$ would fall from day zero and its largest value would be $I(0)$.
 
 ```{julia}
 #| label: ws-ch01-b1
@@ -241,12 +234,7 @@ check("the peak sits on the threshold",
 ::: {.callout-tip collapse="true"}
 ## Hint — Part B, R₀
 
-```julia
-R₀ = p.β * p.c / p.γ
-```
-
-To type `R₀`: `R\_0`↹. Plain `R0` works just as well if you prefer it; the
-subscript is cosmetic.
+Remember how we accessed named tuple fields on the previous worksheet.
 
 If the threshold check fails but `R₀` is right, look at `peak_index`: `argmax`
 returns the *position* of the largest value, which is what you want here, not
@@ -294,17 +282,14 @@ results
 ::: {.callout-tip collapse="true"}
 ## Hint — Part B, the sweep
 
-```julia
-p_c = merge(p, (c = c_val,))
-```
+`p_c = p` leaves the contact rate unchanged. Because named tuples are
+immutable, create a new tuple containing the baseline parameters but a different
+value for `c`
 
-The loop variable is called `c_val` rather than `c` on purpose: `p.c` is already
-the contact rate, and shadowing it inside the loop makes the code much harder to
-read.
+At the Julia REPL, enter `?merge` to learn how to combine named tuples.
 
-If every row comes out with the same `R₀`, `p_c` is still the unmodified `p`:
-`merge` returns a new tuple rather than changing the old one, so its result has
-to be assigned.
+If every row comes out with the same `R₀`, you are probably still using the unmodified
+parameters in `p`.
 :::
 
 ```{julia}
@@ -374,7 +359,7 @@ s₀ = u0[1] / p.N
 
 # The residual takes the unknown and the parameters, mirroring f(du, u, p, t).
 residual(s, R0) = s - s₀ * exp(-R0 * (1 - s))
-# TODO: replace 0.0 with an initial guess for s∞ — anything up to about 0.6 will do
+# TODO: replace 0.0 with an initial guess for s∞ 
 fs_prob = NonlinearProblem(residual, 0.0, R₀)
 
 s_inf = solve(fs_prob, NewtonRaphson()).u
@@ -398,26 +383,28 @@ check("analytic and simulated agree", isapprox(s_inf, simulated; atol = 1e-3))
 ::: {.callout-tip collapse="true"}
 ## Hint — Part C
 
-```julia
-fs_prob = NonlinearProblem(residual, 0.2, R₀)
-```
+The residual changes direction at
+$$
+s_{\mathrm{turn}}
+= 1-\frac{\ln(s_0R_0)}{R_0}
+\approx 0.658,
+$$
+where its slope is zero. This bend allows the residual curve to cross zero
+twice, producing two roots.
 
-Any guess below about 0.6 lands on the root you want. The equation has a second
-root at $s_\infty \approx 1.010$, and a large guess such as `0.9` converges to
-that one instead. It solves the equation, but it is not a state the SIR model can
-end in: more people would have finished susceptible than started.
+Newton’s method uses the local slope to choose its next value,
+$$
+s_{\mathrm{new}}=s-\frac{f(s)}{f'(s)}.
+$$
 
-The residual turns over at $s = 1 - \ln(s_0 R_0)/R_0 \approx 0.658$, which is why
-there are two roots at all. It does not tell you which guesses end at which root:
-start exactly on the turning point and the slope is zero, so Newton's first step
-is undefined and the solve fails rather than reaching a root. Check the value
-that came back, its residual, and the return code together, rather than trusting
-any one of them.
+Consequently, the starting guess can determine which root is reached. Starting
+exactly at \(s_{\mathrm{turn}}\) is problematic: because \(f'(s_{\mathrm{turn}})=0\), 
+Newton’s update would divide by zero and cannot take a valid first step.
 
-Try `0.9` as well as `0.2` and watch the "s∞ is a fraction" check fail. A
-root-finder returns *a* root; nothing in the mathematics says which one you
-meant.
+Check that the return code reports success, the value is plausible, and its
+residual is close to zero.
 :::
+
 
 ### C1. Interpret
 
@@ -448,7 +435,7 @@ your own.
 
 ## Where to look next
 
-Nothing here is assigned. The whole project stays available to you afterwards.
+The whole project stays available to you afterwards.
 
 - [The chapter](../../chapters/01-foundations.qmd) — the derivation of the SIR
   equations from mass-action transmission, the threshold argument in full, and a

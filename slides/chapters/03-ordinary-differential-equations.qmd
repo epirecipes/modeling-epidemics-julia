@@ -6,30 +6,45 @@ status: complete
 
 ## Why this unit matters
 
-- Foundations solved SIR to establish theory; this chapter is about the
-  **tools** — the `OrdinaryDiffEq` workflow.
+- Foundations solved SIR and established theory, here we will 
+explore the Julia tools for solving ODEs.
 - We cover: building an `ODEProblem`, the `Tsit5` solver, dense interpolation
-  `sol(t)`, and **callbacks** for events.
+  `sol(t)`, **callbacks** for events, and `remake` for scenarios.
 - Two events: a time-limited **lockdown** and automatic **peak detection**.
 
-## Equations {.smaller}
+## A lockdown is a piecewise-constant $\beta$ {.smaller}
 
-Base SIR with a time-dependent, piecewise-constant $\beta(t)$:
+A lockdown does not add compartments or flows. What we expect from it is a drop
+in transmission that lasts as long as the restrictions do: $\beta$ falls at
+$t_1$ and returns at $t_2$. That makes $\beta$ a step function of time:
 
 $$
-\lambda(t)=\frac{\beta(t)\,c\,I}{N},\qquad
-\beta(t)=\begin{cases}\beta_\text{lock}, & t_1\le t<t_2,\\ \beta, & \text{else.}\end{cases}
+\beta(t)=\begin{cases}\beta_\text{lock}, & t_1\le t<t_2,\\ \beta, & \text{otherwise.}\end{cases}
 $$ {#eq-s-ch03-lockdown}
 
-The infectious peak is the root of the growth rate
+Additionally, if we want to know when the epidemic turns, we need to measure the peak while the simulation is running:
 
 $$
-\frac{\mathrm{d}I}{\mathrm{d}t}=\lambda(t)S-\gamma I=0,
+\frac{\mathrm{d}I}{\mathrm{d}t}=\lambda(t)S-\gamma I=0.
 $$ {#eq-s-ch03-peak}
 
-which a `ContinuousCallback` locates to solver tolerance.
+Two separate jobs, and both fall to the solver *while it is running*: switch
+$\beta$ at $t_1$ and $t_2$, and report where @eq-s-ch03-peak holds.
 
-## Julia API: problem, solver, interpolation
+::: {.notes}
+These two are deliberately different problems. For the lockdown we know the
+times and not the state; for the peak we know the condition on the state and not
+the time. That is exactly the split between the two callback types on the next
+slides.
+
+Flag the limit of the peak equation now, because the worksheet returns to it.
+Root-finding on dI/dt finds smooth turning points. At t₁ and t₂ the slope jumps,
+so I can go from rising to falling without ever passing through zero, and the
+largest value of I then sits exactly at the switching time. Endpoints are
+invisible to it too. Exercise 1 in the chapter builds a case where this matters.
+:::
+
+## Julia API: problem, solver, interpolation {.smaller}
 
 ```{julia}
 #| label: s-ch03-solve
@@ -46,7 +61,210 @@ sol = solve(prob, Tsit5(); reltol = 1e-8, abstol = 1e-8)
 (length(sol.t), round(sol(12.5)[2]; digits = 3))   # adaptive steps; dense interpolant
 ```
 
-## Julia API: a lockdown & peak detection
+- **Adaptive steps.** The solver chooses its own step sizes, short where the
+  curve bends and long where it is flat, keeping the estimated error under
+  `abstol + reltol * |u|`. `sol.t` is therefore not a regular grid, which is why
+  `length(sol.t)` is not a round number.
+- **Dense interpolant.** `sol(t)` evaluates a polynomial fitted inside the step
+  containing `t`, so any time in the span can be read off, whether or not the
+  solver stopped there. Compare `sol[2, :]`, which returns the stored values at
+  the solver's own times.
+
+::: {.notes}
+Nobody asked for 12.5 to be saved, and it almost certainly was not. sol(12.5)
+still returns a value, and that is the difference between the two idioms worth
+making explicit: sol[i, :] takes what the solver stored, sol(t) evaluates a grid
+you choose.
+
+Say why anyone cares. Two reasons, both returning later. Comparing a
+continuous-time model against daily surveillance data means resampling onto the
+observation grid, which is sol(t). And the stored points can mislead: the
+adaptive controller does not put a step on the peak, so maximum(sol[2, :]) reads
+158.34 here against 158.45 from the interpolant. When a number matters, take it
+from sol(t).
+
+That second point is the setup for the next slide.
+:::
+
+## Callbacks: acting during the solve {.smaller}
+
+`solve` normally runs from start to finish and hands back a trajectory. A
+**callback** interrupts it part-way and lets you act.
+
+Every callback is two pieces:
+
+- a **condition** saying when the event happens;
+- an **`affect!`** saying what to do when it does.
+
+The `affect!` is handed the **integrator**, the solver's live state:
+
+| Field | Is | What an `affect!` does with it |
+|---|---|---|
+| `integrator.t` | the current time | reads it, to record when the event happened |
+| `integrator.u` | the current state | writes it, to move people between compartments |
+| `integrator.p` | the current parameters | writes it, to change $\beta$, $\gamma$ or $c$ |
+
+Whatever you write there is what the solver continues from.
+
+::: {.notes}
+The name is the standard one from event-driven programming: you hand the solver
+a function and it calls you back when something happens.
+
+Emphasise that the integrator is live, not a copy. Assigning to integrator.p
+changes the parameters the rest of the solve uses; assigning to integrator.u
+moves people. This is the whole mechanism, and both worksheet exercises are one
+line inside an affect!.
+
+The `!` in `affect!` is the Julia convention from the essentials session: this
+function modifies its argument.
+
+If anyone asks whether t can be written as well: the field is mutable, so it
+compiles, but it desynchronises the solver's own step bookkeeping and there is
+no reason to. Timing is influenced by adding stopping points, add_tstop!, not by
+moving the clock.
+:::
+
+## `PresetTimeCallback`: you know *when* {.smaller}
+
+```julia
+start_lockdown!(integrator) = (integrator.p = merge(integrator.p, (β = 0.025,)))
+
+PresetTimeCallback([10.0], start_lockdown!)
+```
+
+- Takes a list of times and an `affect!`, and fires at each of those times.
+- The solver **places a step exactly on each time**, so the switch happens where
+  you asked rather than being smeared across an adaptive step.
+- `merge` returns a new `NamedTuple` with `β` replaced and everything else
+  carried over. Assigning it back to `integrator.p` is what makes the change
+  stick, and the parameters stay the named container used everywhere else.
+- Change `integrator.p` for a lockdown; change `integrator.u` for a vaccination
+  pulse. The worksheet does the second.
+
+::: {.notes}
+Ask what would happen without the forced step: an adaptive solver might step
+from day 8 to day 13, and a switch at day 10 applied at the end of that step is
+wrong by three days. PresetTimeCallback removes that problem, which is why it is
+preferred over writing an if-statement on t inside the kernel.
+
+A kernel that branches on t also has a discontinuity the error estimator cannot
+see, so it will shrink the step trying to integrate across it.
+
+merge is used rather than mutating because a NamedTuple is immutable. The
+alternative, a mutable parameter vector indexed positionally, is what most of the
+older tutorials do; this keeps p.β readable.
+:::
+
+## `ContinuousCallback`: you know *what*, not *when* {.smaller}
+
+A `ContinuousCallback` takes a condition function and an affect! function
+
+```julia
+peak_cb = ContinuousCallback(
+    (u, t, integrator) -> dIdt(u, integrator.p),   # condition: zero at the peak
+    integrator -> push!(peak_t, integrator.t))     # affect!: record the time
+```
+
+The solver then continuously monitors this number as it integrates through time and trigger the callback the exact instant the number crosses zero (changes sign from positive to negative, or vice versa)
+
+- **The state to test arrives as `u`.** That is why the condition takes
+  `(u, t, integrator)` while the `affect!`, which runs once, takes the
+  integrator alone.
+- **So `integrator.u` in a condition is a bug.** It is the state at the *end* of
+  the step, identical at every trial, so the sign never changes and the event is
+  never found. Julia will not warn you.
+- **Only a sign change counts.** A peak at $t_1$, $t_2$ or at an end of the span
+  never passes through zero, so nothing fires.
+
+::: {.notes}
+Contrast with the previous slide: nobody can write down the peak time in
+advance, but everyone can write down the condition that holds there. That is the
+case for a ContinuousCallback.
+
+The integrator.u trap is worth dwelling on because Julia does not complain. The
+code runs, the callback simply never fires, and people conclude their model has
+no peak. If a ContinuousCallback appears to do nothing, this is the first thing
+to check.
+
+There is a third argument for direction: ContinuousCallback(cond, up!, down!),
+and passing nothing for one of them fires on one direction only. Part C of the
+worksheet uses that to trigger restrictions on the way up but not on the way
+down.
+:::
+
+## Finding the peak: two ways {.smaller}
+
+$\mathrm{d}I/\mathrm{d}t = 0$ can be found after the solve, or during it.
+
+:::: {.columns}
+::: {.column width="50%"}
+### After the simulation
+
+- Grid-bound: with `saveat = 0.5`, a peak at day 18.23 reads as 18.0 or 18.5.
+- `sol(t)` fixes the sharpness. Scan a fine grid of the interpolant, saving
+  nothing extra.
+- Records only. It cannot change the run.
+:::
+::: {.column width="50%"}
+### During the simulation
+
+- Root-finds on the same dense interpolant, inside the step, to solver
+  tolerance.
+- No grid to choose.
+- Can act, not only record. Ours only saves the number, but the same callback
+  can drop $\beta$ the moment $I$ crosses capacity.
+:::
+::::
+
+::: {.notes}
+This slide exists because someone will ask why we are not just using argmax, as
+session 1 did. The answer is not that argmax is wrong. It is used again on the
+validation slide as the reference the callback is checked against, so do not
+dismiss it here.
+
+The honest ranking of the reasons: sharpness is real but curable with sol(t);
+the sweep pattern with save_everystep = false is a genuine saving; and the one
+that cannot be worked around is the last bullet. A quantity computed after the
+fact cannot change the trajectory it was computed from.
+
+Be straight that the last bullet is a promise, not a demonstration. Our affect!
+is push!(peak_t, integrator.t), which records and nothing more, so on this deck
+argmax and the callback would give the same answer. The acting version is Part C
+of the worksheet, where the same callback drops β when I crosses capacity. Say
+that rather than implying this code already does it.
+
+The corner line at the bottom is the honest caveat, and it runs the other way
+from the rest of the slide: root-finding is the method that fails there.
+Exercise 1 in the chapter builds that case.
+:::
+
+## `CallbackSet`: more than one event {.smaller}
+
+`solve` takes a single `callback =`. The lockdown alone is already two events:
+
+```julia
+cb = CallbackSet(PresetTimeCallback([t1], start_lockdown!),
+                 PresetTimeCallback([t2], end_lockdown!))
+```
+
+- Combines any number of callbacks, discrete and continuous, into one object.
+- Continuous conditions are root-found first and the earliest crossing applied;
+  discrete callbacks then fire in the order you listed them.
+- The peak detector could go in the same set. We run it separately here so the
+  peak is measured on the run *without* the intervention.
+
+::: {.notes}
+This is the composition point of the session in miniature. Each callback was
+written knowing nothing about the others, and combining them needs no change to
+either one.
+
+Say why the peak detector is kept out of cb: the two are answering different
+questions. cb asks what the lockdown does; peak_cb asks where the untouched
+epidemic turns. Putting them in one set would be legitimate, it would just
+measure the peak of the intervened run instead.
+:::
+
+## Julia API: a lockdown & peak detection {.smaller}
 
 ```{julia}
 #| label: s-ch03-callbacks
@@ -63,9 +281,59 @@ dIdt(u, p) = (p.β * p.c * u[2] / p.N) * u[1] - p.γ * u[2]       # eq-s-ch03-pe
 peak_cb = ContinuousCallback((u, t, i) -> dIdt(u, i.p),         # condition sees u
                              i -> push!(peak_t, i.t))           # affect! sees integrator
 solve(prob, Tsit5(); callback = peak_cb, reltol = 1e-8, abstol = 1e-8)
-(round.(peak_t; digits = 2), round(maximum(sol[2, :]); digits = 1),
- round(maximum(sol_lock[2, :]); digits = 1))
+println("peak day (callback):    ", round(peak_t[1]; digits = 2))
+println("peak I, stored points:  ", round(maximum(sol[2, :]); digits = 2))
+println("peak I, interpolant:    ", round(maximum(sol(t)[2] for t in 0:0.01:80); digits = 2))
+println("peak I, lockdown:       ", round(maximum(sol_lock[2, :]); digits = 2),
+        " on day ", sol_lock.t[argmax(sol_lock[2, :])], 
+        " which in this case does agree with interpolation: ", round(maximum(sol_lock(t)[2] for t in 0:0.01:80); digits = 2))
 ```
+
+::: {.notes}
+Read the three numbers as one story: the lockdown roughly halves the peak,
+158 down to 86, and after release the rebound only reaches 37.
+
+Two details are worth pointing at, both visible on this slide. The peak time
+comes from root-finding while the peak height comes from stored points, so the
+height is the less accurate of the two numbers on screen. And day 10 is a
+corner, not a turning point: this lockdown is strong enough to turn the epidemic
+the instant it starts, so dI/dt jumps from positive to negative without passing
+through zero. Run peak_cb on sol_lock and it reports nothing at all. That is the
+last bullet of the ContinuousCallback slide, and Exercise 1 in the chapter is
+built on it.
+:::
+
+## `remake`: same problem, new numbers {.smaller}
+
+A scenario differs from the baseline in one field. Rebuilding the whole problem
+retypes the three fields that did not change:
+
+```julia
+scenario = ODEProblem(sir_ode!, u0, tspan, merge(p, (β = 0.035,)))  # retypes everything
+scenario = remake(prob; p = merge(p, (β = 0.035,)))                 # copies, replaces p
+```
+
+- `remake` copies a problem and replaces only the fields you name: `p`, `u0`,
+  `tspan`, and the rest.
+- `prob` itself is untouched, so a sweep over scenarios cannot damage the
+  baseline it is being compared against.
+- Fitting, sensitivity and inference packages all build their trial problems this
+  way: same kernel, new parameters, thousands of times.
+
+::: {.notes}
+The argument for remake is not that it saves typing on one line. It is that the
+scenario stays defined as a difference from the baseline, so when the baseline
+changes, the scenario follows. Rebuilding by hand duplicates u0 and tspan, and
+those copies go stale silently.
+
+Point out that the parameters here are still built with merge, the same function
+as in the lockdown affect!. One replaces a field in a NamedTuple, the other
+replaces a field in a problem.
+
+Mention where this returns: in the estimation and inference sessions the
+optimiser calls remake on every iteration, and in the sensitivity session the
+ensemble does it per sample. Nobody rebuilds an ODEProblem in a loop.
+:::
 
 ## One problem, many compatible tools {.smaller}
 
@@ -89,8 +357,8 @@ scenario = remake(prob; p = merge(p, (β = 0.035,)))   # same problem, new param
 
 ::: {.notes}
 This is the concrete version of the composability claim asserted in the Julia
-essentials session. Nothing here is a new model: `prob` and `cb` were built two
-slides ago, and every line reuses them.
+essentials session. Nothing here is a new model: `prob` and `cb` were built
+earlier in this deck, and every line reuses them.
 
 The mechanism, said plainly: `ODEProblem` stores the scientific problem
 separately from the algorithm used to solve it. Multiple dispatch examines the
@@ -147,28 +415,48 @@ peak_ok = isapprox(peak_t[1], brute; atol = 0.05)
 All `true`: the solver conserves population, its interpolant is faithful, and the
 callback peak matches the maximum.
 
-## Limitations & takeaways
+## Limitations & takeaways {.smaller}
 
-- The workflow separates **what** the model is from **how** it is solved and
-  **what happens during** the solve — the same `ODEProblem` scales to stiff
-  solvers, sensitivity, and fitting.
+**What the workflow separates**
+
+- *What the model is* (`ODEProblem`), *how it is solved* (`Tsit5`, tolerances),
+  and *what happens during* the solve (callbacks) are three independent choices.
+- Swap the algorithm or `remake` a scenario, with no change to the model.
 - Callbacks turn an integrator into an event-driven simulator.
-- Limits are those of deterministic SIR; the lockdown here is a perfect switch.
-- **Takeaway:** master `ODEProblem` + `Tsit5` + callbacks once, reuse everywhere.
+
+**What to be careful about**
+
+- Report numbers from `sol(t)`, not from stored points: 158.34 against 158.45
+  here.
+- The model inherits every SIR assumption: homogeneous mixing, continuous state,
+  memoryless recovery.
+- The lockdown is a perfect switch. In reality, the adherence to a policy is gradual, noisy, and
+  responds to the epidemic.
+
+**Takeaway:** learn `ODEProblem` + solver + callbacks once, reuse it everywhere.
 
 ::: {.notes}
-Highlight that dense output means sol(t) is a high-order interpolant, not a saved
-sample, which is how solutions are resampled onto observation grids later. The
-parameters stay a NamedTuple: merge returns a new one with β replaced, which the
-PresetTimeCallback assigns back to integrator.p, so no mutable vector is needed.
-Note that realistic interventions involve uncertainty and feedback, deferred to
-the interventions and control chapter. Invite learners to sweep β_lock in the
+The corner bullet is the one to slow down on, because it is the only limitation
+here that this session demonstrated rather than asserted. Point back at slide
+10: the lockdown peak printed as 86.04 on day 10.0, exactly the switching time.
+Run peak_cb on that solution and it returns an empty vector. Exercise 1 in the
+chapter builds the case, and the fix is to check t₁, t₂ and both ends of the
+span alongside whatever root-finding reports.
+
+Each item in the SIR list names a later session, so use it as the map: jump
+processes for stochastic extinction and integer counts, SDEs for noise, agent
+based models for mixing. Memoryless recovery is the exponential infectious
+period, which the delay appendix relaxes.
+
+Realistic interventions involve uncertainty and feedback, deferred to the
+interventions and control chapter. Invite learners to sweep β_lock in the
 notebook.
 :::
 
-## Learn more
+## Next:
 
-- Book chapter: [Ordinary differential equations](../../chapters/03-ordinary-differential-equations.html)
-- Pluto notebook: [`03-ordinary-differential-equations.jl`](../../notebooks/chapters/03-ordinary-differential-equations.jl)
-- [OrdinaryDiffEq](https://docs.sciml.ai/OrdinaryDiffEq/stable/) ·
-  [Callbacks](https://docs.sciml.ai/DiffEqDocs/stable/features/callback_functions/)
+::: {style="margin-top: 3.5em;"}
+- Go to the worksheet folder and open the `chapters/03-ordinary-differential-equations.qmd` worksheet.
+- Follow the instructions and complete the exercises.
+- Let us know if you have any questions!
+:::

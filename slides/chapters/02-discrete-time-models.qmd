@@ -14,26 +14,48 @@ status: complete
 - As $\delta t\to0$ the map converges to the continuous ODE — tying discrete and
   continuous worlds together.
 
-## Equations {.smaller}
+## From continuous rates of change to probabilities of events
 
-Per-step probabilities (@eq-s-ch02-probs) from the SIR rates; the map moves
-expectations, the chain draws binomials:
-
+Before stepping either model, we must convert our continuous rates of change into 
+a probability of an event occurring within a discrete time step of width $\delta t$:
 $$
 p_I = 1-e^{-\beta c I_t \delta t/N},\quad p_R = 1-e^{-\gamma\delta t}.
 $$ {#eq-s-ch02-probs}
+
+We already used this method in our `rate_to_proportion` function:
+
+```{julia}
+#| echo: true
+#| output: false
+function rate_to_proportion(r, δt)
+    -expm1(-r * δt)
+end
+```
+
+## Equations {.smaller}
+
+Both models start from the same $p_I$ and $p_R$. They differ in what they do
+with them.
+
+The **map** moves the number of people we expect to move, $p_I S_t$ out of $S$
+and $p_R I_t$ out of $I$, which can be a fraction of a person:
 
 $$
 \text{map:}\;\; S_{t+1}=S_t-p_I S_t,\;\; I_{t+1}=I_t+p_I S_t-p_R I_t,\;\; R_{t+1}=R_t+p_R I_t.
 $$ {#eq-s-ch02-map}
 
+The **chain** lets each of the $S_t$ susceptibles move with probability $p_I$,
+independently of the others, and counts how many did. That count is a binomial
+draw, and likewise for recovery:
+
 $$
 \text{chain:}\;\; Y_t\sim\text{Bin}(S_t,p_I),\;\; Z_t\sim\text{Bin}(I_t,p_R).
 $$ {#eq-s-ch02-chain}
 
-The map is the chain's one-step conditional expectation.
+The map is the chain's one-step conditional expectation: a $\text{Bin}(S_t,p_I)$
+draw gives $p_I S_t$ infections on average, which is what the map moves.
 
-## Julia API: two kernels side by side
+## Julia API: two kernels side by side 
 
 ```{julia}
 #| label: s-ch02-kernels
@@ -60,12 +82,12 @@ function iterate_model(step, u0, p, δt, n; extra = ())
 end
 ```
 
-## Generated result: map vs chain
+## Generated result: map vs chain {.smaller}
 
 ```{julia}
 #| label: fig-s-ch02-compare
 #| echo: true
-#| fig-cap: "Infectious compartment: stochastic chain realisations (grey), their mean (red), and the deterministic map (dashed). The map tracks the stochastic mean."
+#| fig-cap: "Infectious compartment: stochastic chain realisations (grey), their mean (red), and the deterministic map (dashed). The map runs close to the stochastic mean."
 using CairoMakie
 u0 = [990, 10, 0]; δt = 1.0; n = 40; ts = 0:n
 p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
@@ -99,36 +121,43 @@ errs = map(δts) do dt
 end
 order = sum(log2(errs[k] / errs[k+1]) for k in 1:length(errs)-1) / (length(errs) - 1)
 cons = all(k -> isapprox(sum(mapt[:, k]), 1000.0; atol = 1e-8), 1:n+1)
-(round(order; digits = 3), isapprox(order, 1.0; atol = 0.1), cons)
+println("Order: $(round(order; digits = 3)), first-order: $(isapprox(order, 1.0; atol = 0.1)), population was conserved: $cons")
 ```
 
 First-order convergence and conservation confirmed.
 
-## Limitations & takeaways
+::: {.notes}
+Order of convergence: δts halves the step eight times (1.25 days down to ~0.0098). For each, the map is run out to t = 40 and errs records the largest absolute difference between its final state and ref, a tight ODE solve (reltol = abstol = 1e-12) treated as the truth. If the error scales like $C,\delta t^{,q}$, then halving the step divides the error by $2^q$, so log2(errs[k]/errs[k+1]) recovers $q$ from each halving; order averages those seven estimates. 0.96 ≈ 1 means first order: halve the step, halve the error. 
+:::
 
-- The **chain** is most faithful: integer counts, chance extinction, run-to-run
+## Limitations & takeaways {.smaller}
+
+| Feature | Deterministic Map (Continuous State) | Stochastic Markov Chain (Integer Counts) |
+| :--- | :--- | :--- |
+| **State Variable Type** | Continuous Real Numbers ($S, I, R \in \mathbb{R}^+$) | Discrete Non-Negative Integers ($S, I, R \in \mathbb{N}$) |
+| **Transition Process** | *Exact proportions:* $p_I S_t$ people transition deterministically. | *Binomial draws:* Each person flips a coin with probability $p_I$. |
+| **Extinction ($I=0$)** | $I_t$ decays exponentially but never hits absolute zero. | Small outbreaks can die out purely by chance. |
+
+- The **chain** is most realistic: integer counts, chance extinction, run-to-run
   variability shrinking *relative to* population size.
 - The **map** is its cheap, smooth mean-field shadow — blind to fluctuations.
-- As $\delta t\to0$ the map tends to the **ODE**, the chain to the
-  **continuous-time Markov chain**: different limits.
-- A within-step artefact (no infect *and* recover in one step) vanishes as the
-  step shrinks.
-- **Takeaway:** discrete models bridge data cadence and continuous theory.
+- As $\delta t\to0$ the map tends to the ODE, the chain to the continuous-time Markov chain.
 
 ::: {.notes}
 Stress that the map is the chain's expectation for one step from a given state,
 which is why the red mean and dashed map run so close together. They are not the
 same curve: the update is nonlinear, so iterating the expectation is not the same
-as averaging the chain, and the map's peak sits above the ensemble mean. The convergence study measures
-first-order behaviour: halve the step and the error halves. The calculus
-prerequisite derives the same result for forward Euler and is optional
-background. Encourage learners
-to shrink δt in the notebook and watch both the discretisation error and the
-extinction probability change.
+as averaging the chain, and the map's peak sits above the ensemble mean. The 
+convergence study measures first-order behaviour: halve the step and the error halves. 
+The calculus prerequisite derives the same result for forward Euler and is optional
+background. Encourage learners to shrink δt in the notebook and watch both the 
+discretisation error and the extinction probability change.
 :::
 
-## Learn more
+## Next:
 
-- Book chapter: [Discrete-time models](../../chapters/02-discrete-time-models.html)
-- Pluto notebook: [`02-discrete-time-models.jl`](../../notebooks/chapters/02-discrete-time-models.jl)
-- [Distributions.jl](https://juliastats.org/Distributions.jl/stable/)
+::: {style="margin-top: 3.5em;"}
+- Go to the worksheet folder and open the `chapters/02-discrete-time-models.qmd` worksheet.
+- Follow the instructions and complete the exercises.
+- Let us know if you have any questions!
+:::
