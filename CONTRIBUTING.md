@@ -19,7 +19,7 @@ Install the pinned version and point Quarto at it:
 
 ```bash
 juliaup add 1.12.5
-export QUARTO_JULIA="$HOME/.julia/juliaup/julia-1.12.5+0.aarch64.apple.darwin14/Julia-1.12.app/Contents/Resources/julia/bin/julia"
+export QUARTO_JULIA="$(juliaup which 1.12.5)"
 ```
 
 That path is the macOS/aarch64 layout, where juliaup installs an app bundle rather
