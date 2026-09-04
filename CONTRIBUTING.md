@@ -15,22 +15,28 @@ failing the whole render with `Julia version mismatch in notebook file`. A julia
 channel such as `1.12` tracks the newest patch release, so it drifts off the pin
 the moment a new one ships.
 
-Install the pinned version and point Quarto at it. On bash/zsh (Linux, macOS):
+Install the pinned version and make it the Julia this directory uses. Run both
+lines from the top of the course folder; they are identical on every platform,
+PowerShell included:
 
 ```bash
 juliaup add 1.12.5
-export QUARTO_JULIA="$(juliaup which 1.12.5)"
+juliaup override set 1.12.5
 ```
 
-On PowerShell (Windows):
+A juliaup override applies to that directory alone, so plain `julia` and Quarto
+both get 1.12.5 inside the course while your default Julia everywhere else is
+untouched, and no environment variable is needed. `juliaup override status`
+shows the override and `juliaup override unset` removes it.
 
-```powershell
-juliaup add 1.12.5
-$env:QUARTO_JULIA = juliaup which 1.12.5
+`juliaup default 1.12.5` also works, but changes the default for every Julia
+project on the machine. If you would rather point Quarto at the binary
+explicitly, ask Julia for its own path rather than guessing at the layout,
+which differs across platforms:
+
+```bash
+export QUARTO_JULIA="$(julia +1.12.5 -e 'print(Base.julia_cmd()[1])')"
 ```
-
-This uses `juliaup` to resolve the correct `julia` executable path on your platform.
-`juliaup default 1.12.5` works too, but changes the default for every Julia project on the machine.
 
 Two environments must be instantiated. The second serves chapter 8 alone,
 which needs a package that conflicts with the rest of the course:
@@ -149,3 +155,4 @@ the repository's Pages source as **GitHub Actions** and push `main`.
 The sibling `../sir-julia/` repository is outside this course repository and is
 used only as local reference material. Its examples predate current APIs, so
 verify against current package documentation before adapting anything from it.
+
