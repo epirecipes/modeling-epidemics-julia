@@ -15,11 +15,18 @@ failing the whole render with `Julia version mismatch in notebook file`. A julia
 channel such as `1.12` tracks the newest patch release, so it drifts off the pin
 the moment a new one ships.
 
-Install the pinned version and point Quarto at it:
+Install the pinned version and point Quarto at it. On bash/zsh (Linux, macOS):
 
 ```bash
 juliaup add 1.12.5
 export QUARTO_JULIA="$(juliaup which 1.12.5)"
+```
+
+On PowerShell (Windows):
+
+```powershell
+juliaup add 1.12.5
+$env:QUARTO_JULIA = juliaup which 1.12.5
 ```
 
 This uses `juliaup` to resolve the correct `julia` executable path on your platform.
