@@ -13,10 +13,18 @@ status: complete
 - Solve it with the modern **SciML** stack and verify conservation, the
   threshold, and the analytic **final-size** relation.
 
-## Assumptions & equations {.smaller}
+## The SIR model and mass action {.smaller}
 
-Closed, well-mixed population; mass-action transmission; constant recovery;
-permanent immunity. Force of infection $\lambda=\beta c I/N$:
+Closed, well-mixed population; constant recovery; permanent immunity.
+
+A susceptible person's hazard of infection is transmission probability ×
+contacts × prevalence:
+
+$$
+\lambda=\underbrace{\beta}_{\text{transmission probability}}\times
+\underbrace{c}_{\text{contacts per day}}\times
+\underbrace{\frac{I}{N}}_{\text{prevalence}}
+$$
 
 $$
 \frac{\mathrm{d}S}{\mathrm{d}t}=-\lambda S,\quad
@@ -24,23 +32,197 @@ $$
 \frac{\mathrm{d}R}{\mathrm{d}t}=\gamma I.
 $$ {#eq-s-ch01-sir}
 
+::: {.notes}
+Derive the mass-action term from contacts × prevalence × transmission
+probability: each of the S susceptibles makes c dt contacts, a fraction I/N of
+them are with infectious people, and each transmits with probability β.
+
+Then sum the three right-hand sides at the board. The λS term appears once with
+each sign, and so does γI, so everything cancels and d(S+I+R)/dt = 0 at every t.
+Nothing in the code will enforce S+I+R = N. It holds because each equation was
+written as a flow out of one compartment and into another. That is what the
+conservation check later in the deck is testing.
+:::
+
+## $R_0$ and the epidemic threshold {.smaller}
+
+$R_0$ is the expected number of secondary infections one infectious person
+produces in a fully susceptible population. Factoring $\gamma I$ out of
+@eq-s-ch01-sir gives:
+
 $$
-R_0=\frac{\beta c}{\gamma},\qquad
-\frac{\mathrm{d}I}{\mathrm{d}t}>0 \iff \frac{S}{N}>\frac{1}{R_0},
+\begin{aligned}
+R_0 &= \frac{\beta c}{\gamma},\\
+\frac{\mathrm{d}I}{\mathrm{d}t} &= \gamma I\Bigl(R_0\frac{S}{N}-1\Bigr) = \gamma I R_0\Bigl(\frac{S}{N}-\frac{1}{R_0}\Bigr).
+\end{aligned}
 $$ {#eq-s-ch01-r0}
 
+During an active outbreak ($I > 0$), the susceptible fraction (s = $S/N$) governs the sign of the derivative, defining three phases:
+
+- If $S/N>1/R_0 \Rightarrow \mathrm{d}I/\mathrm{d}t>0$ , active infections are growing
+- If $S/N=1/R_0 \Rightarrow \mathrm{d}I/\mathrm{d}t=0$, marking the turning point where the epidemic reaches its peak
+- If $S/N<1/R_0 \Rightarrow \mathrm{d}I/\mathrm{d}t<0$ , active infections are declining
+
+::: {.notes}
+S never increases, so R₀·S/N − 1 changes sign at most once: I rises and then
+falls, with a single maximum rather than several.
+
+Two things to say out loud. Growth is exponential only early on, while S is
+close to N; once S is being depleted the growth is slower than that. And the
+peak sits at S/N = 1/R₀ only when the epidemic grows first, that is, when
+R₀·S(0)/N > 1, which holds here (1.98). If it does not, I falls from the start
+and its largest value is I(0), at t = 0.
+:::
+
+## What is the final size of an epidemic in terms of surviving susceptibles? {.smaller}
+
+We define population fractions $s = S/N$ and $r = R/N$. As $N$ is constant, their rates of change scale identically: $\frac{\mathrm{d}S}{\mathrm{d}R} = \frac{\mathrm{d}s}{\mathrm{d}r}$.
+
+Dividing the rates of change in @eq-s-ch01-sir gives us:
 $$
-s_\infty = s_0\exp\!\bigl(-R_0(1-s_\infty)\bigr),\quad s_0=S(0)/N.
+\frac{\mathrm{d}s}{\mathrm{d}r} = \frac{-\lambda S}{\gamma I} = \frac{-\beta c (I/N) S}{\gamma I} = -R_0 s.
+$$
+
+Separating variables and integrating from $t=0$ to a state:
+$$
+\int_{s_0}^{s} \frac{1}{y}\,\mathrm{d}y = -R_0 \int_{0}^{r} \mathrm{d}x \implies \ln\left(\frac{s}{s_0}\right) = -R_0 r.
+$$
+
+Exponentiating both sides gives $s(t) = s_0 e^{-R_0 r(t)}$. At the end nobody is
+infectious, $i_\infty = 0$, and $s + i + r = 1$, so $r_\infty = 1 - s_\infty$:
+
+$$
+s_\infty = s_0 e^{-R_0 (1 - s_\infty)}.
 $$ {#eq-s-ch01-finalsize}
 
-## Julia API: solve & analyse
+::: {.notes}
+Dividing is the chain rule: dS/dR = (dS/dt)/(dR/dt), valid while I > 0. The step
+that makes it work is I cancelling between the two rates, which leaves an
+equation in S and R with no time in it. That is why γ disappears here and why
+the final size does not depend on how fast the epidemic runs.
+
+In fractions it is ds/dr = −R₀·s, separable, so ds/s = −R₀ dr and integrating
+from the start to the end gives s∞ = s₀ exp(−R₀·r∞). The last step only replaces
+r∞.
+
+Read the exponent as a quantity with meaning: R₀·r is the total force of
+infection a susceptible has been exposed to by the time a fraction r has
+recovered, and e^(−R₀r) is their chance of having escaped it. The last step just
+says that at the end the recovered fraction is everyone who is not still
+susceptible.
+
+If some people are immune at the start, r₀ = R(0)/N is not zero and the exponent
+becomes −R₀(1 − s∞ − r₀), because only those removed after t = 0 add to the
+force of infection. The chapter does that case.
+:::
+
+## What does the final size tell us? {.smaller}
+ 
+- *The Peak:* The outbreak stops growing when the susceptible fraction $S/N$ drops to $1/R_0$. 
+- *The End:* Transmission only stops later when active cases run out, leaving a final susceptible fraction $s_\infty > 0$.
+
+_Example:_ For $R_0 = 2$, the epidemic will peak at $1/R_0 = 1/2$ or 50% susceptible. However, the final size will be $s_\infty \approx 0.20$ or 20% susceptible. To get to this number you can numerically solve to find the root of the equation: 
+
+$$
+s_\infty = s_0 e^{-R_0 (1 - s_\infty)}
+$$
+
+Assuming $s_0 \approx 1$ (mostly susceptible at the start), we can calculate:
+
+| Guess for $s_\infty$ | Calculate $(1)*\exp(-2(1-s_\infty))$ | Match? |
+| --- | --- | --- |
+| 0.50 | $\exp(-2(1-0.5)) \approx 0.368$ | No ($0.50 \neq 0.368$) |
+| 0.30 | $\exp(-2(1-0.3)) \approx 0.247$ | No ($0.30 \neq 0.247$) |
+| 0.20 | $\exp(-2(1-0.2)) \approx 0.202$ | Very close ($0.20 \approx 0.202$) |
+
+
+
+::: {.notes}
+Be careful with "ends" here. Two different things happen at two different times:
+growth stops when S/N crosses 1/R₀, and transmission stops when I reaches zero,
+long afterwards.
+
+The gap between 0.50 and 0.20 is the part worth dwelling on. Prevalence is at
+its highest at the instant S/N crosses the threshold, which is the whole
+problem: the largest infectious pool of the epidemic then has to work its way
+through, infecting as it recovers, so S is pushed well past the threshold before
+I reaches zero. The epidemic overshoots the point where it stopped growing.
+
+If someone asks, S/N = 1/R₀ is the herd immunity threshold, equivalently
+1 − 1/R₀ = 50% immune here. The 20% never infected are protected by the immunity
+of the people around them, not by anything about themselves. The overshoot is
+why an unmitigated epidemic passes that threshold rather than settling at it.
+
+No rearranging gives s∞ in closed form, since it appears on its own and inside
+the exponential. It can be written with the Lambert W function, but here and
+throughout the course we find the root numerically. That is NonlinearSolve on
+the next slide, the same solve function as the ODE with a different problem type
+selecting the method.
+
+For the γ point, offer the test: double βc and γ together. R₀ is unchanged, both
+right-hand sides scale by the same factor, so the trajectory traces the identical
+path through (S, I, R) with the same peak of 158 infectious people and the same
+s∞, but arrives in half the time. The worksheet solution does this.
+
+The 80% counts the 1% seeded at t = 0 as well as those infected afterwards. The
+chapter separates the three quantities that are easy to confuse here.
+:::
+
+## SciML ecosystem in Julia
+
+High-performance, open-source software stack for scientific machine learning, combining differential equation solving, symbolic modeling, and machine learning into a single unified environment
+
+- `OrdinaryDiffEq.jl`: Numerical solvers for ordinary differential equations (ODEs)
+- `NonlinearSolve.jl`: Fast non-allocating implementations on static arrays of common methods (Newton-Rhapson)
+
+## Solving Continuous Dynamics: OrdinaryDiffEq.jl {.smaller}
+
+To trace an epidemic curve over time, we model the system as continuous flows using ordinary differential equations (ODEs)
+
+Our model kernel, `sir_ode!`, is a derivative calculator:
+
+```julia
+function sir_ode!(du, u, p, t)
+    S, I, R = u                       
+    λ = p.β * p.c * I / p.N
+    du[1] = -λ * S; du[2] = λ * S - p.γ * I; du[3] = p.γ * I; return nothing
+end
+```
+
+To find the state of the population across a timespan, we must integrate these equations over time:
+
+```julia
+using OrdinaryDiffEq
+sol = solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5(); saveat = 0.5)
+```
+
+The `solve` function takes the `ODEProblem` and and the solver (in this case `Tsit5()`) and returns an `ODESolution` object, which contains the integrated state of the population across the timespan.
+
+## Solving nonlinear static finite element analysis: NonlinearSolve.jl {.smaller}
+
+Sometimes, we do not need the full time-series trajectory of the epidemic. We only want to calculate the final state at the end of the outbreak (as $t \to \infty$)
+
+$$
+s_\infty = s_0 e^{-R_0 (1 - s_\infty)}
+$$
+
+```julia
+using NonlinearSolve
+sol = solve(NonlinearProblem((s, R0) -> s - s₀ * exp(-R0 * (1 - s)), 
+        initial_guess, 
+        R₀), NewtonRaphson()).u
+```
+
+Where `(s, R0) -> s - s₀ * exp(-R0 * (1 - s))` is the function solving for `s`. The `NewtonRaphson()` is the solver, `NonlinearProblem` is the problem type, and `solve` returns the final state `s_inf`.
+
+## Comparing both solutions
 
 ```{julia}
 #| label: s-ch01-solve
 #| echo: true
 using OrdinaryDiffEq, NonlinearSolve
 function sir_ode!(du, u, p, t)
-    S, I, R = u                       # state positional, parameters by field
+    S, I, R = u                       
     λ = p.β * p.c * I / p.N
     du[1] = -λ * S; du[2] = λ * S - p.γ * I; du[3] = p.γ * I; return nothing
 end
@@ -51,10 +233,12 @@ sol = solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5(); saveat = 0.5)
 R₀ = p.β * p.c / p.γ; s₀ = u0[1] / p.N
 s_inf = solve(NonlinearProblem((s, R0) -> s - s₀ * exp(-R0 * (1 - s)), 0.2, R₀),
               NewtonRaphson()).u
-(R₀, round(s_inf; digits = 3), round(1 - s_inf; digits = 3))   # R0, s∞, attack rate
+
+println("From the ODEProblem, du[1][end]/N: $(round(sol.u[end][1] / p.N; digits = 3))")
+println("From the NonlinearProblem, s_inf: $(round(s_inf; digits = 3))")
 ```
 
-## Generated result
+## Plotting the solutions from the ODEProblem
 
 ```{julia}
 #| label: fig-s-ch01-sir
@@ -71,10 +255,12 @@ hlines!(ax, [p.N / R₀]; color = :black, linestyle = :dash, label = "S = N/R₀
 axislegend(ax; position = :rc); fig
 ```
 
-## Validation
+## Validation {.smaller}
 
-Population conserved; infectious peak sits on the threshold; long-run $S/N$
-matches the analytic $s_\infty$:
+- Does the epidemic cross the threshold to assume we are in the "growth" phase, $R_0 S(0)/N>1$? Yes,  $R_0 s_0 = 2 \times 990/1000 = 1.98$
+- Is the population conserved?
+- Is the peak at $S/N = 1/R_0$?
+- Does the long-run $S/N$ match the analytic $s_\infty$? 
 
 ```{julia}
 #| label: s-ch01-check
@@ -87,31 +273,32 @@ fsize = isapprox(sol_long.u[end][1] / p.N, s_inf; atol = 1e-3)
 (cons, peak, fsize)
 ```
 
-All `true`: conservation, threshold, and final size are confirmed.
-
-## Limitations & roadmap
-
-- The deterministic ODE is the **large-population limit**, not the exact average
-  of a finite epidemic — no extinction, super-spreading, or small-outbreak noise.
-- Homogeneous mixing ignores age, space, contact structure; exponential
-  infectious periods are a convenience.
-- The book relaxes each assumption in turn: discrete-time & stochastic → jump
-  processes → SDEs → agent-based → observation, inference, control.
+All `true`: conservation, peak at $S/N = 1/R_0$, and final size are confirmed.
 
 ::: {.notes}
-Derive the mass-action term from contacts × prevalence × transmission
-probability, and show that summing the equations gives conservation. Explain R₀
-as expected secondary infections in a fully susceptible population, and that the
-peak occurs at S/N = 1/R₀ only when the epidemic grows first, that is, when
-R₀·S(0)/N > 1, which holds here (1.98). If it does not, I falls from the start
-and its largest value is I(0). The final-size relation cannot be rearranged to
-give s∞ on its own, which is why NonlinearSolve is used. Use this chapter to
-preview the whole book.
+Point back at the kernel: nothing in it says S + I + R = N, and the solver was
+never told. Conservation holds because the equations were written as flows
+between compartments, so the check is testing the model and the integration
+tolerance rather than a constraint anyone imposed. The 1e-6 tolerance is there
+because Tsit5 takes finite steps.
+
+The threshold check is only meaningful because R₀·S(0)/N = 1.98 > 1, so the peak
+is interior. Raising γ to 0.5 makes R₀ = 1, I falls from day zero, and argmax
+returns the first index rather than a turning point. That is the second exercise
+in the chapter.
 :::
 
-## Learn more
+## Limitations 
 
-- Book chapter: [Foundations](../../chapters/01-foundations.html)
-- Pluto notebook: [`01-foundations.jl`](../../notebooks/chapters/01-foundations.jl)
-- [OrdinaryDiffEq](https://docs.sciml.ai/OrdinaryDiffEq/stable/) ·
-  [NonlinearSolve](https://docs.sciml.ai/NonlinearSolve/stable/)
+- In an ODE model, state variables are continuous real numbers. If active infections ($I$) drop to a fraction of a person, $I < 1$, the epidemic remains mathematically alive. 
+- A deterministic ODE does not account for super-spreading events or small-outbreak noise.
+- We assume homogeneous mixing. An infectious individual on Day 10 is just as likely to infect a stranger across the city as they are to infect their own family members.
+- We assume a constant recovery rate $\gamma$. The probability of recovering in the next hour is independent of how long you have already been sick.
+
+## Next:
+
+::: {style="margin-top: 3.5em;"}
+- Go to the worksheet folder and open the `chapters/01-foundations.qmd` worksheet.
+- Follow the instructions and complete the exercises.
+- Let us know if you have any questions!
+:::

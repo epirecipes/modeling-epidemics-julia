@@ -411,6 +411,20 @@ check("the observed fraction matches the probability",
 (; p_infect, fraction, today)
 ```
 
+::: {.callout-note}
+## The `(; ...)` on the last line
+
+That line builds a **named tuple**, the same kind of object as `p` in Part A.
+The leading `;` saves repeating each name: it is short for
+`(p_infect = p_infect, fraction = fraction, today = today)`. Without the
+semicolon, `(p_infect, fraction, today)` is a plain tuple with no names, read by
+position instead.
+
+A cell displays whatever its last line evaluates to, and `check` only prints, so
+a named tuple is how these worksheets report several numbers at once with a
+label on each.
+:::
+
 ::: {.callout-tip collapse="true"}
 ## Hint — Part C
 

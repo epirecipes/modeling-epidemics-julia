@@ -9,11 +9,10 @@ status: draft
 
 **~45 minutes**
 
-The session showed you a **lockdown**: a callback that changes a *parameter* at
-scheduled times. Here you will build the other two members of the same family:
-a **vaccination pulse**, which changes the *state*, and a **capacity-triggered
-lockdown**, which fires when the epidemic itself crosses a threshold rather than
-at a time you picked in advance.
+The slides showed you a **lockdown**: using a callback that changes a *parameter* 
+at scheduled times. Here you will build a **vaccination pulse**, which changes the 
+*state*, and a **capacity-triggered lockdown**, which fires when the epidemic itself 
+crosses a threshold rather than at a time you picked in advance.
 
 **How to use this file.** Run cells one at a time with `Ctrl+Shift+Enter`. Cells
 marked `# TODO` have a line or two for you to complete; everything else runs as
@@ -29,7 +28,7 @@ each day. Run `git pull` to collect them.
 [Pluto notebook](../../notebooks/chapters/03-ordinary-differential-equations.jl)
 for this chapter lets you drag the lockdown parameters and watch the curve
 respond. Some people find it easier to get the intuition there first and then
-come back here. Either order is fine.
+come back here. 
 
 **Coming from R?**
 
@@ -66,8 +65,7 @@ Plain ASCII names work exactly as well if you prefer them.
 
 ## Setup
 
-This is the model from the session, given so you can get straight to the new
-material. Run it and check the output looks familiar.
+This is our previous SIR model, run it and check the output looks familiar.
 
 ```{julia}
 #| label: ws-ch03-setup
@@ -97,6 +95,15 @@ sol = solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5(); reltol = 1e-8, abstol =
 println("peak infectious: ", round(maximum(sol(t)[2] for t in tt), digits = 1))
 println("final size (R at day 80): ", round(sol(80.0)[3], digits = 1))
 ```
+
+::: {.callout-note}
+## The semicolon in `solve(..., Tsit5(); reltol = 1e-8)`
+
+Inside a call, `;` separates the arguments given by position from the ones given
+by name. The problem and the solver come first and their order matters. `reltol`
+and `abstol` are named, so they can be written in either order, or left out to
+take their defaults. Every `solve` in this worksheet has that shape.
+:::
 
 ---
 
@@ -152,14 +159,10 @@ check("fewer people were ever infected", ever_infected < baseline_infected - 50)
 ::: {.callout-tip collapse="true"}
 ## Hint — Part A
 
-```julia
-moved = f_vax * integrator.u[1]
-integrator.u[1] -= moved
-integrator.u[3] += moved
-```
-
 If the conservation check fails, you have probably added people to $R$ without
 taking them out of $S$. A campaign moves people, it does not create them.
+
+You can use `+=` and `-=` to add or subtract a value from a variable and assign the new result back to that same variable. For example, `x += 1` is equivalent to `x = x + 1`.
 :::
 
 ### A1. Interpret
@@ -214,7 +217,7 @@ function ever_infected_with_vaccination(day)
     return s(80.0)[3] - sum(moved_by_campaign)
 end
 
-campaign_days = Float64[]   # TODO: fill this list — try days 5, 20, and 40
+campaign_days = []   # TODO: fill this list
 
 for d in campaign_days
     println("campaign on day $d → $(round(ever_infected_with_vaccination(d), digits = 1)) ever infected")
@@ -222,6 +225,13 @@ end
 
 check("three days tried", length(campaign_days) == 3)
 ```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part B
+
+Choose three different days for the campaign, early, middle and late, so the comparison is more interesting.
+
+:::
 
 ### B1. Interpret
 
@@ -233,8 +243,7 @@ check("three days tried", length(campaign_days) == 3)
 
 ::: {.callout-note}
 We are comparing three timings we chose by hand. The interventions and
-optimization session is where an optimizer searches the timings for you. Today is
-about expressing the event; choosing between events comes later.
+optimisation session is where an optimiser searches the timings for you.
 :::
 
 ---
@@ -249,24 +258,17 @@ when hospital occupancy crosses a threshold*.
 
 That needs a `ContinuousCallback`, which watches a quantity you define and fires
 the moment it crosses zero. The session used one to find the epidemic peak by
-watching $\mathrm{d}I/\mathrm{d}t$. Here you watch the gap between infectious
-numbers and a capacity limit:
-
-$$
-\text{condition} = I(t) - \text{capacity}.
-$$
-
-When that hits zero, transmission drops, and unlike the scheduled lockdown we did
-not have to know in advance when it would happen. In code the condition is handed
-three arguments, `(u, t, integrator)`; here only `u` is needed.
+watching $\mathrm{d}I/\mathrm{d}t$. Here you watch when the infectious population 
+crosses a capacity limit. When that hits zero, transmission drops, and unlike the 
+scheduled lockdown we did not have to know in advance when it would happen. In code 
+the condition is handed three arguments, `(u, t, integrator)`.
 
 ```{julia}
 #| label: ws-ch03-c1
 capacity = 100.0
 trigger_day = Float64[]
 
-# TODO: replace 0.0 — the gap between infectious numbers and capacity
-capacity_condition(u, t, integrator) = 0.0
+capacity_condition(u, t, integrator) = 0.0    # TODO: replace 0.0 
 
 function impose_restrictions!(integrator)
     integrator.p = merge(integrator.p, (β = 0.02,))     # β drops
@@ -289,19 +291,18 @@ isempty(trigger_day) || println("restrictions imposed on day ",
 ::: {.callout-tip collapse="true"}
 ## Hint — Part C
 
-The condition is just `u[2] - capacity`. `ContinuousCallback` root-finds it, so
-you get the crossing time to solver accuracy rather than to the nearest saved
-point.
+A callback condition returns a number that changes sign and is 
+exactly zero at the event. The sign is important:
 
-Watch the two spellings of the state. A *condition* is handed the state directly,
-so it uses `u[2]`. An *affect!* is handed the whole integrator and reaches inside
-it, so Part A wrote `integrator.u[1]`.
+- negative while infections are below capacity;
+- zero when capacity is reached;
+- positive after capacity is exceeded.
 
-Use the `u[2]` you are given here. To find the crossing, the solver tries several
-states inside the current step and passes each one in as `u`. `integrator.u[2]`
-does not follow those tries, so a condition written on it returns the same value
-every time, never changes sign, and the crossing is never found.
+Recall the order of the compartments in the state vector and identify which
+element of `u` contains the infectious population.
+
 :::
+
 
 ### C1. Interpret
 
