@@ -22,9 +22,8 @@ juliaup add 1.12.5
 export QUARTO_JULIA="$(juliaup which 1.12.5)"
 ```
 
-That path is the macOS/aarch64 layout, where juliaup installs an app bundle rather
-than a `bin/` directory. `juliaup default 1.12.5` works too, but changes the default
-for every Julia project on the machine.
+This uses `juliaup` to resolve the correct `julia` executable path on your platform.
+`juliaup default 1.12.5` works too, but changes the default for every Julia project on the machine.
 
 Two environments must be instantiated. The second serves chapter 8 alone,
 which needs a package that conflicts with the rest of the course:
