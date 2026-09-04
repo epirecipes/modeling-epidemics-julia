@@ -1,0 +1,253 @@
+---
+title: "Agent-based models: awareness and behaviour"
+course-unit: ch06-agent-based-models
+status: draft
+---
+
+## Where the last session left off
+
+- A thousand people on a grid, contacts drawn from the twenty-four neighbours
+  within two cells.
+- Everyone behaves the same way from the first day to the last.
+- Widening the neighbourhood from eight people to twenty-four changed a single
+  introduction from almost never establishing to establishing about half the
+  time.
+
+This session adds one thing: people who notice what is happening around them.
+
+::: {.notes}
+Recap only as far as is needed to start.  The grid, the two-phase update and
+`nearby_agents` all carry over unchanged, so nothing about the API is new today.
+
+The last bullet is the hook.  The previous session showed that *who you meet*
+changes the epidemic; this one asks what happens when *what you know* changes
+too.
+:::
+
+## One rule about behaviour
+
+A susceptible person who can see at least $m$ infectious people within
+`info_radius` cells takes precautions for that step:
+
+$$
+\beta \longrightarrow \beta(1-\alpha).
+$$
+
+Three numbers, each of them a modelling assumption:
+
+- `info_radius`, how far a person's information reaches;
+- $m$, how many cases it takes before they act;
+- $\alpha$, how much good the precautions do.
+
+::: {.notes}
+Note that the information radius and the contact radius are separate numbers.
+News travels further than infection: you meet the people next door and you hear
+about the street.  Setting them equal would be the claim that everyone knows the
+status of exactly the people who could infect them.
+
+Nothing here makes precautions persist.  Somebody who sees no infection this step
+behaves normally again, which is worth flagging before anyone asks.
+:::
+
+## The same behaviour, three kinds of information
+
+| Setting | What a person can see |
+|---|---|
+| `:none` | nothing; last session's model |
+| `:local` | the infectious people within `info_radius` cells |
+| `:national` | reported prevalence $I/N$, acting once it passes $\theta$ |
+
+The precautions are identical in all three. Only the trigger differs.
+
+::: {.notes}
+This table is the design of the whole session.  Holding the behaviour fixed and
+varying only the information is what isolates the effect, and it is the move that
+makes the result about individual-level modelling rather than about how strong an
+intervention is.
+
+`:national` is the version a compartmental model can already express, as a
+transmission rate that falls with prevalence.  Say that now; Part C returns to it.
+:::
+
+## Counting what behaviour costs
+
+Either rule can be made stronger by having more people take precautions for
+longer, so comparing outcomes alone proves nothing.
+
+**Aware person-days**: susceptible people taking precautions, times the length
+of the step, added up over the epidemic.
+
+```julia
+model.aware_days += model.Δt *
+    count(p -> p.status == :S && is_aware(p, model), allagents(model))
+```
+
+Match the two rules on that, then compare the epidemics.
+
+::: {.notes}
+This is the idea participants are most likely to skip past, so it is worth
+stating twice: without a cost measure, "the local rule works better" only means
+"this setting of the local rule was stronger than that setting of the national
+one".
+
+The measure is crude.  Every person-day counts the same whether it
+is a mask or a closed shop, and the model has nothing to say about which.  That
+limitation is one of the discussion questions.
+:::
+
+## The result
+
+```{julia}
+#| label: code-slide-ch06b-result
+#| echo: false
+using Agents, Distributions, Random, StableRNGs, Statistics
+
+const N = 1000
+@agent struct Person(GridAgent{2})
+    status::Symbol
+    next_status::Symbol
+end
+infected_count(m) = count(p.status == :I for p in allagents(m))
+recovered_count(m) = count(p.status == :R for p in allagents(m))
+
+function is_aware(person, model)
+    model.information == :none && return false
+    model.information == :national && return model.prevalence >= model.θ
+    return count(a -> a.status == :I,
+                 nearby_agents(person, model, model.info_radius)) >= model.m
+end
+
+function agent_step!(person, model)
+    person.next_status = person.status
+    if person.status == :S
+        transmission = is_aware(person, model) ? model.β * (1 - model.α) : model.β
+        neighbours = collect(nearby_agents(person, model, model.radius))
+        for _ in 1:rand(abmrng(model), Poisson(model.c * model.Δt))
+            contact = rand(abmrng(model), neighbours)
+            if contact.status == :I && rand(abmrng(model)) < transmission
+                person.next_status = :I; break
+            end
+        end
+    elseif person.status == :I && rand(abmrng(model)) < 1 - exp(-model.γ * model.Δt)
+        person.next_status = :R
+    end
+end
+
+function model_step!(model)
+    for p in allagents(model); p.status = p.next_status; end
+    model.prevalence = infected_count(model) / N
+    model.aware_days += model.Δt *
+        count(p -> p.status == :S && is_aware(p, model), allagents(model))
+end
+
+function run_one(seed; information = :none, α = 0.5, m = 1, θ = 0.05)
+    model = StandardABM(Person,
+        GridSpaceSingle((40, 25); periodic=true, metric=:chebyshev);
+        agent_step!, model_step!,
+        properties = Dict(:β=>0.05, :c=>10.0, :γ=>0.25, :Δt=>0.1, :radius=>2,
+            :information=>information, :α=>α, :m=>m, :info_radius=>3, :θ=>θ,
+            :prevalence=>0.01, :aware_days=>0.0),
+        rng = StableRNG(seed))
+    for pos in positions(model); add_agent!(pos, model; status=:S, next_status=:S); end
+    for id in shuffle(abmrng(model), collect(allids(model)))[1:10]
+        model[id].status = :I; model[id].next_status = :I
+    end
+    for _ in 1:4000
+        infected_count(model) == 0 && break
+        step!(model, 1)
+    end
+    return (final = recovered_count(model), aware = model.aware_days)
+end
+
+summarise(; kw...) = begin
+    runs = [run_one(s; kw...) for s in 7000 .+ (1:8)]
+    (final = round(mean(r.final for r in runs); digits = 1),
+     aware_days = round(Int, mean(r.aware for r in runs)))
+end
+
+(nobody_reacts = summarise(information = :none),
+ local_information = summarise(information = :local, m = 1),
+ national_information = summarise(information = :national, θ = 0.05))
+```
+
+Same precautions. Nearly the same behaviour spent. Very different epidemics.
+
+::: {.notes}
+Eight seeds, the same set the worksheet uses, so the numbers on this slide are
+the ones participants will reproduce.
+
+Do not explain the mechanism yet.  Put the three rows on the screen, ask the room
+why two of them differ so much when the precautions are identical, and let the
+worksheet be where they find out.  The answer is targeting: local information
+spends its precautions on people standing next to a case, and on this grid that
+is where all the transmission is.
+:::
+
+## Why this needs agents
+
+- The national rule is a function of $I/N$. A compartmental model can carry it
+  as $\beta(I)$ and needs no individuals.
+- The local rule is a function of *one person's own neighbourhood*.
+- Writing it in $S$, $I$ and $R$ would need the number of
+  susceptible-infectious neighbour pairs, then triples, and so on. The system
+  does not close.
+
+When behaviour depends on what each person can see, an individual-level model
+is not a more detailed route to the same answer. It is the only way to ask.
+
+::: {.notes}
+This is the slide that justifies the session existing, and it is the one to
+protect if time runs short.
+
+Be careful not to oversell.  Pair approximations and moment closures do exist and
+are used; the honest statement is that closing the system requires an
+approximation whose error is exactly the correlation the rule depends on.
+:::
+
+## What the model assumes, and does not {.smaller}
+
+- Anyone close enough to infect you is close enough for you to see: the
+  information radius of 3 contains the contact radius of 2. At $m=1$ nobody at
+  risk is missed, and that is most of why the local rule does so well.
+- People know their neighbours' status at once and for free. In reality
+  infection precedes symptoms and reporting takes days, so protection would
+  arrive late.
+- Every aware person-day costs the same, whether it is a mask or a closed shop.
+- Nobody stays careful once their neighbourhood looks clear.
+
+The measured advantage of local information is a ceiling, not a forecast.
+
+::: {.notes}
+The first bullet is the mechanism rather than a caveat, so do not hurry it.
+Under the Chebyshev metric a ball of radius 3 contains one of radius 2, so any
+infectious person who could reach you is inside your information radius, and at
+$m=1$ the rule never misses anyone at risk.  It stops holding at $m\ge2$, where
+you can have one infectious neighbour and still not act, and the worksheet sweep
+prices that: 47 infections at $m=1$ against 140 at $m=2$.
+
+Both information failures in the second bullet push the same way, which is why
+the ceiling framing is the right one.
+
+The last bullet is the most inviting thing to change.  Adding a memory to
+`is_aware`, so precautions last a few days after the last case seen, is a
+two-line edit and a good answer to "what should I try next".
+:::
+
+## Takeaways and links
+
+- A space defines a neighbourhood; a neighbourhood defines who you meet and
+  what you can see, and those need not be the same set.
+- Compare behavioural rules at matched cost, or you are comparing strengths.
+- A response too weak to break transmission costs more and achieves less.
+
+Further reading:
+
+- [Worksheet](../../worksheets/chapters/06-agent-based-models-awareness.qmd)
+- [Book chapter](../../chapters/06-agent-based-models.html) · [Agents.jl v7 spaces](https://juliadynamics.github.io/Agents.jl/v7.0.3/api/)
+
+::: {.notes}
+The third takeaway is the one participants tend to find surprising, and it
+generalises past this model: the cost of a behavioural response is paid per
+person per unit time, so anything that shortens the epidemic is cheaper than it
+looks and anything that merely stretches it is dearer.
+:::

@@ -34,7 +34,7 @@ Recovery uses
 $$
 \Pr(I\to R)=1-\exp(-\gamma\Delta t).
 $$
-For small $\Delta t$, the aggregate limit is
+In the large-population limit, with $\Delta t$ small, the aggregate behaviour is
 $$
 \dot S=-\beta cSI/N,\quad
 \dot I=\beta cSI/N-\gamma I,\quad
@@ -44,12 +44,22 @@ $$
 ::: {.notes}
 The Poisson contact calculation explains why the ABM's well-mixed rule
 approximates mass action while retaining individual randomness.
+
+Both limits are needed, and it is worth naming them separately.  Letting
+$\Delta t\to0$ on its own removes the frozen-step error and leaves the
+continuous-time stochastic process for this same finite population, whose
+ensemble mean is not the ODE.  The ODE arrives only when $N$ is large as well.
+
+The last part of the worksheet depends on exactly the finite-population
+behaviour that the large-$N$ limit throws away, so promising the ODE here would
+set up an agreement the room will not find.
 :::
 
 ## Agents.jl 7 model logic
 
 ```{julia}
-using Agents, Distributions, StableRNGs
+#| echo: true
+using Agents, CairoMakie, Distributions, StableRNGs
 
 @agent struct Person(NoSpaceAgent)
     status::Symbol
@@ -93,6 +103,7 @@ assumption.
 ## Current-code result
 
 ```{julia}
+#| echo: true
 model = StandardABM(Person; agent_step!, model_step!,
     properties=(β=0.05, c=10.0, γ=0.25, Δt=0.1),
     rng=StableRNG(20250711))
@@ -116,10 +127,77 @@ The small population keeps a slide render quick.  The Pluto notebook exposes
 population, initial infections, contact rate, and horizon as controls.
 :::
 
+## Space, and what a neighbourhood is
+
+A space decides which agents are near which others. Grids, graphs, continuous
+space, street maps, or your own. What the rules consult is the
+**neighbourhood**, fixed by two choices:
+
+- the **radius**, how far a person looks;
+- the **metric**, how distance is counted. On a grid `:chebyshev` counts a
+  diagonal as one step, so radius 1 is the eight surrounding cells.
+
+A periodic grid wraps, so everyone has the same number of neighbours; a bounded
+one gives people near an edge fewer.
+
+::: {.notes}
+This is the slide the worksheet is built on, so spend time here rather than on
+the API.  The point to land is that "neighbourhood" is not a vague word: it is
+exactly two numbers, and both are modelling choices that change the answer.
+
+The bounded-versus-periodic point is worth a sentence aloud.  With edges, a
+corner agent has three neighbours instead of eight, so the epidemic is damped
+near the boundary for a reason that has nothing to do with the disease.
+:::
+
+## The neighbourhood, drawn {.smaller}
+
+```{julia}
+#| echo: true
+#| output-location: column
+#| label: fig-slide-ch06-neighbourhood
+#| fig-cap: "Chebyshev radius 1 (dark red), radius 2 adds the orange cells."
+@agent struct GridPerson(GridAgent{2})
+    status::Symbol
+end
+
+grid = StandardABM(GridPerson,
+    GridSpaceSingle((9, 9);
+        periodic=false,
+        metric=:chebyshev);
+    model_step! = (m -> nothing),
+    rng=StableRNG(1))
+
+for p in positions(grid)
+    add_agent!(p, grid; status=:S)
+end
+
+focal = grid[id_in_position((5, 5), grid)]
+r1 = Set(a.id for a in nearby_agents(focal, grid, 1))
+r2 = Set(a.id for a in nearby_agents(focal, grid, 2))
+
+colour(p) = p.id == focal.id ? :black :
+            p.id in r1 ? :firebrick :
+            p.id in r2 ? :orange : :lightgrey
+
+fig, ax, _ = abmplot(grid; agent_color=colour,
+    agent_marker=:rect, agent_size=11,
+    figure=(; size=(300, 300)))
+hidedecorations!(ax)
+fig
+```
+
+::: {.notes}
+Eight at radius 1, twenty-four at radius 2.  Ask the room which of the two they
+would call "the people you meet" before saying that the worksheet uses radius 2,
+and that the choice between them decides whether a single introduction can
+establish at all.
+:::
+
 ## Extensions and checks
 
-- Use `GridSpaceSingle` and `nearby_agents` for local contacts: with a fixed
-  neighborhood, $\beta c/\gamma$ is no longer the model's $R_0$.
+- With contacts drawn from a fixed neighbourhood, $\beta c/\gamma$ is the
+  mass-action reproduction number and no longer the model's $R_0$.
 - Run seeded replicates, but say *which* summary you compare with the ODE.
 - Measure timestep error with a deterministic map, not a small ensemble.
 
@@ -130,11 +208,16 @@ mechanisms introduce parameters that may be difficult to observe or identify.
 An ABM is not automatically more realistic.  The contact mechanism and
 calibration target determine whether its extra detail is useful.
 
-On the second bullet: the peak of the ensemble mean and the mean of the
-per-replicate peaks straddle the ODE peak, and neither converges to it at finite
-$N$: averaging and maximizing do not commute.  On the third: a 16-path ensemble
-has a standard error of several people, so it cannot resolve a timestep error of
-that size, and failing to resolve one is not evidence of its absence.
+On the second bullet: in the well-mixed model the peak of the ensemble mean and
+the mean of the per-replicate peaks straddle the ODE peak, 144.9 and 168.6
+against 158.5, and neither converges to it at finite $N$: averaging and
+maximizing do not commute.  That straddling does not carry over to the grid model
+the worksheet builds.  With contacts drawn locally every summary falls well below
+the ODE peak: single runs there peak between 76 and 87 against the same 158.5.
+
+On the third: a 16-path ensemble has a standard error of several people, so it
+cannot resolve a timestep error of that size, and failing to resolve one is not
+evidence of its absence.
 :::
 
 ## Takeaways and links
