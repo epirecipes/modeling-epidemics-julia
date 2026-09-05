@@ -366,6 +366,6 @@ change using the argument after @eq-ch06-unclosed.
 
 ## Companion materials
 
-- Slide deck: [Reaction networks and moment closure](../slides/chapters/06-reaction-networks.qmd)
-- Pluto notebook: [`notebooks/chapters/06-reaction-networks.jl`](../notebooks/chapters/06-reaction-networks.jl)
-- Worked solutions: [Exercise 1](../appendices/solutions.qmd#solution-ch06-ex1), [Exercise 2](../appendices/solutions.qmd#solution-ch06-ex2)
+- [Slides](../slides/chapters/06-reaction-networks.html)
+- [Pluto preview](../notebook-exports/chapters/06-reaction-networks.html)
+- [Pluto source](../notebooks/chapters/06-reaction-networks.jl)
