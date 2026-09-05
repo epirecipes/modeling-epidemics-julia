@@ -207,8 +207,8 @@ the threshold now comes from a quadratic rather than a single eigenvalue.
 #| label: sol-a09-ex1
 using Symbolics
 
-# Six loaded packages export `@variables` (Symbolics, Catalyst,
-# ModelingToolkitBase, JuMP, InfiniteOpt, SDDP), so it must be qualified here.
+# Several loaded packages export `@variables` (Symbolics, Catalyst,
+# ModelingToolkitBase, JuMP, InfiniteOpt), so it must be qualified here.
 Symbolics.@variables S E I R λ
 Symbolics.@variables βc γ μ σ N
 

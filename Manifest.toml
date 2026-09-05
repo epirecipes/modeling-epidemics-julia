@@ -2,7 +2,7 @@
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "8c9ba4c69e54381c836ee2a8d7ec759116d0107d"
+project_hash = "65675d7f4e921c0a8ceb6125bd344cc672eccbff"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "ec6be48a85c93d995563b84bff8a86bc98df45ce"
@@ -1265,7 +1265,7 @@ uuid = "7cc45869-7501-5eee-bdea-0790c847d4ef"
 version = "0.0.281+0"
 
 [[deps.EpiModelingCourse]]
-deps = ["Agents", "CSV", "CairoMakie", "Catalyst", "ConcurrentSim", "DataFrames", "DelayDiffEq", "DiffEqCallbacks", "DiffEqFlux", "Distributions", "GlobalSensitivity", "InfiniteOpt", "Ipopt", "JumpProcesses", "Lux", "MCMCChains", "ModelingToolkit", "MomentClosure", "NonlinearSolve", "Optimization", "OptimizationOptimJL", "OptimizationOptimisers", "OrdinaryDiffEq", "Pluto", "PlutoSliderServer", "PlutoUI", "ResumableFunctions", "SDDP", "SciMLSensitivity", "StableRNGs", "StochasticDiffEq", "StructuralIdentifiability", "Surrogates", "Turing", "Zygote"]
+deps = ["Agents", "CSV", "CairoMakie", "Catalyst", "ConcurrentSim", "DataFrames", "DelayDiffEq", "DiffEqCallbacks", "DiffEqFlux", "Distributions", "GlobalSensitivity", "InfiniteOpt", "Ipopt", "JumpProcesses", "Lux", "MCMCChains", "ModelingToolkit", "MomentClosure", "NonlinearSolve", "Optimization", "OptimizationOptimJL", "OptimizationOptimisers", "OrdinaryDiffEq", "Pluto", "PlutoSliderServer", "PlutoUI", "ResumableFunctions", "SciMLSensitivity", "StableRNGs", "StochasticDiffEq", "StructuralIdentifiability", "Surrogates", "Symbolics", "Turing", "Zygote"]
 path = "."
 uuid = "93d03a96-16f7-4339-99d3-72bd822e8dbb"
 version = "0.1.0"
@@ -3848,12 +3848,6 @@ weakdeps = ["ChainRulesCore"]
 
     [deps.SCCNonlinearSolve.extensions]
     SCCNonlinearSolveChainRulesCoreExt = "ChainRulesCore"
-
-[[deps.SDDP]]
-deps = ["Distributed", "HTTP", "JSON", "JuMP", "LinearAlgebra", "MutableArithmetics", "Printf", "Random", "RecipesBase", "Reexport", "SHA", "Statistics", "TimerOutputs"]
-git-tree-sha1 = "cd9b48acdcda5201d54e99d5004d7c2d8eff57c5"
-uuid = "f4570300-c277-11e8-125c-4912f86ce65d"
-version = "1.13.2"
 
 [[deps.SHA]]
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"

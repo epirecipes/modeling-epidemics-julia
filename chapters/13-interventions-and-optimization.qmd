@@ -53,8 +53,8 @@ The baseline is $S(0)=990$, $I(0)=10$, $R(0)=0$, $N=1000$,
 $\beta=0.05$, $c=10$, and $\gamma=0.25$. The intervention used below reduces
 transmission by $v_{\max}=0.5$ for a fixed duration of 10 time units. The
 decision variable is only the start time $t_1$, bounded to $0\leq t_1\leq25$.
-More general time-varying controls belong in the advanced
-[InfiniteOpt/SDDP unit](../chapters/14-advanced-optimal-control.html).
+More general time-varying controls belong in
+@sec-advanced-optimal-control.
 
 ## Equations
 
@@ -417,7 +417,7 @@ appendix.
   than choose.
 - [Advanced optimal control](../chapters/14-advanced-optimal-control.html)
   replaces the single start time with a control *function* of time, using
-  InfiniteOpt and SDDP.
+  InfiniteOpt, and adds capacity constraints and a second control.
 - [Data-to-decision capstone](15-data-to-decision-capstone.html) runs the whole
   chain end to end: data, fit, and policy choice.
 

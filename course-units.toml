@@ -212,7 +212,7 @@ kind = "core"
 status = "complete"
 track = "self-study"
 environment = "root"
-packages = ["InfiniteOpt", "Ipopt", "SDDP", "JuMP", "CairoMakie"]
+packages = ["InfiniteOpt", "Ipopt", "JuMP", "CairoMakie"]
 sources = ["../sir-julia/tutorials/ode_lockdown_infiniteopt/ode_lockdown_infiniteopt.jmd", "../sir-julia/tutorials/sddp/sddp.jmd"]
 
 [[units]]
