@@ -540,3 +540,141 @@ their sum telescopes to $C(80) - C(0)$. The check confirms the reconstruction to
 machine tolerance, illustrating that the dense output `sol(t)` can be resampled
 onto any grid — here the integer-day grid used to compare a continuous model with
 daily surveillance data, a pattern the observation-model chapter builds on.
+
+### Partial differential equations and age structure
+
+#### Solution to Exercise 1 {#solution-ch04-ex1}
+
+A hazard that is zero until age 3 and large afterwards concentrates recovery near
+a single infection age, approximating a fixed infectious period.
+
+```{julia}
+#| label: sol-ch04-ex1
+using OrdinaryDiffEq
+using CairoMakie
+
+function aoi_solution!(du, u, p, t)
+    (; Δa, n, βvec, γvec, N) = p
+    S = u[1]
+    I = @view u[2:n+1]
+    λ = sum(βvec .* I) * Δa / N
+    du[1] = -λ * S
+    du[2] = -(I[1] - λ*S)/Δa - γvec[1]*I[1]
+    @inbounds for j in 2:n
+        du[j+1] = -(I[j] - I[j-1])/Δa - γvec[j]*I[j]
+    end
+    du[end] = sum(γvec .* I)*Δa + I[n]
+    return nothing
+end
+
+const N_sol = 1000.0
+const amax_sol = 40.0
+const times_sol = collect(0.0:0.5:40.0)
+
+function run_profile(γ_profile; n = 600)
+    Δa = amax_sol/n
+    ages = range(Δa/2, amax_sol - Δa/2, length = n)
+    p = (Δa = Δa, n = n, βvec = fill(0.5, n), γvec = γ_profile.(ages), N = N_sol)
+    u₀ = zeros(n + 2); u₀[1] = 990.0; u₀[2] = 10.0/Δa
+    sol = solve(ODEProblem(aoi_solution!, u₀, (0.0, 40.0), p), Tsit5();
+                saveat = times_sol, abstol = 1e-9, reltol = 1e-9)
+    prevalence = [sum(x[2:n+1])*Δa for x in sol.u]
+    total = [x[1] + sum(x[2:n+1])*Δa + x[end] for x in sol.u]
+    return (; prevalence, drift = maximum(total) - minimum(total))
+end
+
+exponential = run_profile(a -> 0.25)
+near_fixed  = run_profile(a -> a < 3.0 ? 0.0 : 4.0)
+
+(exponential = (peak = round(maximum(exponential.prevalence); digits = 2),
+                peak_time = times_sol[argmax(exponential.prevalence)]),
+ near_fixed  = (peak = round(maximum(near_fixed.prevalence); digits = 2),
+                peak_time = times_sol[argmax(near_fixed.prevalence)]),
+ drift = round(max(exponential.drift, near_fixed.drift); digits = 9))
+```
+
+```{julia}
+#| label: fig-sol-ch04-ex1
+#| fig-cap: "Epidemic curves under an exponential infectious period and under a near-fixed one of about three days. Concentrating recovery around a single infection age shortens the generation interval and produces an earlier, sharper peak."
+figure = Figure(size = (720, 340))
+axis = Axis(figure[1, 1], xlabel = "Time", ylabel = "Infectious")
+lines!(axis, times_sol, exponential.prevalence; color = :steelblue, linewidth = 2,
+       linestyle = :dash, label = "Exponential, γ = 0.25")
+lines!(axis, times_sol, near_fixed.prevalence; color = :firebrick, linewidth = 2,
+       label = "Near-fixed, ≈3 days")
+axislegend(axis; position = :rt, framevisible = false)
+figure
+```
+
+**Why the peak moves.** Both models transmit at the same rate while infectious,
+but they distribute infectiousness over time differently. With an exponential
+period, a substantial fraction of transmission happens in the long tail, so the
+mean generation interval is stretched and the epidemic unfolds slowly. Fixing the
+period at about three days removes that tail: every infection contributes its
+transmission early, the generation interval shortens, and for the same
+reproduction number a shorter generation interval means a faster exponential
+growth rate. The peak therefore arrives earlier and higher.
+
+This is the same phenomenon the delay-differential appendix treats from the other
+direction, and it is the practical reason generation-interval assumptions matter
+when growth rates are converted into reproduction numbers.
+
+#### Solution to Exercise 2 {#solution-ch04-ex2}
+
+Raising the child-to-child contact rate raises transmission where susceptibles
+are concentrated, so infection occurs earlier in life.
+
+```{julia}
+#| label: sol-ch04-ex2
+function age_structured_solution!(du, u, p, t)
+    (; Δa, n, C, γ, births, N) = p
+    S = @view u[1:n]; I = @view u[n+1:2n]; R = @view u[2n+1:3n]
+    λ = (C * I) .* (Δa / N)
+    @inbounds for j in 1:n
+        S_in = j == 1 ? births/Δa : S[j-1]
+        I_in = j == 1 ? 0.0 : I[j-1]
+        R_in = j == 1 ? 0.0 : R[j-1]
+        du[j]    = -(S[j] - S_in)/Δa - λ[j]*S[j]
+        du[n+j]  = -(I[j] - I_in)/Δa + λ[j]*S[j] - γ*I[j]
+        du[2n+j] = -(R[j] - R_in)/Δa + γ*I[j]
+    end
+    return nothing
+end
+
+function endemic_summary(child_contact; n = 80, life = 80.0, γ = 0.2)
+    Δa = life/n
+    ages = range(Δa/2, life - Δa/2, length = n)
+    C = [2.0 * ((a < 15 && a′ < 15) ? child_contact : 0.3) for a in ages, a′ in ages]
+    p = (Δa = Δa, n = n, C = C, γ = γ, births = (N_sol/life)*Δa, N = N_sol)
+    u₀ = zeros(3n); u₀[1:n] .= N_sol/life; u₀[n+1] = 1.0
+    sol = solve(ODEProblem(age_structured_solution!, u₀, (0.0, 600.0), p), Tsit5();
+                saveat = 10.0, abstol = 1e-9, reltol = 1e-9)
+    final = sol.u[end]; infectious = final[n+1:2n]
+    return (child_contact = child_contact,
+            population = round(sum(final)*Δa; digits = 3),
+            prevalence = round(sum(infectious)*Δa; digits = 3),
+            mean_age = round(sum(ages .* infectious)/max(sum(infectious), eps()); digits = 2))
+end
+
+[endemic_summary(1.2), endemic_summary(2.5)]
+```
+
+Prevalence rises and the mean age at infection falls. The mechanism is that
+susceptibles are depleted faster when contact among children intensifies, so the
+average individual meets the infection sooner.
+
+The classical approximation makes this quantitative. At endemic equilibrium the
+average time spent susceptible is roughly the mean age at infection $A$, and the
+per-capita force of infection is roughly $1/A$; balancing this against the
+requirement that each infection replace itself in a population with life
+expectancy $L$ gives
+
+$$
+A \approx \frac{L}{R_0}.
+$$
+
+So mean age at infection is inversely proportional to $R_0$: doubling
+transmission roughly halves the age at which a typical person is infected. This
+is the reasoning behind age-targeted vaccination, and the reason that partially
+effective vaccination programmes can *raise* the mean age at infection, which
+matters for infections whose severity increases with age.

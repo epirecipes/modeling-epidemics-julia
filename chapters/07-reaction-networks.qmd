@@ -1,0 +1,371 @@
+---
+course-unit: ch07-reaction-networks
+status: complete
+---
+
+# Reaction networks and moment closure {#sec-reaction-networks}
+
+::: {.callout-note appearance="simple"}
+**Workshop programme**: taught live on Day 2, Session 3. See the [full schedule](../workshop.qmd).
+:::
+
+Every model so far has been written as *states changing*: a right-hand side for
+$dS/dt$, a drift and diffusion for $(S,I,R)$, a pair of jump affects. Each time
+we changed the mathematical setting we rewrote the model.
+
+This chapter changes what we write down. Instead of the dynamics of the states,
+we specify the **flows** — the transmission event and the recovery event, each
+with the rate at which it fires and the change it makes. That specification is a
+**reaction network**, and it is enough to generate the ODE, the SDE and the jump
+process mechanically. It also unlocks something the state view cannot easily
+give us: equations for the *moments* of the stochastic process, so we can
+approximate the mean and variance of an ensemble without simulating it.
+
+## Learning goals
+
+You will:
+
+- write the SIR model as a reaction network of flows rather than state equations;
+- generate ODE, SDE and jump models from that one specification and check they
+  agree with the hand-written versions of @sec-ordinary-differential-equations,
+  @sec-stochastic-differential-equations and @sec-jump-processes;
+- derive why the moment hierarchy of a bimolecular reaction does not close; and
+- apply a normal closure and judge it against a jump-process ensemble.
+
+## Model assumptions and classification
+
+The population, parameters and baseline are unchanged from
+@sec-jump-processes: a closed, homogeneously mixing $(S,I,R)=(990,10,0)$ with
+$N=1000$, $c=10.0$, $\beta=0.05$, $\gamma=0.25$, and the composite rate constant
+$\kappa=\beta c/N$.
+
+What changes is the *description*, not the model. A reaction network is not a
+fourth kind of model sitting alongside the ODE, SDE and jump process: it is a
+specification from which each of those three is derived. Its classification is
+therefore inherited from whichever lowering we choose — deterministic and
+continuous for the ODE, stochastic and continuous for the SDE, stochastic and
+discrete for the jump process. The moment equations introduced later are a
+fourth, different object: deterministic equations describing a stochastic
+process.
+
+The one modelling assumption the network itself encodes is **mass action**: the
+transmission flow is proportional to the number of $S$–$I$ pairs and the
+recovery flow to the number of infectives.
+
+## Equations
+
+A reaction network is a set of reactions, each carrying a rate constant, the
+species it consumes, and the species it produces:
+
+$$
+S + I \xrightarrow{\ \kappa\ } 2I,
+\qquad
+I \xrightarrow{\ \gamma\ } R.
+$$ {#eq-ch06-network}
+
+From this we read off the two objects that generate everything else. The
+**stoichiometry matrix** $V$ collects the state change of each reaction as a
+column, and the **propensity** $a_j(X)$ gives the rate at which reaction $j$
+fires in state $X=(S,I,R)$:
+
+$$
+V = \begin{pmatrix} -1 & 0\\ 1 & -1\\ 0 & 1 \end{pmatrix},
+\qquad
+a(X) = \begin{pmatrix} \kappa S I\\ \gamma I \end{pmatrix}.
+$$ {#eq-ch06-stoichiometry}
+
+These are exactly the $V$ and $a$ of @sec-stochastic-differential-equations,
+which is the point: the pair $(V, a)$ *is* the model, and the three settings we
+have used are three ways of turning it into dynamics.
+
+| Lowering | Construction | Chapter |
+|---|---|---|
+| ODE | $\dot X = V a(X)$ | @sec-ordinary-differential-equations |
+| SDE | $dX = Va(X)\,dt + V\operatorname{diag}(\sqrt{a(X)})\,dW$ | @sec-stochastic-differential-equations |
+| Jump | event $j$ fires at rate $a_j(X)$, adding $V_{\cdot j}$ | @sec-jump-processes |
+
+: The same $(V,a)$ generates all three models. {#tbl-ch06-lowerings}
+
+### The chemical master equation and its moments
+
+The jump process is the exact model, and its probability distribution
+$P(x,t)=\Pr\{X(t)=x\}$ obeys the **chemical master equation**
+
+$$
+\frac{\partial P(x,t)}{\partial t}
+= \sum_{j} \Big[ a_j(x - V_{\cdot j}) P(x - V_{\cdot j}, t) - a_j(x) P(x,t) \Big],
+$$ {#eq-ch06-cme}
+
+one equation for every reachable state. For a closed SIR population of $N=1000$
+that is on the order of $10^{5}$ coupled equations — solvable in principle, and
+the subject of the finite-state projection appendix, but not something we want
+to carry around.
+
+Rather than the whole distribution, we usually want a few summaries: the mean
+number infectious, and how variable it is between outbreaks. Multiplying
+@eq-ch06-cme by $x$ and summing gives an exact equation for the mean,
+
+$$
+\frac{d\,\mathbb{E}[X]}{dt} = V\,\mathbb{E}[a(X)].
+$$ {#eq-ch06-mean}
+
+Here is the crux. For recovery, $\mathbb{E}[\gamma I] = \gamma\,\mathbb{E}[I]$:
+the propensity is linear, so its expectation depends only on the mean. But
+transmission is **bimolecular**, and
+
+$$
+\mathbb{E}[\kappa S I] = \kappa\big(\mathbb{E}[S]\,\mathbb{E}[I] + \operatorname{Cov}(S,I)\big)
+\neq \kappa\,\mathbb{E}[S]\,\mathbb{E}[I]
+$$ {#eq-ch06-unclosed}
+
+unless $S$ and $I$ are uncorrelated. So the equation for the first moments
+requires the second moments. Writing equations for the second moments brings in
+the third, and so on: the hierarchy never closes. This also explains something
+seen in @sec-jump-processes — the mean of an ensemble is *not* the ODE solution.
+The ODE is what you get by dropping $\operatorname{Cov}(S,I)$ from
+@eq-ch06-unclosed, and during an epidemic that covariance is strongly negative,
+which is why the ODE peak sits above the ensemble mean.
+
+**Moment closure** cuts the hierarchy off. We keep moments up to some order $m$
+and express the ones above $m$ in terms of those below, by *assuming* a
+distributional shape. The **normal closure** used below sets the third central
+moments to zero, which is what a multivariate normal distribution would give.
+The assumption is about the shape of the distribution, not about the model, and
+it is an approximation that can be good, poor, or numerically catastrophic.
+
+## Julia implementation
+
+`@reaction_network` takes the reactions of @eq-ch06-network almost verbatim.
+This is the same network built in @sec-jump-processes, where it was used only to
+drive a jump process; here it is the single source for every lowering.
+
+```{julia}
+#| label: code-ch06-setup
+using Catalyst
+using OrdinaryDiffEq
+using StochasticDiffEq
+using JumpProcesses
+using MomentClosure
+using CairoMakie
+using StableRNGs
+using Statistics
+
+const N = 1000
+const β = 0.05
+const c = 10.0
+const γ = 0.25
+const κ = β * c / N
+const tspan = (0.0, 40.0)
+const times = collect(0.0:0.5:40.0)
+
+sir_network = @reaction_network begin
+    κ, S + I --> 2I
+    γ, I --> R
+end
+```
+
+The network knows its own species, parameters and stoichiometry, so $V$ of
+@eq-ch06-stoichiometry need not be typed in by hand.
+
+```{julia}
+#| label: code-ch06-structure
+(species = species(sir_network),
+ parameters = parameters(sir_network),
+ V = netstoichmat(sir_network))
+```
+
+### Three models from one specification
+
+Each lowering is a problem constructor applied to the same object. Initial
+conditions are floating point for the continuous lowerings and integer for the
+jump process, because a CTMC state counts individuals.
+
+```{julia}
+#| label: code-ch06-lowerings
+parameter_map = [:κ => κ, :γ => γ]
+u₀_continuous = [:S => 990.0, :I => 10.0, :R => 0.0]
+u₀_discrete   = [:S => 990,   :I => 10,   :R => 0]
+
+ode_solution = solve(
+    ODEProblem(sir_network, u₀_continuous, tspan, parameter_map),
+    Tsit5(); saveat = times)
+
+sde_solution = solve(
+    SDEProblem(sir_network, u₀_continuous, tspan, parameter_map),
+    LambaEM(); seed = 20250906, saveat = times)
+
+jump_solution = solve(
+    JumpProblem(sir_network, u₀_discrete, tspan, parameter_map;
+                aggregator = Direct(), rng = StableRNG(20250906)),
+    SSAStepper(); saveat = times)
+
+(ode_peak  = round(maximum(ode_solution[2, :]); digits = 2),
+ sde_peak  = round(maximum(sde_solution[2, :]); digits = 2),
+ jump_peak = maximum(jump_solution[2, :]))
+```
+
+Nothing about the SIR model was restated to obtain these three. Changing the
+network — adding an exposed class, a waning-immunity flow, a second host — would
+propagate to all three automatically, which is the practical argument for
+writing flows rather than states.
+
+### Moment equations and closure
+
+`generate_raw_moment_eqs(network, 2)` derives the exact equations for the raw
+moments $\mu_{ijk} = \mathbb{E}[S^i I^j R^k]$ up to order 2. There are nine: the
+three means, and the six second moments.
+
+```{julia}
+#| label: code-ch06-moments
+raw_equations = generate_raw_moment_eqs(sir_network, 2)
+(equations = length(equations(raw_equations.odes)),
+ order = raw_equations.m_order,
+ unknowns = string.(unknowns(raw_equations.odes)))
+```
+
+These nine equations are not solvable as they stand: they refer to third-order
+moments, exactly as @eq-ch06-unclosed predicted. `moment_closure` supplies the
+missing relation.
+
+```{julia}
+#| label: code-ch06-closure
+#| warning: false
+closed_equations = moment_closure(raw_equations, "normal")
+closure_solution = solve(
+    ODEProblem(closed_equations, [990.0, 10.0, 0.0], tspan, parameter_map),
+    Tsit5(); saveat = times)
+
+closure_names = string.(unknowns(closed_equations.odes))
+mean_index = findfirst(==("μ₀₁₀(t)"), closure_names)
+second_index = findfirst(==("μ₀₂₀(t)"), closure_names)
+
+closure_mean = closure_solution[mean_index, :]
+closure_sd = sqrt.(max.(closure_solution[second_index, :] .- closure_mean .^ 2, 0.0))
+(retcode = closure_solution.retcode,
+ peak_mean = round(maximum(closure_mean); digits = 2))
+```
+
+`MomentClosure` still builds its `ODEProblem` through the older positional
+signature, which emits a deprecation notice from ModelingToolkit; the cell above
+suppresses warnings for that reason alone.
+
+## Validation
+
+The claim to test is that the closure reproduces what an ensemble of jump
+simulations does. We run 200 independent trajectories, each with its own
+deterministically chosen seed so the figure is reproducible.
+
+```{julia}
+#| label: code-ch06-ensemble
+function simulate_jump(seed)
+    problem = JumpProblem(
+        sir_network, u₀_discrete, tspan, parameter_map;
+        aggregator = Direct(), rng = StableRNG(seed))
+    return Array(solve(problem, SSAStepper(); saveat = times)(times))
+end
+
+ensemble = cat((simulate_jump(6000 + k) for k in 1:200)...; dims = 3)
+ensemble_mean = dropdims(mean(ensemble; dims = 3), dims = 3)
+ensemble_sd = dropdims(std(ensemble; dims = 3), dims = 3)
+
+@assert maximum(abs.(sum(ensemble; dims = 1) .- N)) == 0
+(closure_vs_ensemble_peak_gap =
+    round(maximum(closure_mean) - maximum(ensemble_mean[2, :]); digits = 2),
+ ode_vs_ensemble_peak_gap =
+    round(maximum(ode_solution[2, :]) - maximum(ensemble_mean[2, :]); digits = 2))
+```
+
+Population is conserved exactly in every trajectory, as the columns of $V$
+require. The two gaps are the quantitative form of the argument after
+@eq-ch06-unclosed: the closure tracks the ensemble mean far more closely than
+the ODE does, because it retains the covariance the ODE discards.
+
+```{julia}
+#| label: fig-ch06-closure
+#| fig-cap: "Mean and standard deviation of the infectious class from 200 jump-process trajectories (bands), the normal moment closure (solid), and the ODE (dashed). The closure recovers both the mean and the spread of the ensemble; the ODE peak sits above the ensemble mean because it discards the negative covariance between S and I."
+figure = Figure(size = (760, 380))
+axis = Axis(figure[1, 1], xlabel = "Time", ylabel = "Infectious")
+
+band!(axis, times,
+      ensemble_mean[2, :] .- ensemble_sd[2, :],
+      ensemble_mean[2, :] .+ ensemble_sd[2, :];
+      color = (:grey, 0.35), label = "Ensemble mean ± sd")
+lines!(axis, times, ensemble_mean[2, :]; color = :grey25, linewidth = 2,
+       label = "Ensemble mean")
+lines!(axis, times, closure_mean; color = :firebrick, linewidth = 2,
+       label = "Normal closure")
+lines!(axis, times, closure_mean .+ closure_sd; color = :firebrick,
+       linewidth = 1, linestyle = :dot, label = "Closure mean ± sd")
+lines!(axis, times, closure_mean .- closure_sd; color = :firebrick,
+       linewidth = 1, linestyle = :dot)
+lines!(axis, times, ode_solution[2, :]; color = :steelblue, linewidth = 2,
+       linestyle = :dash, label = "ODE")
+axislegend(axis; position = :rt, framevisible = false)
+figure
+```
+
+A closure is an assumption, and assumptions fail. Asking for a log-normal
+closure on this network produces equations the solver cannot start.
+
+```{julia}
+#| label: code-ch06-closure-failure
+#| warning: false
+lognormal_retcode = try
+    solve(ODEProblem(moment_closure(raw_equations, "log-normal"),
+                     [990.0, 10.0, 0.0], tspan, parameter_map),
+          Tsit5(); saveat = times).retcode
+catch error
+    Symbol(typeof(error))
+end
+```
+
+The failure is informative rather than embarrassing: a log-normal shape is
+untenable for a compartment whose count reaches zero, and the closure inherits
+that. Always check the return code, and always compare against simulation before
+trusting a closure.
+
+## Interpretation and limitations
+
+Writing flows rather than states buys three things: one specification instead of
+three, mechanical access to every lowering, and moment equations that are simply
+unavailable from a hand-written right-hand side.
+
+The costs are real. Moment closure is an *uncontrolled* approximation: unlike
+reducing a timestep, there is no parameter to refine that guarantees
+convergence, and the only honest check is comparison with simulation — which is
+what we were trying to avoid. Closures degrade exactly where stochastic effects
+matter most, when counts are small, near the start of an outbreak or near
+extinction. The normal closure can also return negative variances or negative
+means, both meaningless. And a closure describes the *ensemble*, not any single
+outbreak: it can tell you the spread of epidemic sizes, but never the
+probability that an outbreak fades out, which needs the distribution itself.
+
+Mass action is the network's own assumption. Contact structure, households and
+age mixing are not expressible as a two-reaction network, and @sec-agent-based-models
+takes up the individual-level alternative.
+
+## Exercises
+
+### Exercise 1 {#ch07-ex1}
+
+Extend the network of @eq-ch06-network to an SEIR model by adding an exposed
+class $E$, with $S + I \to E + I$ at rate $\kappa$ and $E \to I$ at rate
+$\sigma = 0.5$. Starting from $(S,E,I,R)=(990,0,10,0)$, generate the ODE and
+jump lowerings from the single network, and plot the ODE against the mean of 100
+jump trajectories. State how the latent period changes the epidemic peak
+relative to the SIR model of this chapter.
+
+### Exercise 2 {#ch07-ex2}
+
+For the SIR network, compare second-order normal closure against an ensemble of
+200 jump trajectories at two population sizes, $N=1000$ and $N=100$, holding
+$\beta$, $c$ and $\gamma$ fixed and scaling $\kappa=\beta c/N$ with the initial
+condition $(0.99N, 0.01N, 0)$. Report the largest absolute difference between
+closure mean and ensemble mean in each case, and explain the direction of the
+change using the argument after @eq-ch06-unclosed.
+
+## Companion materials
+
+- [Slides](../slides/chapters/07-reaction-networks.html)
+- [Pluto preview](../notebook-exports/chapters/07-reaction-networks.html)
+- [Pluto source](../notebooks/chapters/07-reaction-networks.jl)

@@ -1,0 +1,214 @@
+---
+title: "Interventions and optimization"
+course-unit: ch13-interventions-and-optimization
+status: complete
+---
+
+## Where we are
+
+| Model | Determinism | Time | State | Representation |
+|---|---|---|---|---|
+| ODE, function map | deterministic | cont. or discrete | continuous | population |
+| Markov chain | stochastic | discrete | discrete | population |
+| Jump process | stochastic | continuous | discrete | population |
+| SDE | stochastic | continuous | continuous | population |
+| **Agent-based (next)** | **stochastic** | **discrete** | **discrete** | **individual** |
+
+Sensitivity, identifiability, and observation models are questions asked *about*
+any of these. Today asks what to *do* with one.
+
+::: {.notes}
+The Day 3 recap slot. Everything so far has been a population model, where the
+state is counts; the final session fills the individual column, where the state
+is people. This session moves along a different axis again: not a new model
+class, but a decision made with a model you already have.
+:::
+
+## What this session is for
+
+- A tour of what specialised packages add **once a model exists**.
+- The scenario half is machinery you already have: the Day 1 lockdown callback,
+  reused. A vaccination campaign is the same pattern on a different parameter.
+- The optimisation half works one small problem end to end, so the *shape* of an
+  optimisation is recognisable when you meet a bigger one.
+- You leave with pointers, not with a complete treatment of optimal control.
+
+::: {.notes}
+Say this out loud at the start. The aim is recognition and orientation, not
+mastery: nobody should feel they are behind because they cannot yet write an
+optimal-control problem from scratch. Everything in the first half is a callback
+they have already used; everything in the second half is one worked example plus
+a reading list.
+:::
+
+## Scenario first, optimization second
+
+An intervention analysis has two auditable layers:
+
+1. specify a policy and simulate it;
+2. compare admissible policies with an explicit objective and constraints.
+
+The baseline is the course SIR model. A 50% transmission reduction lasts
+$d=10$ time units; only its start $t_1\in[0,25]$ is optimized.
+
+::: {.notes}
+Separating these layers prevents an optimizer from hiding an implementation
+error or an implicit policy assumption.
+:::
+
+## Controlled SIR equations
+
+Add cumulative incidence $C$ and a rectangular control:
+
+$$
+\begin{aligned}
+\dot S&=-\beta c(1-v(t))SI/N,\\
+\dot I&=\beta c(1-v(t))SI/N-\gamma I,\\
+\dot R&=\gamma I,\\
+\dot C&=\beta c(1-v(t))SI/N,
+\end{aligned}
+$$
+
+$$
+v(t;t_1)=
+\begin{cases}
+v_{\max},&t_1\le t<t_1+d,\\
+0,&\text{otherwise}.
+\end{cases}
+$$
+
+The teaching objective is $J(t_1)=C(T;t_1)$ at $T=45$.
+
+::: {.notes}
+This is a deterministic, continuous-time, continuous-state, population model.
+The control is a population-level coefficient, not an individual simulation.
+:::
+
+## A callback defines one policy
+
+```{julia}
+#| label: fig-slide-ch11-scenario
+#| fig-cap: "A callback-defined policy compared with no intervention."
+using CairoMakie
+using DiffEqCallbacks
+using OrdinaryDiffEq
+
+β11, c11, γ11, N11 = 0.05, 10.0, 0.25, 1000.0
+u011 = [990.0, 10.0, 0.0, 0.0]
+function policy11!(du, u, p, t)
+    β, c, γ, reduction, N = p
+    incidence = β * c * (1 - reduction) * u[1] * u[2] / N
+    du[1], du[2], du[3], du[4] = -incidence, incidence - γ*u[2],
+        γ*u[2], incidence
+end
+grid11 = collect(0.0:0.5:45.0)
+function scenario11(start; duration = 10.0, reduction = 0.5)
+    p = [β11, c11, γ11, 0.0, N11]
+    stop = start + duration
+    affect!(integrator) = (integrator.p[4] =
+        integrator.t < stop ? reduction : 0.0)
+    cb = PresetTimeCallback([start, stop], affect!)
+    solve(ODEProblem(policy11!, u011, (0.0, 45.0), p), Tsit5();
+        callback = cb, saveat = grid11, abstol = 1e-8, reltol = 1e-8)
+end
+none11 = solve(ODEProblem(policy11!, u011, (0.0, 45.0),
+    [β11, c11, γ11, 0.0, N11]), Tsit5(); saveat = grid11)
+policy11 = scenario11(8.0)
+a11, b11 = Array(none11), Array(policy11)
+fig11 = Figure(size = (820, 600))
+ax11a = Axis(fig11[1, 1], xlabel = "time", ylabel = "infectious")
+lines!(ax11a, grid11, a11[2, :], label = "none")
+lines!(ax11a, policy11.t, b11[2, :], label = "50% reduction")
+vspan!(ax11a, 8.0, 18.0, color = (:steelblue, 0.15))
+axislegend(ax11a)
+ax11b = Axis(fig11[2, 1], xlabel = "time", ylabel = "cumulative incidence")
+lines!(ax11b, grid11, a11[4, :], label = "none")
+lines!(ax11b, policy11.t, b11[4, :], label = "policy")
+vspan!(ax11b, 8.0, 18.0, color = (:steelblue, 0.15))
+fig11
+```
+
+::: {.notes}
+`PresetTimeCallback` changes the parameter at two known times. It implements
+the scenario; it does not search over policies.
+:::
+
+## Bounded timing optimization
+
+Four pieces: objective, derivative rule, starting point and box, method.
+
+```{julia}
+#| label: ch11-slide-optimize
+using Optimization
+using OptimizationOptimJL
+
+final_incidence11(x, _) = Array(scenario11(x[1]))[4, end]
+
+objective11 = OptimizationFunction(final_incidence11, AutoFiniteDiff())
+problem11 = OptimizationProblem(objective11, [8.0], nothing;
+    lb = [0.0], ub = [25.0])
+solution11 = solve(problem11, Fminbox(LBFGS()); maxiters = 30)
+optimal11 = solution11.u[1]
+```
+
+::: {.notes}
+Read the four pieces aloud in order rather than explaining the algorithm. The
+finite-difference rule is chosen because each objective evaluation runs a whole
+ODE solve. `solve` is the same verb as for an ODEProblem: a different problem
+type selects a different method.
+:::
+
+## The grid confirms the optimizer
+
+```{julia}
+#| label: fig-slide-ch11-objective
+#| fig-cap: "Final cumulative incidence across admissible intervention starts, with the optimizer's answer marked."
+starts11 = collect(0.0:1.0:25.0)
+values11 = [Array(scenario11(t))[4, end] for t in starts11]
+fig11o = Figure(size = (780, 400))
+ax11o = Axis(fig11o[1, 1], xlabel = "start time", ylabel = "C(45)")
+lines!(ax11o, starts11, values11, color = :darkorange)
+scatter!(ax11o, [starts11[argmin(values11)]],
+    [minimum(values11)], color = :grey, markersize = 12,
+    label = "grid diagnostic")
+scatter!(ax11o, [optimal11], [final_incidence11([optimal11], nothing)],
+    color = :firebrick, markersize = 14, label = "optimizer")
+axislegend(ax11o)
+fig11o
+```
+
+::: {.notes}
+The optimizer returns a continuous timing estimate; the grid shows whether the
+objective is flat or has several plausible starts. Both are computed here, so
+the two markers agreeing is the check.
+:::
+
+## Validation, interpretation, and limits
+
+For every solved policy check
+
+$$
+\max_t|S(t)+I(t)+R(t)-N|<10^{-6},\qquad
+\Delta C(t)\ge 0.
+$$
+
+- The “optimal” result is conditional on reduction, duration, horizon, and cost.
+- Instantaneous switching, perfect adherence, homogeneous mixing, and a closed population are idealizations.
+- Add intervention cost, capacity, equity, uncertainty, or a peak-infection penalty when those are decision requirements.
+
+**Where to go next**
+
+- [Optimization.jl](https://docs.sciml.ai/Optimization/stable/): solvers and
+  differentiation backends.
+- [Parameter estimation](../../chapters/10-parameter-estimation.html): the same
+  problem shape with a likelihood as the objective.
+- [Advanced optimal control](../../appendices/08-advanced-optimal-control.html):
+  a control function of time, via InfiniteOpt and SDDP.
+- [Book chapter](../../chapters/13-interventions-and-optimization.html) and
+  [DiffEqCallbacks.jl](https://docs.sciml.ai/DiffEqCallbacks/stable/).
+
+::: {.notes}
+The model is useful for learning how to formulate a decision, not for issuing a
+universal policy recommendation. Advanced continuous controls are deferred to
+the optimal-control appendix.
+:::

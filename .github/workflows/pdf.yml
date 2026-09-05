@@ -35,7 +35,7 @@ jobs:
       - name: Instantiate Julia environments
         run: |
           julia --project=. -e 'using Pkg; Pkg.instantiate()'
-          julia --project=environments/ch09 -e 'using Pkg; Pkg.instantiate()'
+          julia --project=environments/ch10 -e 'using Pkg; Pkg.instantiate()'
 
       - name: Validate PDF source
         run: julia --project=. scripts/check_pdf_figures.jl

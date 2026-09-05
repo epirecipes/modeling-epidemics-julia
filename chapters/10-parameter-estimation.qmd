@@ -1,0 +1,305 @@
+---
+course-unit: ch10-parameter-estimation
+status: complete
+julia:
+  exeflags: ["--project=../environments/ch10"]
+---
+
+# Frequentist parameter estimation {#sec-parameter-estimation}
+
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
+## Learning goals
+
+@sec-observation-models produced simulated case reports from a known process. We now reverse
+the arrow: given only the reports, what can we say about the parameters that
+generated them? This chapter takes the *frequentist* view, in which parameters
+are fixed unknowns and uncertainty is expressed through the sampling behaviour of
+estimators. By the end you should be able to
+
+- write the likelihood of a Poisson observation model coupled to an SIR ODE;
+- compute the maximum-likelihood estimate (MLE) with
+  [Optimization.jl](https://docs.sciml.ai/Optimization/stable/);
+- construct **profile-likelihood** confidence intervals with
+  [ProfileLikelihood.jl](https://github.com/DanielVandH/ProfileLikelihood.jl)
+  and explain the $\chi^2$ threshold behind them; and
+- recognise how parameter non-identifiability shows up as a flat or ridged
+  profile.
+
+::: {.callout-note}
+This chapter runs in the isolated environment `environments/ch10`, pinned via
+the document's `julia.exeflags`. That environment carries a mutually compatible
+set of `ProfileLikelihood`, `Optimization`, and `OrdinaryDiffEq` versions, so
+the model kernel is defined locally rather than imported from the course
+package.
+:::
+
+## Model assumptions and classification
+
+The process model is the deterministic SIR ODE with cumulative incidence $C$,
+identical to @eq-sir-cumulative. The observation model is Poisson, as in
+@eq-poisson with full reporting. We estimate two parameters: the transmission
+probability $\beta$ and the initial infected fraction $i_0 = I(0)/N$, holding the
+contact rate $c=10$ and recovery rate $\gamma=0.25$ fixed. The estimation
+procedure itself is deterministic given the data — the optimiser and the profile
+routine return point estimates and interval endpoints, not a distribution.
+
+| Aspect | Choice |
+| --- | --- |
+| Process | deterministic SIR ODE (continuous time and state) |
+| Observation | Poisson counts of daily incidence |
+| Unknowns | $\theta = (i_0, \beta)$ |
+| Inference | maximum likelihood + profile-likelihood intervals |
+
+## Equations
+
+Writing $x_t(\theta)$ for the model incidence on day $t$ (the increment of $C$),
+the Poisson log-likelihood of the observed counts $y_{1:n}$ is
+
+$$
+\ell(\theta) = \sum_{t=1}^{n} \Big[ y_t \log x_t(\theta) - x_t(\theta)
+- \log(y_t!) \Big].
+$$ {#eq-loglik}
+
+The maximum-likelihood estimate is $\hat\theta = \arg\max_\theta \ell(\theta)$.
+To quantify uncertainty in a single component, say $\beta$, we *profile out* the
+remaining parameters by maximising over them at each fixed value of $\beta$:
+
+$$
+\ell_p(\beta) = \max_{i_0} \ell(i_0, \beta).
+$$ {#eq-profile}
+
+By Wilks' theorem the profile deviance
+$2\big(\ell(\hat\theta) - \ell_p(\beta)\big)$ is asymptotically $\chi^2_1$, so an
+approximate $95\%$ confidence interval is the set of $\beta$ with
+
+$$
+\ell_p(\beta) \ge \ell(\hat\theta) - \tfrac{1}{2}\chi^2_{1,\,0.95},
+\qquad \tfrac{1}{2}\chi^2_{1,\,0.95} \approx 1.92,
+$$ {#eq-ci}
+
+the method of @venzon1988 implemented by `ProfileLikelihood.jl`.
+
+## Julia implementation
+
+```{julia}
+#| label: setup
+#| output: false
+using OrdinaryDiffEq
+using ProfileLikelihood
+using Optimization
+using OptimizationOptimJL
+using Distributions
+using StableRNGs
+using DataFrames
+using CairoMakie
+
+CairoMakie.activate!(type = "png")
+colors = (data = :grey30, truth = :firebrick, mle = :steelblue, band = (:steelblue, 0.25))
+```
+
+### Process kernel and simulated data
+
+```{julia}
+#| label: model
+function sir_ode!(du, u, p, t)
+    S, I, R, C = u
+    β, c, γ = p
+    N = S + I + R
+    infection = β * c * I / N * S
+    recovery = γ * I
+    @inbounds begin
+        du[1] = -infection
+        du[2] = infection - recovery
+        du[3] = recovery
+        du[4] = infection
+    end
+    return nothing
+end
+
+δt = 1.0
+tmax = 40.0
+tspan = (0.0, tmax)
+u0 = [990.0, 10.0, 0.0, 0.0]      # S, I, R, C
+p = [0.05, 10.0, 0.25]            # β, c, γ; truth: i₀ = 0.01, β = 0.05
+
+prob_ode = ODEProblem(sir_ode!, u0, tspan, p)
+sol = solve(prob_ode, Tsit5(); saveat = δt)
+incidence = Array(sol)[4, 2:end] .- Array(sol)[4, 1:(end - 1)]
+data = rand.(StableRNG(20240607), Poisson.(incidence))
+```
+
+### The log-likelihood via the integrator interface
+
+`ProfileLikelihood.jl` evaluates @eq-loglik through the SciML integrator
+integrator: for each candidate $\theta$ we reset the initial state and
+parameters, re-solve, and accumulate the Poisson log-density. Non-positive model
+incidence (which can occur for extreme parameters) is rejected by returning
+`-Inf`.
+
+```{julia}
+#| label: loglik
+function loglik(θ, data, integrator)
+    i₀, β = θ
+    integrator.p[1] = β
+    integrator.p[2] = 10.0
+    integrator.p[3] = 0.25
+    I = i₀ * 1000.0
+    reinit!(integrator, [1000.0 - I, I, 0.0, 0.0])
+    solve!(integrator)
+    C = Array(integrator.sol)[4, :]
+    X = C[2:end] .- C[1:(end - 1)]
+    any(X .<= 0) && return -Inf
+    return sum(logpdf.(Poisson.(X), data))
+end
+```
+
+### Maximum-likelihood estimate
+
+We assemble a `LikelihoodProblem` with bounds on both parameters and optimise
+with the derivative-free Nelder–Mead method.
+
+```{julia}
+#| label: mle
+lb = [0.0, 0.0]
+ub = [1.0, 1.0]
+θ₀ = [0.01, 0.1]
+
+prob = LikelihoodProblem(
+    loglik, θ₀, sir_ode!, u0, tspan;
+    syms = [:i₀, :β],
+    data = data,
+    ode_parameters = p,
+    ode_kwargs = (verbose = false, saveat = δt),
+    f_kwargs = (adtype = Optimization.AutoFiniteDiff(),),
+    prob_kwargs = (lb = lb, ub = ub),
+    ode_alg = Tsit5(),
+)
+
+mle_sol = mle(prob, NelderMead())
+θ̂ = get_mle(mle_sol)
+```
+
+### Profile-likelihood intervals
+
+```{julia}
+#| label: profile
+prof = profile(prob, mle_sol; alg = NelderMead(), parallel = false)
+confints = get_confidence_intervals(prof)
+
+results = DataFrame(
+    parameter = ["i₀", "β"],
+    truth = [0.01, 0.05],
+    mle = θ̂,
+    ci_lower = [confints[i][1] for i in 1:2],
+    ci_upper = [confints[i][2] for i in 1:2],
+)
+results
+```
+
+The profile curves make the $\chi^2$ threshold of @eq-ci concrete. Each panel
+plots the normalised profile log-likelihood (zero at the MLE); the interval is
+where the curve lies above the dashed line at $-1.92$.
+
+```{julia}
+#| label: fig-profiles
+#| fig-cap: "Profile log-likelihoods for i₀ and β. The dashed line is the 95% threshold from Wilks' theorem; its intersections with each curve are the confidence-interval endpoints (blue), which bracket the true values (red)."
+threshold = -0.5 * quantile(Chisq(1), 0.95)
+truth = [0.01, 0.05]
+names = ["i₀", "β"]
+
+fig = Figure(size = (900, 380))
+for i in 1:2
+    grid = get_parameter_values(prof, i)
+    prof_vals = get_profile_values(prof, i)
+    ax = Axis(fig[1, i]; xlabel = names[i], ylabel = "Profile log-likelihood")
+    lines!(ax, grid, prof_vals; color = colors.mle, linewidth = 3)
+    hlines!(ax, [threshold]; color = :black, linestyle = :dash)
+    vlines!(ax, [truth[i]]; color = colors.truth, linewidth = 2)
+    vlines!(ax, [confints[i][1], confints[i][2]]; color = colors.mle,
+        linestyle = :dot)
+    ylims!(ax, threshold - 1.5, 0.4)
+end
+fig
+```
+
+## Validation
+
+Two checks confirm the fit. First, the estimator should recover the truth: the
+MLE should be close to $(i_0,\beta) = (0.01, 0.05)$ and both confidence intervals
+should contain the true value. Second, the fitted incidence curve should track
+the data.
+
+```{julia}
+#| label: validation
+covers(i) = confints[i][1] ≤ truth[i] ≤ confints[i][2]
+(mle = θ̂, covers_i₀ = covers(1), covers_β = covers(2))
+```
+
+```{julia}
+#| label: fig-fit
+#| fig-cap: "Simulated case reports (grey), the incidence curve at the true parameters (red), and at the maximum-likelihood estimate (blue, dashed). The fit is visually indistinguishable from the truth."
+function incidence_at(θ)
+    i₀, β = θ
+    I = i₀ * 1000.0
+    prob_fit = remake(prob_ode; u0 = [1000.0 - I, I, 0.0, 0.0], p = [β, 10.0, 0.25])
+    solf = solve(prob_fit, Tsit5(); saveat = δt)
+    C = Array(solf)[4, :]
+    return C[2:end] .- C[1:(end - 1)]
+end
+
+obstimes = δt:δt:tmax
+fig = Figure(size = (760, 420))
+ax = Axis(fig[1, 1]; xlabel = "Time (days)", ylabel = "New cases per day")
+barplot!(ax, collect(obstimes), data; color = (colors.data, 0.4), label = "Data")
+lines!(ax, collect(obstimes), incidence_at(truth); color = colors.truth,
+    linewidth = 3, label = "Truth")
+lines!(ax, collect(obstimes), incidence_at(θ̂); color = colors.mle,
+    linewidth = 3, linestyle = :dash, label = "MLE")
+axislegend(ax; position = :rt)
+fig
+```
+
+## Interpretation and limitations
+
+The MLE recovers the generating parameters and the profile intervals cover them,
+but three caveats matter in practice. First, Nelder–Mead is a *local* optimiser;
+a poor start or a multimodal likelihood can strand it on a secondary maximum, so
+a grid or multistart search is prudent before trusting a single fit. Second, the
+$\chi^2$ calibration of @eq-ci is asymptotic; with few or highly informative data
+points the intervals may under- or over-cover, and a full likelihood-region or
+bootstrap approach is more faithful. Third, we fixed $c$ and $\gamma$: because
+transmission enters only through the product $\beta c$, $\beta$ and $c$ are not
+separately identifiable from incidence alone, and the estimate of $\beta$ should
+be read as an estimate of $\beta c / c$ at the assumed $c$. Structural
+identifiability is treated systematically in the sensitivity and identifiability
+chapter. Finally, the frequentist intervals summarise sampling variability but
+do not incorporate prior knowledge; the next chapter revisits the same model from
+a Bayesian perspective, where uncertainty is expressed directly as a posterior
+distribution.
+
+## Exercises
+
+### Exercise 1 {#ch10-ex1}
+
+Re-simulate the data with a different `StableRNG` seed and re-fit the model.
+Repeat this for 50 seeds, collecting the MLE of $\beta$ each time. Plot the
+distribution of estimates and report the fraction of the 50 profile-likelihood
+intervals for $\beta$ that contain the true value $0.05$. Comment on whether the
+empirical coverage is close to the nominal $95\%$.
+
+### Exercise 2 {#ch10-ex2}
+
+Extend the parameter vector to also estimate the recovery rate $\gamma$ (add it
+to `θ`, the log-likelihood, and the bounds). Compute the profile likelihood for
+$\gamma$ and compare the width of its interval with those for $i_0$ and $\beta$.
+Explain, with reference to @eq-profile, what a comparatively flat profile implies
+about the information the incidence data carry about $\gamma$.
+
+## Companion materials
+
+- [Slides](../slides/chapters/10-parameter-estimation.html)
+- [Pluto preview](../notebook-exports/chapters/10-parameter-estimation.html)
+- [Pluto source](../notebooks/chapters/10-parameter-estimation.jl)

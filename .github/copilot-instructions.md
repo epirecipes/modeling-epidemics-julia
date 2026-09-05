@@ -41,7 +41,7 @@ Figures must be rendered from code, have labels and captions, and use determinis
 - Show at least one numerical or structural validation appropriate to the model, such as conservation of population, nonnegative states, agreement with an analytic result, convergence under timestep refinement, or comparison with a simpler chapter.
 - Prefer maintained packages and current APIs from the SciML and Julia ecosystems. Keep pedagogical model logic visible instead of hiding it behind convenience abstractions.
 - Use one course-level Julia environment for Quarto rendering and align Pluto dependencies with it. Declare every direct dependency and keep versions reproducible; avoid chapter-specific environments unless incompatible dependencies make isolation necessary.
-- Pluto notebooks activate the cloned repository's root environment rather than embedding 25 independent environments. Chapter 9 is the documented exception: current `ProfileLikelihood.jl` compatibility requires `environments/ch09/`.
+- Pluto notebooks activate the cloned repository's root environment rather than embedding 25 independent environments. Chapter 9 is the documented exception: current `ProfileLikelihood.jl` compatibility requires `environments/ch10/`.
 - Cite primary papers for modeling methods and official package documentation for APIs. Add sources to the course bibliography rather than leaving raw research links in prose.
 
 ## Rendering and validation
@@ -51,7 +51,7 @@ Configure the course so these commands work from the workspace root:
 ```bash
 # Restore the course environment.
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
-julia --project=environments/ch09 -e 'using Pkg; Pkg.instantiate()'
+julia --project=environments/ch10 -e 'using Pkg; Pkg.instantiate()'
 
 # Render the complete Quarto project.
 quarto render
