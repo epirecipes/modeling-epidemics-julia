@@ -1,6 +1,6 @@
 ---
 title: "Worksheet — Agent-based models"
-course-unit: ch06-agent-based-models
+course-unit: ch07-agent-based-models
 artifact: worksheet
 status: draft
 ---
@@ -9,7 +9,7 @@ status: draft
 
 **~45 minutes**
 
-The [chapter](../../chapters/06-agent-based-models.qmd) built a well-mixed SIR
+The [chapter](../../chapters/07-agent-based-models.qmd) built a well-mixed SIR
 model out of a thousand named individuals and compared it with the ODE. This
 worksheet takes the same model and asks two questions the chapter raises but does
 not settle: what does the timestep $\Delta t$ do, and what does the
@@ -548,7 +548,7 @@ check("the ODE does describe the epidemics that take off",
 ```
 
 ```{julia}
-#| label: fig-ws-ch06-extinction
+#| label: fig-ws-ch07-extinction
 #| error: true
 #| fig-cap: "Final epidemic size across 200 introductions of a single infectious person, with the ODE prediction and the mean over all runs marked."
 fig = Figure(size = (860, 430))
@@ -589,7 +589,7 @@ fig
 In a terminal:
 
 ```bash
-quarto render worksheets/chapters/06-agent-based-models.qmd
+quarto render worksheets/chapters/07-agent-based-models.qmd
 ```
 
 A clean render means every cell ran top to bottom in a fresh session.
@@ -600,9 +600,9 @@ A clean render means every cell ran top to bottom in a fresh session.
 
 Nothing here is assigned. The whole project stays available to you afterwards.
 
-- [The chapter](../../chapters/06-agent-based-models.qmd): the same model with
+- [The chapter](../../chapters/07-agent-based-models.qmd): the same model with
   the ensemble comparison and the Agents.jl v7 API spelled out.
-- [The Pluto notebook](../../notebooks/chapters/06-agent-based-models.jl):
+- [The Pluto notebook](../../notebooks/chapters/07-agent-based-models.jl):
   sliders over the contact and recovery parameters.
 - [Jump processes](../../chapters/04-jump-processes.qmd): the continuous-time
   version of this model, where extinction and the $1/R_0$ argument first appear

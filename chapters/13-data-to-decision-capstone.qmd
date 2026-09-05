@@ -1,9 +1,9 @@
 ---
-course-unit: ch12-data-to-decision-capstone
+course-unit: ch13-data-to-decision-capstone
 status: complete
 ---
 
-# Data-to-decision capstone
+# Data-to-decision capstone {#sec-data-to-decision-capstone}
 
 ::: {.callout-note appearance="simple"}
 **Self-study**: not taught at the workshop, but complete and ready to use on your own.
@@ -358,7 +358,7 @@ horizon, so you can see for yourself how much of the reported number was
 extrapolated and whether the model has actually burned out by month 8.
 
 The centered one-percent perturbation is a local sensitivity check; it is not
-a replacement for the broader analysis in Chapter 10.
+a replacement for the broader analysis in @sec-sensitivity-and-identifiability.
 
 ```{julia}
 function decision_rhs!(du, u, p, t)
@@ -536,7 +536,7 @@ observation model would change both the fit and the decision.
 
 ## Exercises
 
-### Exercise 1 {#ch12-ex1}
+### Exercise 1 {#ch13-ex1}
 
 Replace the state least-squares loss with a loss on `I` only, refit
 $(\lambda,\gamma)$, and compare the residual plot and the implied cumulative
@@ -545,7 +545,7 @@ Explain which information is discarded and why a seemingly better infectious
 curve may fit the reconstructed $S$ and $R$ series worse, even though both
 fitted trajectories conserve $S+I+R=N$.
 
-### Exercise 2 {#ch12-ex2}
+### Exercise 2 {#ch13-ex2}
 
 Use the deterministic envelope to compare a one-month 25% reduction with a
 one-month 50% reduction beginning at month 1. Report the range of cumulative
@@ -555,6 +555,6 @@ needed before treating that range as decision uncertainty.
 
 ## Companion materials
 
-- [Slides](../slides/chapters/12-data-to-decision-capstone.html)
-- [Pluto preview](../notebook-exports/chapters/12-data-to-decision-capstone.html)
-- [Pluto source](../notebooks/chapters/12-data-to-decision-capstone.jl)
+- [Slides](../slides/chapters/13-data-to-decision-capstone.html)
+- [Pluto preview](../notebook-exports/chapters/13-data-to-decision-capstone.html)
+- [Pluto source](../notebooks/chapters/13-data-to-decision-capstone.jl)

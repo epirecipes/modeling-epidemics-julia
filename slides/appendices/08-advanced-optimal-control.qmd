@@ -6,7 +6,7 @@ status: complete
 
 ## From a timing decision to a control function
 
-- Chapter 11 chooses one intervention start time.
+- The interventions and optimization chapter chooses one intervention start time.
 - Here $u(t)$ is a bounded, function-valued intervention.
 - Classification: deterministic, continuous-time, continuous-state,
   population-level, ODE-constrained.

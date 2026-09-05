@@ -1,0 +1,163 @@
+---
+title: "Reaction networks and moment closure"
+course-unit: ch06-reaction-networks
+status: complete
+---
+
+## From states to flows
+
+- So far each model was written as *states changing*: a right-hand side, a
+  drift and diffusion, a pair of jump affects.
+- Every change of setting meant rewriting the model.
+- Instead, specify the **flows**: which events happen, at what rate, and what
+  each one changes.
+
+$$
+S + I \xrightarrow{\ \kappa\ } 2I, \qquad I \xrightarrow{\ \gamma\ } R,
+\qquad \kappa = \beta c / N.
+$$
+
+::: {.notes}
+This is the one idea of the session. Nothing about the biology changes: the same
+SIR assumptions, the same baseline parameters as the previous two sessions. What
+changes is what we write down, and therefore what we can generate from it.
+:::
+
+## One specification, three models
+
+Read off the stoichiometry $V$ and the propensities $a(X)$:
+
+$$
+V=\begin{pmatrix}-1&0\\1&-1\\0&1\end{pmatrix},\qquad
+a=(\kappa SI,\ \gamma I)^\mathsf{T}.
+$$
+
+| Lowering | Construction |
+|---|---|
+| ODE | $\dot X = Va(X)$ |
+| SDE | $dX = Va(X)\,dt + V\operatorname{diag}(\sqrt{a})\,dW$ |
+| Jump | event $j$ at rate $a_j$, adding $V_{\cdot j}$ |
+
+::: {.notes}
+These are exactly the $V$ and $a$ from the stochastic differential equations
+session. Point back to it explicitly: the pair $(V,a)$ was already the model, we
+were just writing it out by hand each time.
+:::
+
+## The same network, three solvers
+
+```{julia}
+#| label: slide-ch06-lowerings
+#| echo: true
+using Catalyst, OrdinaryDiffEq, StochasticDiffEq, JumpProcesses, StableRNGs
+
+sir_network = @reaction_network begin
+    κ, S + I --> 2I
+    γ, I --> R
+end
+
+ps = [:κ => 0.05 * 10.0 / 1000, :γ => 0.25]
+tspan = (0.0, 40.0)
+
+ode  = solve(ODEProblem(sir_network, [:S => 990.0, :I => 10.0, :R => 0.0], tspan, ps), Tsit5())
+sde  = solve(SDEProblem(sir_network, [:S => 990.0, :I => 10.0, :R => 0.0], tspan, ps),
+             LambaEM(); seed = 20250906)
+jump = solve(JumpProblem(sir_network, [:S => 990, :I => 10, :R => 0], tspan, ps;
+                         aggregator = Direct(), rng = StableRNG(20250906)), SSAStepper())
+round.((maximum(ode[2, :]), maximum(sde[2, :]), maximum(jump[2, :])); digits = 1)
+```
+
+::: {.notes}
+Three peaks from one network, and no SIR equations were retyped between them.
+Worth pausing here: adding an exposed class would propagate to all three at once.
+That is the practical payoff, and it is what the worksheet starts from.
+:::
+
+## Why the moments do not close
+
+Exact equation for the mean:
+$$
+\frac{d\,\mathbb{E}[X]}{dt}=V\,\mathbb{E}[a(X)].
+$$
+
+Recovery is linear, so $\mathbb{E}[\gamma I]=\gamma\mathbb{E}[I]$. Transmission
+is **bimolecular**:
+$$
+\mathbb{E}[\kappa SI]=\kappa\big(\mathbb{E}[S]\mathbb{E}[I]+\operatorname{Cov}(S,I)\big).
+$$
+
+- First moments need second moments, second need third, and so on.
+- The ODE *is* the approximation that drops $\operatorname{Cov}(S,I)$.
+
+::: {.notes}
+This finally explains an observation from the jump-process session: the ensemble
+mean does not lie on the ODE curve. The covariance between S and I is strongly
+negative during an epidemic, so the ODE peak sits above the ensemble mean. It is
+a bias, not sampling error, and it does not shrink by running more trajectories.
+:::
+
+## Closure: cut the hierarchy off
+
+- Keep moments to order $m$; express higher ones via an assumed distribution.
+- **Normal closure**: set third central moments to zero.
+- The assumption is about the *shape of the distribution*, not the model.
+
+```{julia}
+#| label: slide-ch06-closure
+#| echo: true
+#| warning: false
+using MomentClosure
+raw = generate_raw_moment_eqs(sir_network, 2)
+closed = moment_closure(raw, "normal")
+(equations = length(equations(raw.odes)), closure = "normal")
+```
+
+::: {.notes}
+Nine equations at order two: three means and six second moments. Stress that
+this is an uncontrolled approximation — there is no step size to refine that
+guarantees convergence, unlike everything else in the course so far.
+:::
+
+## Does it match an ensemble?
+
+- 200 jump trajectories versus the closed moment equations.
+- Closure recovers both the **mean** and the **spread**, at a fraction of the cost.
+- The ODE peak sits above the ensemble mean, as the covariance argument predicts.
+
+See the [book chapter](../../chapters/06-reaction-networks.qmd) for the figure and
+the full comparison.
+
+::: {.notes}
+Run the chapter's figure live if time allows. The headline numbers: closure mean
+and ensemble mean for the infectious class agree closely, and the closure
+standard deviation tracks the ensemble band.
+:::
+
+## When closure fails
+
+- Ask for a log-normal closure on this network and the solver cannot even start.
+- Closures degrade where stochasticity matters most: **small counts**, early
+  outbreak, near extinction.
+- A closure describes the ensemble, never a single outbreak — it cannot give you
+  the probability of fade-out.
+
+::: {.notes}
+Show the failure rather than hiding it. A log-normal shape is untenable for a
+compartment that reaches zero. The rule to leave them with: always check the
+return code, and always compare against simulation before trusting a closure.
+:::
+
+## Takeaways
+
+- Write **flows**, not states: one specification, every lowering for free.
+- The moment hierarchy does not close because transmission is bimolecular.
+- Closure buys ensemble statistics without an ensemble — at the cost of an
+  assumption you must check.
+- Mass action is still an assumption; contact structure needs the individual
+  level.
+
+::: {.notes}
+Next session is sensitivity and identifiability. The link is direct: cheap
+ensemble statistics make it feasible to sweep parameters without running a full
+simulation study at every point.
+:::

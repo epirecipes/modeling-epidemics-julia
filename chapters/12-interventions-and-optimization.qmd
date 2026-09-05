@@ -1,9 +1,9 @@
 ---
-course-unit: ch11-interventions-and-optimization
+course-unit: ch12-interventions-and-optimization
 status: complete
 ---
 
-# Interventions and optimization
+# Interventions and optimization {#sec-interventions-and-optimization}
 
 ::: {.callout-note appearance="simple"}
 **Workshop programme**: taught live on Day 3, Session 1. See the [full schedule](../workshop.qmd).
@@ -411,26 +411,26 @@ appendix.
 - [Optimization.jl](https://docs.sciml.ai/Optimization/stable/) documents the
   solver choices and automatic-differentiation backends behind the four pieces
   above.
-- [Frequentist parameter estimation](08-parameter-estimation.html) reuses this
+- [Frequentist parameter estimation](09-parameter-estimation.html) reuses this
   same `OptimizationProblem` pattern, with a likelihood as the objective instead
   of final incidence. This is the natural next step if you want to fit rather
   than choose.
 - [Advanced optimal control](../appendices/08-advanced-optimal-control.html)
   replaces the single start time with a control *function* of time, using
   InfiniteOpt and SDDP.
-- [Data-to-decision capstone](12-data-to-decision-capstone.html) runs the whole
+- [Data-to-decision capstone](13-data-to-decision-capstone.html) runs the whole
   chain end to end: data, fit, and policy choice.
 
 ## Exercises
 
-### Exercise 1 {#ch11-ex1}
+### Exercise 1 {#ch12-ex1}
 
 Modify `run_scenario` to compare reductions of `0.25`, `0.50`, and `0.75`.
 For each reduction, optimize the start time using the same bounds. Report
 the start time and final incidence, and explain why the best timing need not
 be the time at which infectious prevalence is largest.
 
-### Exercise 2 {#ch11-ex2}
+### Exercise 2 {#ch12-ex2}
 
 Make both the start time $t_1$ and the duration $d$ decision variables, and
 define a new scalar objective
@@ -459,6 +459,6 @@ policy, which is worth noticing rather than reporting as a comparison.
 
 ## Companion materials
 
-- [Slides](../slides/chapters/11-interventions-and-optimization.html)
-- [Pluto preview](../notebook-exports/chapters/11-interventions-and-optimization.html)
-- [Pluto source](../notebooks/chapters/11-interventions-and-optimization.jl)
+- [Slides](../slides/chapters/12-interventions-and-optimization.html)
+- [Pluto preview](../notebook-exports/chapters/12-interventions-and-optimization.html)
+- [Pluto source](../notebooks/chapters/12-interventions-and-optimization.jl)

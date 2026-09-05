@@ -1,12 +1,12 @@
 ---
 title: "Bayesian inference"
-course-unit: ch09-bayesian-inference
+course-unit: ch10-bayesian-inference
 status: complete
 ---
 
 ## Why this unit matters
 
-- Chapter 8: parameters are fixed unknowns, uncertainty is sampling variability.
+- The frequentist parameter estimation chapter: parameters are fixed unknowns, uncertainty is sampling variability.
 - **Bayesian view:** parameters are random variables; a **prior** is updated into
   a **posterior** by the data.
 - Same SIR model, same reports — different treatment of uncertainty, with
@@ -23,7 +23,7 @@ $$
 p(\theta\mid y_{1:n})=\frac{p(y_{1:n}\mid\theta)\,p(\theta)}{p(y_{1:n})},
 $$
 
-same Poisson likelihood as Chapter 8, with weakly informative priors on the
+same Poisson likelihood as the frequentist parameter estimation chapter, with weakly informative priors on the
 natural $[0,1]$ ranges:
 
 $$
@@ -145,10 +145,10 @@ truth. The book chapter also shows trace plots and full $\hat R$ / ESS tables.
 - `@model` + `NUTS` turns Bayes' theorem into executable sampling.
 - Check convergence with $\hat R\approx1$ and effective sample size.
 - Priors are modelling choices; guard the ODE solve and floor the rate.
-- NUTS re-solves + differentiates the ODE each step — costlier than Chapter 8.
+- NUTS re-solves + differentiates the ODE each step — costlier than the frequentist parameter estimation chapter.
 - $\beta$–$c$ non-identifiability persists; Poisson still assumes equidispersion.
 
-Read the [book chapter](../../chapters/09-bayesian-inference.html); see
+Read the [book chapter](../../chapters/10-bayesian-inference.html); see
 [Turing.jl](https://turinglang.org/) and
 [MCMCChains.jl](https://turinglang.org/MCMCChains.jl/stable/).
 

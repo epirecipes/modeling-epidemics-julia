@@ -1,6 +1,6 @@
 ---
 title: "Sensitivity and identifiability"
-course-unit: ch10-sensitivity-and-identifiability
+course-unit: ch11-sensitivity-and-identifiability
 status: complete
 ---
 
@@ -312,7 +312,7 @@ the break matters. Say that out loud rather than skipping past it.
   what you already know, such as the initial state.
 - Practical identifiability also depends on noise, sampling, initial states, and misspecification.
 
-Read the [book chapter](../../chapters/10-sensitivity-and-identifiability.html)
+Read the [book chapter](../../chapters/11-sensitivity-and-identifiability.html)
 for derivations and exercises; see the
 [SciMLSensitivity](https://docs.sciml.ai/SciMLSensitivity/stable/),
 [GlobalSensitivity](https://docs.sciml.ai/GlobalSensitivity/stable/), and

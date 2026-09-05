@@ -35,7 +35,7 @@ end
 md"""
 # Observation models and simulated data
 
-Companion notebook for the `ch07-observation-models` unit. The latent SIR
+Companion notebook for the `ch08-observation-models` unit. The latent SIR
 process is fixed; the sliders below control the **observation model** that turns
 latent daily incidence into reported case counts. Everything is reproducible: a
 `StableRNG` seed makes each realisation deterministic.
@@ -108,12 +108,12 @@ md"""
 The dashed line is the expected report count `ρ × latent`. Notice that the
 Poisson scatter hugs its mean, while the negative-binomial scatter widens as `r`
 shrinks. Reducing `ρ` shrinks the *apparent* epidemic even though the underlying
-process is unchanged — the identifiability problem revisited in Chapter 10.
+process is unchanged — the identifiability problem revisited in the sensitivity and identifiability chapter.
 """
 
 # ╔═╡ 669eb73c-17ed-4f52-9657-3be8a5a1c8a5
 (
-    course_unit = "ch07-observation-models",
+    course_unit = "ch08-observation-models",
     status = "complete",
     reporting_fraction = reporting_fraction,
     observation_model = observation_model,

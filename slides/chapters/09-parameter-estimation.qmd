@@ -1,20 +1,20 @@
 ---
 title: "Frequentist parameter estimation"
-course-unit: ch08-parameter-estimation
+course-unit: ch09-parameter-estimation
 status: complete
 julia:
-  exeflags: ["--project=../../environments/ch08"]
+  exeflags: ["--project=../../environments/ch09"]
 ---
 
 ## Why this unit matters
 
-- Chapter 7 produced case reports from a **known** process.
+- The observation models chapter produced case reports from a **known** process.
 - Now reverse the arrow: given only the reports, what are the parameters?
 - The **frequentist** view: parameters are fixed unknowns; uncertainty is the
   sampling behaviour of estimators.
 
 ::: {.notes}
-This deck runs in the isolated environment `environments/ch08`, pinned via the
+This deck runs in the isolated environment `environments/ch09`, pinned via the
 document's `julia.exeflags`, which carries mutually compatible
 `ProfileLikelihood`, `Optimization`, and `OrdinaryDiffEq` versions.
 :::
@@ -138,11 +138,11 @@ the dashed Wilks threshold. A flat profile would signal weak identifiability.
 - Nelder–Mead is **local** — use multistart before trusting one fit.
 - The $\chi^2$ calibration is **asymptotic**; small samples may mis-cover.
 - $\beta$ and $c$ enter only as $\beta c$ $\Rightarrow$ not separately
-  identifiable (Chapter 10).
-- Intervals summarise sampling variability, not prior knowledge — Chapter 9 is
+  identifiable (the sensitivity and identifiability chapter).
+- Intervals summarise sampling variability, not prior knowledge — the Bayesian inference chapter is
   the Bayesian counterpart.
 
-Read the [book chapter](../../chapters/08-parameter-estimation.html); see
+Read the [book chapter](../../chapters/09-parameter-estimation.html); see
 [Optimization.jl](https://docs.sciml.ai/Optimization/stable/) and
 [ProfileLikelihood.jl](https://github.com/DanielVandH/ProfileLikelihood.jl).
 

@@ -135,7 +135,7 @@ begin
     @assert derivative_error10 < 1e-3
     @assert elasticity_gap10 < 1e-6
     (
-        course_unit = "ch10-sensitivity-and-identifiability",
+        course_unit = "ch11-sensitivity-and-identifiability",
         status = "complete",
         sensitivity_span_percent = sensitivity_span,
         conservation_error = conservation_error10,

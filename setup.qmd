@@ -299,5 +299,5 @@ A Pluto notebook is not a script that runs top to bottom. Its cells form a netwo
 **A second package set.** One unit, parameter estimation, needs a package that conflicts with the rest of the course, so it has an environment of its own. It is OK to skip this unless and until you work through that chapter:
 
 ```bash
-julia --project=environments/ch08 -e 'using Pkg; Pkg.instantiate()'
+julia --project=environments/ch09 -e 'using Pkg; Pkg.instantiate()'
 ```

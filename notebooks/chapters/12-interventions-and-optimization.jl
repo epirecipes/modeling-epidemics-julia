@@ -105,7 +105,7 @@ begin
     @assert conservation_error11 < 1e-6
     @assert cumulative_monotone11
     (
-        course_unit = "ch11-interventions-and-optimization",
+        course_unit = "ch12-interventions-and-optimization",
         status = "complete",
         selected_start = intervention_start11,
         selected_reduction = intervention_reduction11,

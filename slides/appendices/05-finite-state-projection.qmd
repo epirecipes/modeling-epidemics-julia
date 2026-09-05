@@ -7,7 +7,7 @@ status: complete
 
 ## Why this unit matters
 
-- Stochastic SIR is usually studied by **simulating trajectories** (Chapter 4).
+- Stochastic SIR is usually studied by **simulating trajectories** (the jump processes chapter).
 - *Finite-state projection* (FSP) takes the opposite route: solve directly for
   the **probability distribution** over states by integrating a truncated
   chemical master equation [@munsky2006].

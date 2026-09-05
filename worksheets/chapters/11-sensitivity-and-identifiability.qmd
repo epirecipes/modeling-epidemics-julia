@@ -1,6 +1,6 @@
 ---
 title: "Worksheet — Sensitivity and identifiability"
-course-unit: ch10-sensitivity-and-identifiability
+course-unit: ch11-sensitivity-and-identifiability
 artifact: worksheet
 status: draft
 ---
@@ -9,7 +9,7 @@ status: draft
 
 **~45 minutes**
 
-The [chapter](../../chapters/10-sensitivity-and-identifiability.qmd) ran three
+The [chapter](../../chapters/11-sensitivity-and-identifiability.qmd) ran three
 analyses on the baseline SIR model: local derivatives, a global Sobol
 decomposition, and a symbolic identifiability check. Here you use the first to
 discover, numerically, the confounding that the third proves; and you see what
@@ -531,7 +531,7 @@ parameters the model actually contains, so both edits go together.
 In a terminal:
 
 ```bash
-quarto render worksheets/chapters/10-sensitivity-and-identifiability.qmd
+quarto render worksheets/chapters/11-sensitivity-and-identifiability.qmd
 ```
 
 A clean render means every cell ran top to bottom in a fresh session.
@@ -542,10 +542,10 @@ A clean render means every cell ran top to bottom in a fresh session.
 
 Nothing here is assigned. The whole project stays available to you afterwards.
 
-- [The chapter](../../chapters/10-sensitivity-and-identifiability.qmd): the same
+- [The chapter](../../chapters/11-sensitivity-and-identifiability.qmd): the same
   three tools, with the local, global and structural distinctions spelled out.
-- [The Pluto notebook](../../notebooks/chapters/10-sensitivity-and-identifiability.jl):
+- [The Pluto notebook](../../notebooks/chapters/11-sensitivity-and-identifiability.jl):
   sliders over the sensitivity calculation.
-- [Frequentist parameter estimation](../../chapters/08-parameter-estimation.qmd):
+- [Frequentist parameter estimation](../../chapters/09-parameter-estimation.qmd):
   the self-study chapter where a non-identifiable parameter shows up as a flat
   direction in the likelihood.

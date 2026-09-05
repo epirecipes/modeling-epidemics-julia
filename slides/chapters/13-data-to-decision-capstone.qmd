@@ -1,6 +1,6 @@
 ---
 title: "Data-to-decision capstone"
-course-unit: ch12-data-to-decision-capstone
+course-unit: ch13-data-to-decision-capstone
 status: complete
 ---
 
@@ -36,7 +36,7 @@ transmission, household structure, movement, and reporting changes.
 
 ::: {.notes}
 The effective lambda is deliberately not interpreted as separate contact and
-per-contact transmission parameters; Chapter 10 explains why.
+per-contact transmission parameters; the sensitivity and identifiability chapter explains why.
 :::
 
 ## Verify locally, then fit
@@ -141,7 +141,7 @@ parameter envelope, and data limitations are stated alongside it.
 - Residuals and sensitivity determine what conclusions are defensible.
 - Better decisions require better observation and mechanistic models.
 
-Read the [capstone chapter](../../chapters/12-data-to-decision-capstone.html),
+Read the [capstone chapter](../../chapters/13-data-to-decision-capstone.html),
 [data provenance](../../data/README.html), and the
 [CSV.jl](https://csv.juliadata.org/stable/) and
 [Optimization.jl](https://docs.sciml.ai/Optimization/stable/) documentation.

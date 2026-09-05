@@ -1,6 +1,6 @@
 ---
 title: "Observation models and simulated data"
-course-unit: ch07-observation-models
+course-unit: ch08-observation-models
 status: complete
 ---
 
@@ -181,7 +181,7 @@ observed_incidence`) so the chapter, slides and notebook share one generator.
 - We assumed instantaneous, conditionally independent reporting — real systems
   add delays and weekday effects.
 
-Read the [book chapter](../../chapters/07-observation-models.html); see
+Read the [book chapter](../../chapters/08-observation-models.html); see
 [Distributions.jl](https://juliastats.org/Distributions.jl/stable/) and
 [StableRNGs.jl](https://github.com/JuliaRandom/StableRNGs.jl).
 
@@ -193,8 +193,8 @@ so the curve does carry the information in principle. What is true is that the t
 strongly correlated, and the last session shows exactly what has to be known
 about the population before they come apart at all.
 
-Close by pointing at the two inference chapters, Chapter 8 by maximum
-likelihood and Chapter 9 by Bayesian sampling, while saying clearly that they are
+Close by pointing at the two inference chapters, the frequentist parameter estimation chapter by maximum
+likelihood and the Bayesian inference chapter by Bayesian sampling, while saying clearly that they are
 self-study, not sessions here, and that the programme page names the LSHTM course
 for anyone who wants to go further with fitting.
 :::

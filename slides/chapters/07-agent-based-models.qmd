@@ -1,6 +1,6 @@
 ---
 title: "Agent-based models"
-course-unit: ch06-agent-based-models
+course-unit: ch07-agent-based-models
 status: complete
 ---
 
@@ -147,7 +147,7 @@ Further reading:
 
 - [Agents.jl v7 agent definitions](https://juliadynamics.github.io/Agents.jl/v7.0.3/agents/)
 - [Agents.jl v7 data collection](https://juliadynamics.github.io/Agents.jl/v7.0.3/data/)
-- [Book chapter](../../chapters/06-agent-based-models.html) · [Pluto notebook](../../notebook-exports/chapters/06-agent-based-models.html)
+- [Book chapter](../../chapters/07-agent-based-models.html) · [Pluto notebook](../../notebook-exports/chapters/07-agent-based-models.html)
 
 ::: {.notes}
 The book develops the equations and exercises.  Use the companion notebook to

@@ -1,6 +1,6 @@
 ---
 title: "Interventions and optimization"
-course-unit: ch11-interventions-and-optimization
+course-unit: ch12-interventions-and-optimization
 status: complete
 ---
 
@@ -200,11 +200,11 @@ $$
 
 - [Optimization.jl](https://docs.sciml.ai/Optimization/stable/): solvers and
   differentiation backends.
-- [Parameter estimation](../../chapters/08-parameter-estimation.html): the same
+- [Parameter estimation](../../chapters/09-parameter-estimation.html): the same
   problem shape with a likelihood as the objective.
 - [Advanced optimal control](../../appendices/08-advanced-optimal-control.html):
   a control function of time, via InfiniteOpt and SDDP.
-- [Book chapter](../../chapters/11-interventions-and-optimization.html) and
+- [Book chapter](../../chapters/12-interventions-and-optimization.html) and
   [DiffEqCallbacks.jl](https://docs.sciml.ai/DiffEqCallbacks/stable/).
 
 ::: {.notes}

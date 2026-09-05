@@ -170,7 +170,7 @@ begin
     @assert all(isfinite, prediction12)
     @assert policy_reduction12_value >= -1e-8
     (
-        course_unit = "ch12-data-to-decision-capstone",
+        course_unit = "ch13-data-to-decision-capstone",
         status = "complete",
         data_source = data_source12,
         fitted_effective_rate = fitted12[1],

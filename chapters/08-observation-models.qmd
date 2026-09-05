@@ -1,12 +1,12 @@
 ---
-course-unit: ch07-observation-models
+course-unit: ch08-observation-models
 status: complete
 ---
 
-# Observation models and simulated data
+# Observation models and simulated data {#sec-observation-models}
 
 ::: {.callout-note appearance="simple"}
-**Workshop programme**: taught live on Day 2, Session 3. See the [full schedule](../workshop.qmd).
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
 :::
 
 ## Learning goals
@@ -21,8 +21,8 @@ reports. After working through it you should be able to
 - distinguish a process model from an observation model, and explain why
   fitting a model to case reports requires stating both. This is what you must
   be able to state before anyone can fit anything, and it is where
-  [Chapter 8](08-parameter-estimation.html) and
-  [Chapter 9](09-bayesian-inference.html) begin;
+  @sec-parameter-estimation and
+  @sec-bayesian-inference begin;
 - derive daily incidence from a cumulative-infection state and express it as the
   mean of a count distribution;
 - implement Poisson and negative-binomial observation models in Julia with
@@ -400,15 +400,15 @@ The two are distinct mechanisms with distinct remedies, and operational
 nowcasting systems estimate them separately.
 
 These simulated datasets are nonetheless the raw material for inference:
-[Chapter 8](08-parameter-estimation.html) estimates
+@sec-parameter-estimation estimates
 parameters from them by maximum likelihood, and
-[Chapter 9](09-bayesian-inference.html) does so with Bayesian methods. Both are
+@sec-bayesian-inference does so with Bayesian methods. Both are
 self-study chapters rather than workshop sessions; the workshop programme points
 instead at an external course dedicated to model fitting and inference.
 
 ## Exercises
 
-### Exercise 1 {#ch07-ex1}
+### Exercise 1 {#ch08-ex1}
 
 Using the baseline scenario and Method 1, generate case reports under a partial
 reporting fraction $\rho = 0.4$ with the Poisson observation model. Plot the
@@ -419,7 +419,7 @@ find the $\beta$ that reproduces the same peak *height* under full reporting, an
 compare that series with the reported one. Which features of the curve still tell
 the two scenarios apart, and what else would you need to know to rely on them?
 
-### Exercise 2 {#ch07-ex2}
+### Exercise 2 {#ch08-ex2}
 
 Fix the mean of the negative-binomial observation model to the latent incidence
 and vary the dispersion parameter over $r \in \{1, 5, 50, 500\}$. For each
@@ -432,6 +432,6 @@ comes near equidispersion.
 
 ## Companion materials
 
-- [Slides](../slides/chapters/07-observation-models.html)
-- [Pluto preview](../notebook-exports/chapters/07-observation-models.html)
-- [Pluto source](../notebooks/chapters/07-observation-models.jl)
+- [Slides](../slides/chapters/08-observation-models.html)
+- [Pluto preview](../notebook-exports/chapters/08-observation-models.html)
+- [Pluto source](../notebooks/chapters/08-observation-models.jl)

@@ -343,9 +343,138 @@ quantify that discrepancy, run ensembles of both and compare the mean,
 standard deviation, or full distribution of the peak $I$, as the chapter does
 for the jump process and the reaction-level SDE.
 
-### Agent-based models
+### Reaction networks and moment closure
 
 #### Solution to Exercise 1 {#solution-ch06-ex1}
+
+Adding a latent class is an edit to the network, not a rewrite of the dynamics:
+the two lowerings follow from the amended specification exactly as before.
+
+```{julia}
+#| label: sol-ch06-ex1
+using Catalyst
+using OrdinaryDiffEq
+using JumpProcesses
+using CairoMakie
+using StableRNGs
+using Statistics
+
+const N_seir = 1000
+const κ_seir = 0.05 * 10.0 / N_seir
+const γ_seir = 0.25
+const σ_seir = 0.5
+const seir_tspan = (0.0, 60.0)
+const seir_times = collect(0.0:0.5:60.0)
+
+seir_network = @reaction_network begin
+    κ, S + I --> E + I
+    σ, E --> I
+    γ, I --> R
+end
+
+seir_parameters = [:κ => κ_seir, :σ => σ_seir, :γ => γ_seir]
+seir_ode = solve(
+    ODEProblem(seir_network, [:S => 990.0, :E => 0.0, :I => 10.0, :R => 0.0],
+               seir_tspan, seir_parameters),
+    Tsit5(); saveat = seir_times)
+
+function simulate_seir(seed)
+    problem = JumpProblem(
+        seir_network, [:S => 990, :E => 0, :I => 10, :R => 0],
+        seir_tspan, seir_parameters;
+        aggregator = Direct(), rng = StableRNG(seed))
+    return Array(solve(problem, SSAStepper(); saveat = seir_times)(seir_times))
+end
+
+seir_ensemble = cat((simulate_seir(7000 + k) for k in 1:100)...; dims = 3)
+seir_mean = dropdims(mean(seir_ensemble; dims = 3), dims = 3)
+infectious_row = findfirst(==("I(t)"), string.(species(seir_network)))
+(ode_peak_time = seir_times[argmax(seir_ode[infectious_row, :])],
+ ensemble_peak_time = seir_times[argmax(seir_mean[infectious_row, :])])
+```
+
+```{julia}
+#| label: fig-sol-ch06-ex1
+#| fig-cap: "SEIR infectious class: the ODE lowering (dashed) against the mean of 100 jump trajectories (solid), both generated from one reaction network."
+figure = Figure(size = (720, 340))
+axis = Axis(figure[1, 1], xlabel = "Time", ylabel = "Infectious")
+lines!(axis, seir_times, seir_mean[infectious_row, :]; color = :grey25,
+       linewidth = 2, label = "Jump ensemble mean")
+lines!(axis, seir_times, seir_ode[infectious_row, :]; color = :steelblue,
+       linewidth = 2, linestyle = :dash, label = "ODE")
+axislegend(axis; position = :rt, framevisible = false)
+figure
+```
+
+The latent class delays and flattens the peak relative to the SIR model of
+@sec-reaction-networks. An infected individual now waits in $E$ for a mean
+$1/\sigma = 2$ days before becoming infectious, so the generation interval
+lengthens and the same $R_0$ is realised more slowly. The gap between the ODE
+and the ensemble mean persists for the reason given in @eq-ch06-unclosed: the
+transmission propensity is still bimolecular, so the ODE still discards
+$\operatorname{Cov}(S,I)$.
+
+#### Solution to Exercise 2 {#solution-ch06-ex2}
+
+Shrinking the population while holding the per-contact rates fixed makes the
+relative fluctuations larger, which is precisely where a normal closure is
+expected to struggle.
+
+```{julia}
+#| label: sol-ch06-ex2
+#| warning: false
+using MomentClosure
+
+function closure_versus_ensemble(population; trajectories = 200, seed0 = 8000)
+    κ_local = 0.05 * 10.0 / population
+    network = @reaction_network begin
+        κ, S + I --> 2I
+        γ, I --> R
+    end
+    parameters_local = [:κ => κ_local, :γ => 0.25]
+    S₀ = 0.99 * population
+    I₀ = 0.01 * population
+    span = (0.0, 40.0)
+    grid = collect(0.0:0.5:40.0)
+
+    raw = generate_raw_moment_eqs(network, 2)
+    closed = moment_closure(raw, "normal")
+    closure = solve(ODEProblem(closed, [S₀, I₀, 0.0], span, parameters_local),
+                    Tsit5(); saveat = grid)
+    names = string.(unknowns(closed.odes))
+    mean_series = closure[findfirst(==("μ₀₁₀(t)"), names), :]
+
+    function one_run(seed)
+        problem = JumpProblem(
+            network, [:S => round(Int, S₀), :I => round(Int, I₀), :R => 0],
+            span, parameters_local; aggregator = Direct(), rng = StableRNG(seed))
+        return Array(solve(problem, SSAStepper(); saveat = grid)(grid))
+    end
+    ensemble = cat((one_run(seed0 + k) for k in 1:trajectories)...; dims = 3)
+    ensemble_mean = dropdims(mean(ensemble; dims = 3), dims = 3)[2, :]
+
+    return (population = population,
+            max_absolute_gap = round(maximum(abs.(mean_series .- ensemble_mean)); digits = 3),
+            relative_to_population =
+                round(maximum(abs.(mean_series .- ensemble_mean)) / population; digits = 4))
+end
+
+[closure_versus_ensemble(1000), closure_versus_ensemble(100)]
+```
+
+The absolute gap is smaller at $N=100$ simply because every count is smaller;
+the gap *relative to the population* is what grows. The argument after
+@eq-ch06-unclosed explains the direction. The closure is exact except for the
+neglected third central moments, and the size of those relative to the first two
+scales roughly as $N^{-1/2}$: with fewer individuals the distribution of $I$ is
+further from normal, more skewed, and increasingly affected by trajectories that
+fade out early — which no symmetric closure can represent. At $N=100$ a
+noticeable fraction of runs go extinct before an outbreak takes off, dragging the
+ensemble mean below a closure that has no mechanism for extinction.
+
+### Agent-based models
+
+#### Solution to Exercise 1 {#solution-ch07-ex1}
 
 The grid model changes the contact assumption: a susceptible samples only
 agents in its Moore neighborhood.  `GridSpaceSingle` holds at most one agent
@@ -570,7 +699,7 @@ recovered in the limit of a large neighborhood, which is exactly the limit in
 which "uniform over the population" becomes a fair description of local
 mixing.
 
-#### Solution to Exercise 2 {#solution-ch06-ex2}
+#### Solution to Exercise 2 {#solution-ch07-ex2}
 
 The physical horizon is held at 30 time units, so each run uses
 `round(Int, 30 / Δt)` updates.  Each timestep gets its own seeded ensemble,

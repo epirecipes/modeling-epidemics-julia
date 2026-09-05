@@ -151,7 +151,7 @@ only one status at every recorded step.
 
 # ╔═╡ 9a1527c1-f05b-46cb-959a-b6502f0f0aef
 (
-    course_unit = "ch06-agent-based-models",
+    course_unit = "ch07-agent-based-models",
     status = "complete",
     controls = (; population, initial_infected, contact_rate, horizon),
 )

@@ -1,9 +1,9 @@
 ---
-course-unit: ch06-agent-based-models
+course-unit: ch07-agent-based-models
 status: complete
 ---
 
-# Agent-based models
+# Agent-based models {#sec-agent-based-models}
 
 ::: {.callout-note appearance="simple"}
 **Workshop programme**: taught live on Day 3, Session 2. See the [full schedule](../workshop.qmd).
@@ -332,7 +332,7 @@ its modeling rationale are described by Datseris, Vahdati, and DuBois
 
 ## Exercises
 
-### Exercise 1 {#ch06-ex1}
+### Exercise 1 {#ch07-ex1}
 
 Replace the no-space model with a spatial one, so that a susceptible can only
 contact its immediate neighbors. Use this specification, which keeps the
@@ -365,7 +365,7 @@ will help you check your explanation. Confirm that $I=0$ at the end of every
 run before calling the recovered count a final size; extend the horizon if
 necessary.
 
-### Exercise 2 {#ch06-ex2}
+### Exercise 2 {#ch07-ex2}
 
 Run the ABM with $\Delta t=0.2$, $0.1$, and $0.05$, over the same physical
 time span in each case. For each value, report two different statistics of
@@ -452,6 +452,6 @@ would count it twice.
 
 ## Companion materials
 
-- [Slides](../slides/chapters/06-agent-based-models.html)
-- [Pluto preview](../notebook-exports/chapters/06-agent-based-models.html)
-- [Pluto source](../notebooks/chapters/06-agent-based-models.jl)
+- [Slides](../slides/chapters/07-agent-based-models.html)
+- [Pluto preview](../notebook-exports/chapters/07-agent-based-models.html)
+- [Pluto source](../notebooks/chapters/07-agent-based-models.jl)

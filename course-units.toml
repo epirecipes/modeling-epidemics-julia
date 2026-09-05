@@ -106,6 +106,20 @@ sources = ["../sir-julia/tutorials/sde_stochasticdiffeq/sde_stochasticdiffeq.jmd
 
 [[units]]
 id = "ch06"
+slug = "reaction-networks"
+title = "Reaction networks and moment closure"
+kind = "core"
+status = "complete"
+track = "workshop"
+day = 2
+session = 3
+time_minutes = 90
+environment = "root"
+packages = ["Catalyst", "ModelingToolkit", "OrdinaryDiffEq", "StochasticDiffEq", "JumpProcesses", "MomentClosure", "StableRNGs", "CairoMakie"]
+sources = ["../sir-julia/tutorials/rn_mtk/rn_mtk.jmd", "../sir-julia/tutorials/momentclosure/momentclosure.jmd"]
+
+[[units]]
+id = "ch07"
 slug = "agent-based-models"
 title = "Agent-based models"
 kind = "core"
@@ -119,32 +133,29 @@ packages = ["Agents", "Distributions", "StableRNGs", "CairoMakie"]
 sources = ["../sir-julia/tutorials/abm/abm.jmd", "../sir-julia/tutorials/des_agentsjl/des_agentsjl.jmd", "../sir-julia/tutorials/abm_vector/abm_vector.jmd"]
 
 [[units]]
-id = "ch07"
+id = "ch08"
 slug = "observation-models"
 title = "Observation models and simulated data"
 kind = "core"
 status = "complete"
-track = "workshop"
-day = 2
-session = 3
-time_minutes = 90
+track = "self-study"
 environment = "root"
 packages = ["OrdinaryDiffEq", "DelayDiffEq", "DiffEqCallbacks", "Distributions", "StableRNGs", "CairoMakie"]
 sources = ["../sir-julia/tutorials/ode_simdata/ode_simdata.jmd"]
 
 [[units]]
-id = "ch08"
+id = "ch09"
 slug = "parameter-estimation"
 title = "Frequentist parameter estimation"
 kind = "core"
 status = "complete"
 track = "self-study"
-environment = "environments/ch08"
+environment = "environments/ch09"
 packages = ["ProfileLikelihood", "Optimization", "OptimizationOptimJL", "OrdinaryDiffEq", "CairoMakie"]
 sources = ["../sir-julia/tutorials/ode_profilelikelihood/ode_profilelikelihood.jmd", "../sir-julia/tutorials/ode_likelihoodintervals/ode_likelihoodintervals.jmd"]
 
 [[units]]
-id = "ch09"
+id = "ch10"
 slug = "bayesian-inference"
 title = "Bayesian inference"
 kind = "core"
@@ -155,7 +166,7 @@ packages = ["Turing", "MCMCChains", "SciMLSensitivity", "OrdinaryDiffEq", "Cairo
 sources = ["../sir-julia/tutorials/ode_turing/ode_turing.jmd", "../sir-julia/tutorials/function_map_turing/function_map_turing.jmd"]
 
 [[units]]
-id = "ch10"
+id = "ch11"
 slug = "sensitivity-and-identifiability"
 title = "Sensitivity and identifiability"
 kind = "core"
@@ -169,7 +180,7 @@ packages = ["SciMLSensitivity", "GlobalSensitivity", "StructuralIdentifiability"
 sources = ["../sir-julia/tutorials/ode_local_sensitivity/ode_local_sensitivity.jmd", "../sir-julia/tutorials/ode_global_sensitivity2/ode_global_sensitivity2.jmd", "../sir-julia/tutorials/ode_identifiability/ode_identifiability.jmd"]
 
 [[units]]
-id = "ch11"
+id = "ch12"
 slug = "interventions-and-optimization"
 title = "Interventions and optimization"
 kind = "core"
@@ -183,7 +194,7 @@ packages = ["OrdinaryDiffEq", "DiffEqCallbacks", "Optimization", "OptimizationOp
 sources = ["../sir-julia/tutorials/ode_lockdown/ode_lockdown.jmd", "../sir-julia/tutorials/ode_lockdown_optimization/ode_lockdown_optimization.jmd"]
 
 [[units]]
-id = "ch12"
+id = "ch13"
 slug = "data-to-decision-capstone"
 title = "Data-to-decision capstone"
 kind = "core"

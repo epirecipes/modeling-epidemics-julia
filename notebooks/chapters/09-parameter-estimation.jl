@@ -19,7 +19,7 @@ end
 # ╔═╡ e29bd1d0-fd18-47ca-9d85-d3b31ca4eaf5
 begin
     import Pkg
-    Pkg.activate(normpath(joinpath(@__DIR__, "..", "..", "environments", "ch08"));
+    Pkg.activate(normpath(joinpath(@__DIR__, "..", "..", "environments", "ch09"));
         io = devnull)
 end
 
@@ -39,8 +39,8 @@ end
 md"""
 # Frequentist parameter estimation
 
-Companion notebook for the `ch08-parameter-estimation` unit. It runs in the
-isolated `environments/ch08` project. The maximum-likelihood estimate (MLE) is
+Companion notebook for the `ch09-parameter-estimation` unit. It runs in the
+isolated `environments/ch09` project. The maximum-likelihood estimate (MLE) is
 computed once from simulated Poisson case reports; the sliders let you resimulate
 the data and slide a **candidate** transmission probability `β` to feel the shape
 of the likelihood around the optimum.
@@ -154,7 +154,7 @@ into profile-likelihood confidence intervals via Wilks' theorem.
 
 # ╔═╡ 4af6682f-0032-4756-8d18-bce2a03b7290
 (
-    course_unit = "ch08-parameter-estimation",
+    course_unit = "ch09-parameter-estimation",
     status = "complete",
     seed = seed,
     mle = (i₀ = round(θ̂[1]; digits = 4), β = round(θ̂[2]; digits = 4)),

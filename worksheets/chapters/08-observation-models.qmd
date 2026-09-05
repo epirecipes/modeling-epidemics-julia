@@ -1,6 +1,6 @@
 ---
 title: "Worksheet — Observation models and simulated data"
-course-unit: ch07-observation-models
+course-unit: ch08-observation-models
 artifact: worksheet
 status: draft
 ---
@@ -9,7 +9,7 @@ status: draft
 
 **~45 minutes**
 
-The [chapter](../../chapters/07-observation-models.qmd) separated the *process*,
+The [chapter](../../chapters/08-observation-models.qmd) separated the *process*,
 the epidemic itself, from the *observation*, the counts a surveillance system
 produces. Here you run the same baseline epidemic through three increasingly
 uncomfortable surveillance systems: one that misses most cases, one whose counts
@@ -480,7 +480,7 @@ Nothing here is used in this worksheet; it only warms up the package cache.
 In a terminal:
 
 ```bash
-quarto render worksheets/chapters/07-observation-models.qmd
+quarto render worksheets/chapters/08-observation-models.qmd
 ```
 
 A clean render means every cell ran top to bottom in a fresh session.
@@ -491,11 +491,11 @@ A clean render means every cell ran top to bottom in a fresh session.
 
 Nothing here is assigned. The whole project stays available to you afterwards.
 
-- [The chapter](../../chapters/07-observation-models.qmd): three ways to get
+- [The chapter](../../chapters/08-observation-models.qmd): three ways to get
   daily incidence out of a solver, and why differencing the cumulative state is
   the one to trust.
-- [The Pluto notebook](../../notebooks/chapters/07-observation-models.jl):
+- [The Pluto notebook](../../notebooks/chapters/08-observation-models.jl):
   sliders for the reporting fraction and the dispersion.
-- [Frequentist parameter estimation](../../chapters/08-parameter-estimation.qmd)
-  and [Bayesian inference](../../chapters/09-bayesian-inference.qmd): the
+- [Frequentist parameter estimation](../../chapters/09-parameter-estimation.qmd)
+  and [Bayesian inference](../../chapters/10-bayesian-inference.qmd): the
   self-study chapters that take data like this and recover the parameters.

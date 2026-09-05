@@ -12,7 +12,7 @@ status: complete
 ## Learning goals
 
 Stochastic compartmental models are usually studied by simulating many
-trajectories (Chapter 4). The *finite-state projection* (FSP) method takes the
+trajectories (@sec-jump-processes). The *finite-state projection* (FSP) method takes the
 opposite route: it solves directly for the **probability distribution** over
 states by integrating a truncated version of the chemical master equation
 [@munsky2006]. After this appendix you should be able to
@@ -334,7 +334,7 @@ end
 - **Best for small populations or few species.** FSP shines for early-outbreak
   and small-population questions where trajectory-level stochasticity matters and
   the state space stays tractable; for large populations, ensemble simulation
-  (Chapter 4) or moment/diffusion approximations (Chapter 5) are preferable.
+  (@sec-jump-processes) or moment/diffusion approximations (@sec-stochastic-differential-equations) are preferable.
 
 Official documentation:
 [FiniteStateProjection.jl](https://docs.sciml.ai/FiniteStateProjection/stable/),

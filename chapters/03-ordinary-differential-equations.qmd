@@ -164,7 +164,7 @@ This course writes plain `f(du, u, p, t)` kernels almost everywhere, because
 that is what every solver ultimately calls and it is the smaller idea. The
 symbolic form earns its place when a tool has to reason about the structure of
 the model rather than about one trajectory, as in
-[Sensitivity and identifiability](10-sensitivity-and-identifiability.html) and
+[Sensitivity and identifiability](11-sensitivity-and-identifiability.html) and
 the [model-composition appendix](../appendices/09-model-composition.html).
 :::
 

@@ -1,11 +1,11 @@
 ---
-course-unit: ch08-parameter-estimation
+course-unit: ch09-parameter-estimation
 status: complete
 julia:
-  exeflags: ["--project=../environments/ch08"]
+  exeflags: ["--project=../environments/ch09"]
 ---
 
-# Frequentist parameter estimation
+# Frequentist parameter estimation {#sec-parameter-estimation}
 
 ::: {.callout-note appearance="simple"}
 **Self-study**: not taught at the workshop, but complete and ready to use on your own.
@@ -13,7 +13,7 @@ julia:
 
 ## Learning goals
 
-Chapter 7 produced simulated case reports from a known process. We now reverse
+@sec-observation-models produced simulated case reports from a known process. We now reverse
 the arrow: given only the reports, what can we say about the parameters that
 generated them? This chapter takes the *frequentist* view, in which parameters
 are fixed unknowns and uncertainty is expressed through the sampling behaviour of
@@ -29,7 +29,7 @@ estimators. By the end you should be able to
   profile.
 
 ::: {.callout-note}
-This chapter runs in the isolated environment `environments/ch08`, pinned via
+This chapter runs in the isolated environment `environments/ch09`, pinned via
 the document's `julia.exeflags`. That environment carries a mutually compatible
 set of `ProfileLikelihood`, `Optimization`, and `OrdinaryDiffEq` versions, so
 the model kernel is defined locally rather than imported from the course
@@ -282,7 +282,7 @@ distribution.
 
 ## Exercises
 
-### Exercise 1 {#ch08-ex1}
+### Exercise 1 {#ch09-ex1}
 
 Re-simulate the data with a different `StableRNG` seed and re-fit the model.
 Repeat this for 50 seeds, collecting the MLE of $\beta$ each time. Plot the
@@ -290,7 +290,7 @@ distribution of estimates and report the fraction of the 50 profile-likelihood
 intervals for $\beta$ that contain the true value $0.05$. Comment on whether the
 empirical coverage is close to the nominal $95\%$.
 
-### Exercise 2 {#ch08-ex2}
+### Exercise 2 {#ch09-ex2}
 
 Extend the parameter vector to also estimate the recovery rate $\gamma$ (add it
 to `θ`, the log-likelihood, and the bounds). Compute the profile likelihood for
@@ -300,6 +300,6 @@ about the information the incidence data carry about $\gamma$.
 
 ## Companion materials
 
-- [Slides](../slides/chapters/08-parameter-estimation.html)
-- [Pluto preview](../notebook-exports/chapters/08-parameter-estimation.html)
-- [Pluto source](../notebooks/chapters/08-parameter-estimation.jl)
+- [Slides](../slides/chapters/09-parameter-estimation.html)
+- [Pluto preview](../notebook-exports/chapters/09-parameter-estimation.html)
+- [Pluto source](../notebooks/chapters/09-parameter-estimation.jl)

@@ -1,5 +1,5 @@
 ---
-course-unit: ch10-sensitivity-and-identifiability
+course-unit: ch11-sensitivity-and-identifiability
 status: complete
 ---
 
@@ -408,14 +408,14 @@ inspect and rerun.
 
 ## Exercises
 
-### Exercise 1 {#ch10-ex1}
+### Exercise 1 {#ch11-ex1}
 
 Change `peak_infectious` to return the final removed count instead of the
 infectious peak. Re-run the Sobol calculation with the same bounds, compare
 the first-order and total indices, and explain why the ranking can differ
 between a transient output and a cumulative output.
 
-### Exercise 2 {#ch10-ex2}
+### Exercise 2 {#ch11-ex2}
 
 Extend `identifiability_system` with an observable `n(t) ~ S + I + R`, keeping
 the generic unknown initial conditions of the section above — the total is
@@ -426,6 +426,6 @@ separate contact rate credible.
 
 ## Companion materials
 
-- [Slides](../slides/chapters/10-sensitivity-and-identifiability.html)
-- [Pluto preview](../notebook-exports/chapters/10-sensitivity-and-identifiability.html)
-- [Pluto source](../notebooks/chapters/10-sensitivity-and-identifiability.jl)
+- [Slides](../slides/chapters/11-sensitivity-and-identifiability.html)
+- [Pluto preview](../notebook-exports/chapters/11-sensitivity-and-identifiability.html)
+- [Pluto source](../notebooks/chapters/11-sensitivity-and-identifiability.jl)

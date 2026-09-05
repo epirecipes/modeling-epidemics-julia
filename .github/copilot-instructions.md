@@ -14,7 +14,7 @@
 - Include a model cheat sheet summarizing assumptions, mathematical form, state/time characteristics, principal Julia types and constructors, solver APIs, strengths, and limitations.
 - Put solutions to all chapter exercises in a dedicated appendix. Exercise and solution identifiers must match so they can be cross-referenced.
 - Keep course source, generated output, and the sibling `../sir-julia/` reference clearly separated. Generated Quarto output is never the source of truth.
-- `course-units.toml` is the machine-readable curriculum map for all 24 teaching units. Keep each unit's ID, slug, status, source references, and environment synchronized with its book page, slide deck, and Pluto notebook.
+- `course-units.toml` is the machine-readable curriculum map for all 25 teaching units. Keep each unit's ID, slug, status, source references, and environment synchronized with its book page, slide deck, and Pluto notebook.
 - The root Quarto project builds the book and invokes the nested `slides/` Quarto project as a post-render step. Do not move slides into the book chapter list.
 
 Order chapters by conceptual prerequisites: introductory modeling theory and Julia workflow; discrete-time models; ordinary differential equations; continuous-time Markov chains and jump processes; stochastic differential equations; agent-based models; observation models and simulated data; parameter estimation and Bayesian inference; sensitivity and identifiability; interventions and optimal control; then advanced or composed models.
@@ -41,7 +41,7 @@ Figures must be rendered from code, have labels and captions, and use determinis
 - Show at least one numerical or structural validation appropriate to the model, such as conservation of population, nonnegative states, agreement with an analytic result, convergence under timestep refinement, or comparison with a simpler chapter.
 - Prefer maintained packages and current APIs from the SciML and Julia ecosystems. Keep pedagogical model logic visible instead of hiding it behind convenience abstractions.
 - Use one course-level Julia environment for Quarto rendering and align Pluto dependencies with it. Declare every direct dependency and keep versions reproducible; avoid chapter-specific environments unless incompatible dependencies make isolation necessary.
-- Pluto notebooks activate the cloned repository's root environment rather than embedding 24 independent environments. Chapter 8 is the documented exception: current `ProfileLikelihood.jl` compatibility requires `environments/ch08/`.
+- Pluto notebooks activate the cloned repository's root environment rather than embedding 25 independent environments. Chapter 9 is the documented exception: current `ProfileLikelihood.jl` compatibility requires `environments/ch09/`.
 - Cite primary papers for modeling methods and official package documentation for APIs. Add sources to the course bibliography rather than leaving raw research links in prose.
 
 ## Rendering and validation
@@ -51,7 +51,7 @@ Configure the course so these commands work from the workspace root:
 ```bash
 # Restore the course environment.
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
-julia --project=environments/ch08 -e 'using Pkg; Pkg.instantiate()'
+julia --project=environments/ch09 -e 'using Pkg; Pkg.instantiate()'
 
 # Render the complete Quarto project.
 quarto render

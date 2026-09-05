@@ -38,7 +38,7 @@ end
 md"""
 # Bayesian inference
 
-Companion notebook for the `ch09-bayesian-inference` unit. NUTS is run **once**
+Companion notebook for the `ch10-bayesian-inference` unit. NUTS is run **once**
 with lightweight, reproducible settings (300 samples × 2 chains). The sliders
 then explore the posterior *predictive* distribution without re-sampling: change
 the credible level and the number of posterior draws used to build the band.
@@ -160,7 +160,7 @@ and marginal densities as convergence diagnostics.
 
 # ╔═╡ ff1c100b-b3dc-4075-ba86-7a12462b1a85
 (
-    course_unit = "ch09-bayesian-inference",
+    course_unit = "ch10-bayesian-inference",
     status = "complete",
     cred_level = cred_level,
     n_draws = n_draws,

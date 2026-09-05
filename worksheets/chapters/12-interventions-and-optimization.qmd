@@ -1,6 +1,6 @@
 ---
 title: "Worksheet — Interventions and optimization"
-course-unit: ch11-interventions-and-optimization
+course-unit: ch12-interventions-and-optimization
 artifact: worksheet
 status: draft
 ---
@@ -9,7 +9,7 @@ status: draft
 
 **~45 minutes**
 
-The [chapter](../../chapters/11-interventions-and-optimization.qmd) separated two
+The [chapter](../../chapters/12-interventions-and-optimization.qmd) separated two
 layers: a **scenario**, which simulates a policy you have already chosen, and an
 **optimization**, which searches over policies against an explicit objective.
 Here you build both, and then discover that the second layer has a question
@@ -563,7 +563,7 @@ fig
 In a terminal:
 
 ```bash
-quarto render worksheets/chapters/11-interventions-and-optimization.qmd
+quarto render worksheets/chapters/12-interventions-and-optimization.qmd
 ```
 
 A clean render means every cell ran top to bottom in a fresh session.
@@ -574,10 +574,10 @@ A clean render means every cell ran top to bottom in a fresh session.
 
 Nothing here is assigned. The whole project stays available to you afterwards.
 
-- [The chapter](../../chapters/11-interventions-and-optimization.qmd): the same
+- [The chapter](../../chapters/12-interventions-and-optimization.qmd): the same
   callback and the same four-piece optimisation, with the scenario and
   optimisation layers separated explicitly.
-- [The Pluto notebook](../../notebooks/chapters/11-interventions-and-optimization.jl):
+- [The Pluto notebook](../../notebooks/chapters/12-interventions-and-optimization.jl):
   sliders over the start time and the reduction.
 - [Advanced optimal control](../../appendices/08-advanced-optimal-control.qmd):
   what replaces a single start time when the decision variable is a whole

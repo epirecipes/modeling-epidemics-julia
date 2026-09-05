@@ -1,9 +1,9 @@
 ---
-course-unit: ch09-bayesian-inference
+course-unit: ch10-bayesian-inference
 status: complete
 ---
 
-# Bayesian inference
+# Bayesian inference {#sec-bayesian-inference}
 
 ::: {.callout-note appearance="simple"}
 **Self-study**: not taught at the workshop, but complete and ready to use on your own.
@@ -11,7 +11,7 @@ status: complete
 
 ## Learning goals
 
-Chapter 8 treated the parameters as fixed unknowns and summarised uncertainty
+@sec-parameter-estimation treated the parameters as fixed unknowns and summarised uncertainty
 through the sampling distribution of an estimator. The Bayesian approach instead
 treats the parameters as random variables and updates a **prior** belief into a
 **posterior** using the data [@gelman2013]. This chapter fits the same SIR model
@@ -31,7 +31,7 @@ to the same kind of simulated case reports, but with
 
 The process and observation models are unchanged from the previous two chapters:
 a deterministic SIR ODE with cumulative incidence @eq-sir-cumulative and a
-Poisson observation model @eq-poisson with full reporting. As in Chapter 8 we
+Poisson observation model @eq-poisson with full reporting. As in @sec-parameter-estimation we
 infer $\theta = (i_0, \beta)$ with $c=10$ and $\gamma=0.25$ fixed. The difference
 is entirely in the treatment of uncertainty.
 
@@ -90,7 +90,7 @@ colors = (data = :grey20, post = :steelblue, band = (:steelblue, 0.3), truth = :
 ### Process kernel and simulated data
 
 We reuse the deterministic kernel and the Poisson observation model to generate a
-reproducible dataset, exactly as in Chapter 8.
+reproducible dataset, exactly as in @sec-parameter-estimation.
 
 ```{julia}
 #| label: data
@@ -265,7 +265,7 @@ parameters can let the sampler wander into regions where the ODE misbehaves,
 which is why we guarded the solve and floored the rate. NUTS is far more
 efficient than random-walk MCMC, but each leapfrog step re-solves the ODE and
 differentiates through it, so the method is more expensive than the
-optimisation of Chapter 8 — the small sample counts here favour speed over the
+optimisation of @sec-parameter-estimation — the small sample counts here favour speed over the
 precision a production analysis would demand. The non-identifiability of $\beta$
 and $c$ noted previously persists: the posterior for $\beta$ is conditional on
 the assumed contact rate. Finally, the Poisson likelihood still assumes
@@ -276,7 +276,7 @@ predictive distribution, which is its central practical advantage.
 
 ## Exercises
 
-### Exercise 1 {#ch09-ex1}
+### Exercise 1 {#ch10-ex1}
 
 Replace the Beta priors in @eq-priors with uniform priors
 $i_0 \sim \operatorname{Uniform}(0, 1)$ and $\beta \sim \operatorname{Uniform}(0, 1)$
@@ -285,17 +285,17 @@ width of the $95\%$ posterior predictive band with the Beta-prior results.
 Discuss whether the data are informative enough that the choice of prior barely
 matters here.
 
-### Exercise 2 {#ch09-ex2}
+### Exercise 2 {#ch10-ex2}
 
 Add the recovery rate $\gamma$ as a third estimated parameter with prior
 $\gamma \sim \operatorname{Beta}(2, 8)$, updating the model accordingly. Report
 the posterior summaries and the pairwise posterior correlation between $\beta$
 and $\gamma$ (for example from `Array(chain[:, :β, :])` and the corresponding
 $\gamma$ draws). Relate any strong correlation you find to the identifiability
-discussion in this chapter and in Chapter 8.
+discussion in this chapter and in @sec-parameter-estimation.
 
 ## Companion materials
 
-- [Slides](../slides/chapters/09-bayesian-inference.html)
-- [Pluto preview](../notebook-exports/chapters/09-bayesian-inference.html)
-- [Pluto source](../notebooks/chapters/09-bayesian-inference.jl)
+- [Slides](../slides/chapters/10-bayesian-inference.html)
+- [Pluto preview](../notebook-exports/chapters/10-bayesian-inference.html)
+- [Pluto source](../notebooks/chapters/10-bayesian-inference.jl)
