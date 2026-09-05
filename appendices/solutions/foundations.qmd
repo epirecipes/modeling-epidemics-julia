@@ -646,9 +646,19 @@ function endemic_summary(child_contact; n = 80, life = 80.0, γ = 0.2)
     ages = range(Δa/2, life - Δa/2, length = n)
     C = [2.0 * ((a < 15 && a′ < 15) ? child_contact : 0.3) for a in ages, a′ in ages]
     p = (Δa = Δa, n = n, C = C, γ = γ, births = (N_sol/life)*Δa, N = N_sol)
-    u₀ = zeros(3n); u₀[1:n] .= N_sol/life; u₀[n+1] = 1.0
-    sol = solve(ODEProblem(age_structured_solution!, u₀, (0.0, 600.0), p), Tsit5();
-                saveat = 10.0, abstol = 1e-9, reltol = 1e-9)
+    # Seed near the endemic profile, as the chapter does, so the run measures the
+    # equilibrium rather than a transient from an all-susceptible start.
+    density = N_sol/life
+    λ₀ = 1/16.0
+    u₀ = zeros(3n)
+    for (j, a) in enumerate(ages)
+        s = exp(-λ₀*a)
+        u₀[j] = density*s
+        u₀[n+j] = density*s*λ₀/γ
+        u₀[2n+j] = density*(1 - s) - u₀[n+j]
+    end
+    sol = solve(ODEProblem(age_structured_solution!, u₀, (0.0, 300.0), p), Tsit5();
+                saveat = 5.0, abstol = 1e-9, reltol = 1e-9)
     final = sol.u[end]; infectious = final[n+1:2n]
     return (child_contact = child_contact,
             population = round(sum(final)*Δa; digits = 3),

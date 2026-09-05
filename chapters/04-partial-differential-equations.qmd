@@ -216,18 +216,31 @@ end
 const life_expectancy = 80.0
 
 function solve_age_structured(; n = 80, child_contact = 1.2, other_contact = 0.3,
-                                γ = 0.2, horizon = 400.0)
+                                γ = 0.2, horizon = 200.0, mean_age_guess = 16.0)
     Δa = life_expectancy/n
     ages = range(Δa/2, life_expectancy - Δa/2, length = n)
     C = [2.0 * ((a < 15 && a′ < 15) ? child_contact : other_contact)
          for a in ages, a′ in ages]
     births = (N/life_expectancy) * Δa
     p = (Δa = Δa, n = n, C = C, γ = γ, births = births, N = N)
+
+    # Start near the endemic age profile rather than with everyone susceptible.
+    # At equilibrium a susceptible survives infection-free with probability
+    # exp(-λa), and the classical approximation λ ≈ 1/A relates that to the mean
+    # age at infection A. Seeding this way removes a large opening epidemic that
+    # is a transient of the initial condition, not a feature of the model.
+    density = N/life_expectancy
+    λ₀ = 1/mean_age_guess
     u₀ = zeros(3n)
-    u₀[1:n] .= N/life_expectancy                    # rectangular age distribution
-    u₀[n+1] = 1.0                                   # one infected infant
+    for (j, a) in enumerate(ages)
+        susceptible_fraction = exp(-λ₀*a)
+        u₀[j]      = density * susceptible_fraction
+        u₀[n+j]    = density * susceptible_fraction * λ₀/γ      # quasi-steady I ≈ λS/γ
+        u₀[2n+j]   = density * (1 - susceptible_fraction) - u₀[n+j]
+    end
+
     solution = solve(ODEProblem(age_structured!, u₀, (0.0, horizon), p), Tsit5();
-                     saveat = 5.0, abstol = 1e-9, reltol = 1e-9)
+                     saveat = 2.0, abstol = 1e-9, reltol = 1e-9)
     final = solution.u[end]
     infectious = final[n+1:2n]
     return (; solution, ages, Δa, n,
@@ -245,6 +258,15 @@ structured = solve_age_structured()
 The population settles at exactly $N$: births balance the flux ageing out at
 $a_{\max}$. The mean age at infection is the classical summary of an endemic
 childhood infection, and it falls as transmission rises.
+
+The initial condition is worth a second look. Starting with everyone susceptible
+is the obvious choice and a poor one: the model then burns through a full
+epidemic before settling, taking roughly four times as long to reach equilibrium
+and passing through a peak several times the endemic level. Since the endemic
+state is what we want to show, we instead seed the age profile that theory
+predicts, using $\lambda \approx 1/A$ from the same classical approximation the
+model is about to illustrate. The equilibrium reached is identical either way —
+only the transient changes.
 
 ## Validation
 
