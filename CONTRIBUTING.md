@@ -43,7 +43,7 @@ which needs a package that conflicts with the rest of the course:
 
 ```bash
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
-julia --project=environments/ch09 -e 'using Pkg; Pkg.instantiate()'
+julia --project=environments/ch10 -e 'using Pkg; Pkg.instantiate()'
 ```
 
 ## The rule that catches people first

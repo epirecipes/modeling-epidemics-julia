@@ -1,0 +1,219 @@
+---
+title: "Worksheet — Reaction networks and moment closure"
+course-unit: ch07-reaction-networks
+artifact: worksheet
+status: draft
+---
+
+# Worksheet: change the network, not the model
+
+**~45 minutes**
+
+The [chapter](../../chapters/07-reaction-networks.qmd) made one point: if you
+specify the *flows*, every lowering follows. This worksheet tests that claim by
+making you change the network and watching three models change with it. Then it
+pushes the moment closure until it breaks, which is the part worth remembering.
+
+**How to use this file.** Run cells one at a time with `Ctrl+Shift+Enter`. Cells
+marked `# TODO` have a line or two for you to complete; everything else runs as
+given. Each part ends with `✓` / `✗` lines that check your answer; a `✗` is
+information, not failure, and the collapsed hint below it will get you moving.
+An instructor is circulating; ask early rather than staying stuck.
+
+**Parts A and B are the session.** **Part C** goes further if you get there; not
+reaching it is fine. Worked solutions are posted at the end of each day. Run
+`git pull` to collect them.
+
+```{julia}
+using Catalyst
+using OrdinaryDiffEq
+using JumpProcesses
+using MomentClosure
+using CairoMakie
+using StableRNGs
+using Statistics
+
+const N = 1000
+const κ = 0.05 * 10.0 / N
+const γ = 0.25
+const tspan = (0.0, 40.0)
+const times = collect(0.0:0.5:40.0)
+nothing
+```
+
+## Part A — one network, three models
+
+The SIR network from the chapter. Note that nothing here says "differential
+equation" or "jump process": it says which events happen and how fast.
+
+```{julia}
+sir_network = @reaction_network begin
+    κ, S + I --> 2I
+    γ, I --> R
+end
+```
+
+Generate the ODE lowering. The parameters are passed by name, and the initial
+condition is floating point because the ODE state is continuous.
+
+```{julia}
+parameter_map = [:κ => κ, :γ => γ]
+ode_solution = solve(
+    ODEProblem(sir_network, [:S => 990.0, :I => 10.0, :R => 0.0], tspan, parameter_map),
+    Tsit5(); saveat = times)
+round(maximum(ode_solution[2, :]); digits = 2)
+```
+
+Now the jump lowering, from the *same* network. The initial condition is integer
+because a CTMC counts individuals.
+
+```{julia}
+# TODO: build a JumpProblem from `sir_network` with integer initial conditions
+# [:S => 990, :I => 10, :R => 0], aggregator = Direct(), and
+# rng = StableRNG(11), then solve it with SSAStepper() saving at `times`.
+jump_solution = missing
+```
+
+```{julia}
+if jump_solution === missing
+    println("✗ not attempted yet")
+else
+    peak = maximum(jump_solution[2, :])
+    conserved = all(sum(Array(jump_solution(times)); dims = 1) .== N)
+    println(conserved ? "✓ population conserved exactly" : "✗ population not conserved")
+    println("  jump peak infectious = ", peak,
+            "  |  ODE peak = ", round(maximum(ode_solution[2, :]); digits = 2))
+end
+```
+
+::: {.callout-tip collapse="true"}
+## Hint
+
+`JumpProblem(sir_network, u₀, tspan, parameter_map; aggregator = Direct(), rng = StableRNG(11))`
+then `solve(problem, SSAStepper(); saveat = times)`. The constructor takes the
+network directly — there is no intermediate `DiscreteProblem` to build.
+:::
+
+## Part B — add a flow
+
+Waning immunity returns recovered individuals to susceptible: $R \to S$ at rate
+$\omega = 0.02$. This is one extra line in the network. Nothing else about the
+model needs rewriting — that is the whole point.
+
+```{julia}
+# TODO: define `sirs_network` as the SIR network plus a waning reaction
+# `ω, R --> S`. Remember to add :ω to the parameter map below.
+sirs_network = missing
+sirs_parameters = [:κ => κ, :γ => γ, :ω => 0.02]
+```
+
+```{julia}
+if sirs_network === missing
+    println("✗ not attempted yet")
+else
+    n_reactions = length(reactions(sirs_network))
+    sirs_ode = solve(
+        ODEProblem(sirs_network, [:S => 990.0, :I => 10.0, :R => 0.0], (0.0, 200.0), sirs_parameters),
+        Tsit5(); saveat = 0.0:1.0:200.0)
+    endemic_I = sirs_ode[2, end]
+    println(n_reactions == 3 ? "✓ three reactions" : "✗ expected 3 reactions, got $(n_reactions)")
+    println(endemic_I > 1 ? "✓ settles to an endemic level, I(200) ≈ $(round(endemic_I; digits = 1))"
+                          : "✗ infection died out; check the waning rate")
+end
+```
+
+::: {.callout-tip collapse="true"}
+## Hint
+
+```julia
+sirs_network = @reaction_network begin
+    κ, S + I --> 2I
+    γ, I --> R
+    ω, R --> S
+end
+```
+
+The SIR model always ends with $I = 0$; adding waning immunity replenishes the
+susceptible pool, so the model can instead approach an endemic equilibrium.
+:::
+
+Now confirm the claim that lowerings come for free: build the *jump* version of
+the waning model without writing any new dynamics.
+
+```{julia}
+if sirs_network !== missing
+    sirs_jump = solve(
+        JumpProblem(sirs_network, [:S => 990, :I => 10, :R => 0], (0.0, 200.0),
+                    sirs_parameters; aggregator = Direct(), rng = StableRNG(12)),
+        SSAStepper(); saveat = 0.0:1.0:200.0)
+    println("✓ jump lowering of the same network, final state = ", sirs_jump.u[end])
+end
+```
+
+## Part C — break the closure
+
+The chapter's normal closure matched a 200-run ensemble well at $N = 1000$. Find
+where it stops working.
+
+```{julia}
+function closure_gap(population; trajectories = 100, seed0 = 500)
+    κ_local = 0.05 * 10.0 / population
+    parameters_local = [:κ => κ_local, :γ => γ]
+    S₀ = round(Int, 0.99 * population)
+    I₀ = max(round(Int, 0.01 * population), 1)
+
+    raw = generate_raw_moment_eqs(sir_network, 2)
+    closed = moment_closure(raw, "normal")
+    solution = solve(ODEProblem(closed, [Float64(S₀), Float64(I₀), 0.0], tspan, parameters_local),
+                     Tsit5(); saveat = times)
+    names = string.(unknowns(closed.odes))
+    closure_mean = solution[findfirst(==("μ₀₁₀(t)"), names), :]
+
+    function one_run(seed)
+        problem = JumpProblem(sir_network, [:S => S₀, :I => I₀, :R => 0], tspan,
+                              parameters_local; aggregator = Direct(), rng = StableRNG(seed))
+        return Array(solve(problem, SSAStepper(); saveat = times)(times))
+    end
+    ensemble = cat((one_run(seed0 + k) for k in 1:trajectories)...; dims = 3)
+    ensemble_mean = dropdims(mean(ensemble; dims = 3), dims = 3)[2, :]
+    extinct = mean(ensemble[2, end, :] .== 0)
+    return (; population,
+            relative_gap = maximum(abs.(closure_mean .- ensemble_mean)) / population,
+            extinct)
+end
+nothing
+```
+
+```{julia}
+# TODO: call `closure_gap` for several population sizes, for example
+# 1000, 500, 200 and 100, and collect the results.
+gaps = missing
+```
+
+```{julia}
+if gaps === missing
+    println("✗ not attempted yet")
+else
+    for g in gaps
+        println("N = ", lpad(g.population, 5),
+                "  relative gap = ", round(g.relative_gap; digits = 4),
+                "  extinct fraction = ", round(g.extinct; digits = 3))
+    end
+    println("\n✓ compare the two columns: the closure degrades as extinction becomes common")
+end
+```
+
+::: {.callout-tip collapse="true"}
+## Hint
+
+`gaps = [closure_gap(n) for n in (1000, 500, 200, 100)]`.
+
+The relative gap should grow as the population shrinks. Look at the extinction
+column alongside it: a normal closure is symmetric and has no way to represent a
+distribution with an atom of probability at zero, which is what extinction is.
+:::
+
+**Discussion.** Moment closure has no refinement parameter — you cannot halve a
+step size and expect convergence. The only honest check is comparison against
+simulation, which is the thing closure was meant to avoid. What does that imply
+about using closure for a model you cannot afford to simulate even once?

@@ -1,0 +1,152 @@
+---
+title: "Frequentist parameter estimation"
+course-unit: ch10-parameter-estimation
+status: complete
+julia:
+  exeflags: ["--project=../../environments/ch10"]
+---
+
+## Why this unit matters
+
+- The observation models chapter produced case reports from a **known** process.
+- Now reverse the arrow: given only the reports, what are the parameters?
+- The **frequentist** view: parameters are fixed unknowns; uncertainty is the
+  sampling behaviour of estimators.
+
+::: {.notes}
+This deck runs in the isolated environment `environments/ch10`, pinned via the
+document's `julia.exeflags`, which carries mutually compatible
+`ProfileLikelihood`, `Optimization`, and `OrdinaryDiffEq` versions.
+:::
+
+## Model and likelihood
+
+Deterministic SIR ODE + Poisson observations, estimating
+$\theta=(i_0,\beta)$ with $c=10,\gamma=0.25$ fixed. Model incidence
+$x_t(\theta)$ gives the Poisson log-likelihood
+
+$$
+\ell(\theta)=\sum_{t=1}^{n}\big[y_t\log x_t(\theta)-x_t(\theta)-\log(y_t!)\big].
+$$
+
+Profile out nuisance parameters and use Wilks' theorem for intervals:
+
+$$
+\ell_p(\beta)=\max_{i_0}\ell(i_0,\beta),\qquad
+\text{95\% CI}:\ \ell_p(\beta)\ge\ell(\hat\theta)-1.92.
+$$
+
+::: {.notes}
+The threshold $1.92=\tfrac12\chi^2_{1,0.95}$ is the Venzon–Moolgavkar
+construction implemented by `ProfileLikelihood.jl`.
+:::
+
+## Fitting: MLE and profile intervals
+
+```{julia}
+#| label: ch08-fit
+#| output: false
+using OrdinaryDiffEq, ProfileLikelihood, Optimization, OptimizationOptimJL
+using Distributions, StableRNGs, DataFrames
+
+function sir_ode08!(du, u, p, t)
+    S, I, R, C = u
+    β, c, γ = p
+    N = S + I + R
+    infection = β * c * I / N * S
+    du[1] = -infection
+    du[2] = infection - γ * I
+    du[3] = γ * I
+    du[4] = infection
+end
+
+δt, tmax = 1.0, 40.0
+u0 = [990.0, 10.0, 0.0, 0.0]
+p = [0.05, 10.0, 0.25]
+prob08 = ODEProblem(sir_ode08!, u0, (0.0, tmax), p)
+sol = solve(prob08, Tsit5(); saveat = δt)
+incidence = Array(sol)[4, 2:end] .- Array(sol)[4, 1:(end - 1)]
+data = rand.(StableRNG(20240607), Poisson.(incidence))
+
+function loglik(θ, data, integrator)
+    i₀, β = θ
+    integrator.p[1] = β; integrator.p[2] = 10.0; integrator.p[3] = 0.25
+    I = i₀ * 1000.0
+    reinit!(integrator, [1000.0 - I, I, 0.0, 0.0])
+    solve!(integrator)
+    C = Array(integrator.sol)[4, :]
+    X = C[2:end] .- C[1:(end - 1)]
+    any(X .<= 0) && return -Inf
+    sum(logpdf.(Poisson.(X), data))
+end
+
+prob = LikelihoodProblem(loglik, [0.01, 0.1], sir_ode08!, u0, (0.0, tmax);
+    syms = [:i₀, :β], data = data, ode_parameters = p,
+    ode_kwargs = (verbose = false, saveat = δt),
+    f_kwargs = (adtype = Optimization.AutoFiniteDiff(),),
+    prob_kwargs = (lb = [0.0, 0.0], ub = [1.0, 1.0]), ode_alg = Tsit5())
+
+mle_sol = mle(prob, NelderMead())
+θ̂ = get_mle(mle_sol)
+prof = profile(prob, mle_sol; alg = NelderMead(), parallel = false)
+ci = get_confidence_intervals(prof)
+```
+
+```{julia}
+#| label: ch08-results
+DataFrame(parameter = ["i₀", "β"], truth = [0.01, 0.05], mle = round.(θ̂; digits = 4),
+    ci_lower = [round(ci[i][1]; digits = 4) for i in 1:2],
+    ci_upper = [round(ci[i][2]; digits = 4) for i in 1:2])
+```
+
+::: {.notes}
+The MLE recovers the generating parameters and both 95% profile intervals cover
+the truth. Sample counts and grid are small so the deck runs quickly; a real
+profile would use a finer grid.
+:::
+
+## Profile log-likelihoods
+
+```{julia}
+#| label: fig-slide-ch08-profile
+#| fig-cap: "Profile log-likelihoods for i₀ and β. Dashed line: 95% threshold; blue dotted: interval endpoints; red: truth."
+using CairoMakie
+CairoMakie.activate!(type = "png")
+threshold = -0.5 * quantile(Chisq(1), 0.95)
+truth = [0.01, 0.05]; names = ["i₀", "β"]
+fig08 = Figure(size = (900, 360))
+for i in 1:2
+    ax = Axis(fig08[1, i]; xlabel = names[i], ylabel = "profile log-likelihood")
+    lines!(ax, get_parameter_values(prof, i), get_profile_values(prof, i);
+        color = :steelblue, linewidth = 3)
+    hlines!(ax, [threshold]; color = :black, linestyle = :dash)
+    vlines!(ax, [truth[i]]; color = :firebrick, linewidth = 2)
+    vlines!(ax, [ci[i][1], ci[i][2]]; color = :steelblue, linestyle = :dot)
+    ylims!(ax, threshold - 1.5, 0.4)
+end
+fig08
+```
+
+::: {.notes}
+Each curve is normalised to zero at the MLE; the interval is where it lies above
+the dashed Wilks threshold. A flat profile would signal weak identifiability.
+:::
+
+## Takeaways and limitations
+
+- MLE via `Optimization.jl`; profile CIs via `ProfileLikelihood.jl`.
+- Nelder–Mead is **local** — use multistart before trusting one fit.
+- The $\chi^2$ calibration is **asymptotic**; small samples may mis-cover.
+- $\beta$ and $c$ enter only as $\beta c$ $\Rightarrow$ not separately
+  identifiable (the sensitivity and identifiability chapter).
+- Intervals summarise sampling variability, not prior knowledge — the Bayesian inference chapter is
+  the Bayesian counterpart.
+
+Read the [book chapter](../../chapters/10-parameter-estimation.html); see
+[Optimization.jl](https://docs.sciml.ai/Optimization/stable/) and
+[ProfileLikelihood.jl](https://github.com/DanielVandH/ProfileLikelihood.jl).
+
+::: {.notes}
+Emphasise that "narrow interval" is a statement about this data-generating setup,
+not a guarantee that every biological parameter is learnable.
+:::

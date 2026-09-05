@@ -1,0 +1,153 @@
+---
+title: "Stochastic differential equations"
+course-unit: ch06-stochastic-differential-equations
+status: complete
+---
+
+## Why a diffusion approximation?
+
+- A jump model resolves every reaction.
+- An SDE replaces Poisson reaction counts by Gaussian increments.
+- The state becomes continuous-valued, so speed is gained at the boundary of
+  exact integer bookkeeping.
+
+For stoichiometry $V$ and propensity vector $a(X)$,
+$$
+dX=Va(X)\,dt+V\operatorname{diag}(\sqrt{a(X)})\,dW.
+$$
+
+::: {.notes}
+This is the chemical-Langevin approximation.  It is most useful in the interior
+of a large population, not near extinction.
+:::
+
+## Reaction-level noise
+
+For infection and recovery,
+$$
+V=\begin{pmatrix}-1&0\\1&-1\\0&1\end{pmatrix},\quad
+a=(\kappa SI,\gamma I)^\mathsf{T}.
+$$
+Thus the diffusion columns are
+$$
+G_{\cdot1}=(-\sqrt{a_1},\sqrt{a_1},0)^\mathsf{T},\qquad
+G_{\cdot2}=(0,-\sqrt{a_2},\sqrt{a_2})^\mathsf{T}.
+$$
+Each column sums to zero: the reaction-level noise preserves total population.
+
+::: {.notes}
+Independent noise on S, I, and R would not preserve this covariance structure.
+The off-diagonal terms encode that an infection removes one susceptible while
+adding one infectious individual.
+:::
+
+## Current Julia API
+
+```{julia}
+using StochasticDiffEq, StableRNGs
+
+function f!(du, u, p, t)
+    κ, γ = p
+    a₁ = κ*max(u[1], 0.0)*max(u[2], 0.0)
+    a₂ = γ*max(u[2], 0.0)
+    du[1], du[2], du[3] = -a₁, a₁-a₂, a₂
+end
+
+function g!(G, u, p, t)
+    κ, γ = p
+    a₁ = κ*max(u[1], 0.0)*max(u[2], 0.0)
+    a₂ = γ*max(u[2], 0.0)
+    s₁, s₂ = sqrt(a₁), sqrt(a₂)
+    G[1,1], G[2,1], G[3,1] = -s₁, s₁, 0.0
+    G[1,2], G[2,2], G[3,2] = 0.0, -s₂, s₂
+end
+
+problem = SDEProblem(f!, g!, [990.0, 10.0, 0.0],
+    (0.0, 40.0), (0.0005, 0.25);
+    noise_rate_prototype=zeros(3, 2))
+solution = solve(problem, LambaEM(); dt=0.02,
+    adaptive=false, saveat=0.1, rng=StableRNG(20250711))
+```
+
+`noise_rate_prototype=zeros(3,2)` declares two independent Wiener processes.
+
+::: {.notes}
+The spelling `LambaEM` is the current StochasticDiffEq API in the course
+environment.  The prototype is not cosmetic: it selects non-diagonal,
+reaction-level noise.
+:::
+
+## Diffusion against drift
+
+```{julia}
+#| label: fig-slide-ch05-path
+#| fig-cap: "One chemical-Langevin path (solid) against the deterministic drift (dashed)."
+using CairoMakie, OrdinaryDiffEq
+
+states = Array(solution)
+mass_error = maximum(abs.(vec(sum(states; dims=1)) .- 1000))
+minimum_state = minimum(states)
+
+grid = collect(0.0:0.1:40.0)
+drift = Array(solve(ODEProblem(f!, [990.0, 10.0, 0.0], (0.0, 40.0),
+    (0.0005, 0.25)), Tsit5(); saveat=grid))
+
+fig = Figure(size = (900, 380))
+ax = Axis(fig[1, 1], xlabel = "time (days)", ylabel = "people",
+    title = "conservation error $(round(mass_error; sigdigits=2)), " *
+            "smallest state $(round(minimum_state; digits=1))")
+for (j, (name, col)) in enumerate(zip(["S", "I", "R"],
+        [:steelblue, :firebrick, :seagreen]))
+    lines!(ax, grid, states[j, :]; color = col, linewidth = 2, label = "$name (SDE)")
+    lines!(ax, grid, drift[j, :]; color = col, linestyle = :dash, linewidth = 1.5)
+end
+axislegend(ax, position = :rc)
+fig
+```
+
+::: {.notes}
+Same axes as this morning, so the pictures stack: the jump process was a rough
+staircase around the drift, and this is a continuous wobble around the same
+drift. That is the whole approximation in one image.
+
+The two numbers in the title are the validation, and they say opposite things.
+Conservation holds to solver tolerance because the noise columns sum to zero,
+which is structural rather than luck. The smallest state is the diagnostic that fails:
+on this seed a compartment goes slightly negative, because nothing in a Gaussian
+increment prevents it near a boundary. At a thousand people a fraction of a
+person is a rounding-scale excursion and the picture is still trustworthy; the
+same model at ten infectious people is not, and that is the limit of the
+approximation. Note also that clipping the state after the solve does not repair
+this: it changes the probability law rather than the model.
+:::
+
+## Validation and limitations
+
+- Refine `dt` and record conservation error and minimum state.
+- Compare an ensemble of SDE paths with the ODE drift.
+- Use the CTMC when integer states, extinction, or small populations matter.
+
+The SDE is not an exact replacement for the jump process.  It is a controlled
+approximation whose assumptions should be reported.
+
+::: {.notes}
+The exercise asks students to compare timestep refinement and diagonal noise.
+Those two checks distinguish numerical error from a changed stochastic model.
+:::
+
+## Takeaways and links
+
+- Stoichiometry determines both drift and covariance.
+- Non-diagonal noise is essential for reaction-level SIR fluctuations.
+- Conservation can hold while nonnegativity fails.
+
+Further reading:
+
+- [StochasticDiffEq SDE tutorial](https://docs.sciml.ai/DiffEqDocs/stable/tutorials/sde_example/)
+- [Chemical Langevin construction](https://doi.org/10.1063/1.1699114)
+- [Book chapter](../../chapters/06-stochastic-differential-equations.html) · [Pluto notebook](../../notebook-exports/chapters/06-stochastic-differential-equations.html)
+
+::: {.notes}
+Use the notebook controls to make the numerical trade-off visible, then return
+to the book for the derivation and the two exercises.
+:::

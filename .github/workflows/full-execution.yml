@@ -32,7 +32,7 @@ jobs:
       - name: Instantiate Julia environment
         run: |
           julia --project=. -e 'using Pkg; Pkg.instantiate()'
-          julia --project=environments/ch09 -e 'using Pkg; Pkg.instantiate()'
+          julia --project=environments/ch10 -e 'using Pkg; Pkg.instantiate()'
 
       # Whichever unit executes first otherwise captures the worker's
       # precompilation output in its own cell. This discards it instead.

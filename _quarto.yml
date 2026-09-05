@@ -37,16 +37,17 @@ book:
         - chapters/01-foundations.qmd
         - chapters/02-discrete-time-models.qmd
         - chapters/03-ordinary-differential-equations.qmd
-        - chapters/04-jump-processes.qmd
-        - chapters/05-stochastic-differential-equations.qmd
-        - chapters/06-reaction-networks.qmd
-        - chapters/07-agent-based-models.qmd
-        - chapters/08-observation-models.qmd
-        - chapters/09-parameter-estimation.qmd
-        - chapters/10-bayesian-inference.qmd
-        - chapters/11-sensitivity-and-identifiability.qmd
-        - chapters/12-interventions-and-optimization.qmd
-        - chapters/13-data-to-decision-capstone.qmd
+        - chapters/04-partial-differential-equations.qmd
+        - chapters/05-jump-processes.qmd
+        - chapters/06-stochastic-differential-equations.qmd
+        - chapters/07-reaction-networks.qmd
+        - chapters/08-agent-based-models.qmd
+        - chapters/09-observation-models.qmd
+        - chapters/10-parameter-estimation.qmd
+        - chapters/11-bayesian-inference.qmd
+        - chapters/12-sensitivity-and-identifiability.qmd
+        - chapters/13-interventions-and-optimization.qmd
+        - chapters/14-data-to-decision-capstone.qmd
     - resources.qmd
   appendices:
     - appendices/01-delay-differential-equations.qmd

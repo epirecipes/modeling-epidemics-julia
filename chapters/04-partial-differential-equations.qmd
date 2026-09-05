@@ -1,0 +1,417 @@
+---
+course-unit: ch04-partial-differential-equations
+status: complete
+---
+
+# Partial differential equations and age structure {#sec-partial-differential-equations}
+
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
+@sec-ordinary-differential-equations wrote recovery as $-\gamma I$, a constant
+rate applied to everyone currently infectious. That single term carries an
+assumption nobody has examined: it makes the infectious period
+**exponentially distributed**, so the most likely duration of infection is
+almost zero and a few individuals stay infectious for months. Real infections do
+not behave like that, and neither does transmission — infectiousness typically
+rises after exposure, peaks, and falls.
+
+Fixing this requires tracking *how long* each individual has been infected,
+which means the state is no longer a handful of numbers but a **density over
+age**. The dynamics become a partial differential equation.
+
+This chapter treats two models that share one mathematical skeleton but mean
+different things by "age":
+
+| | Age variable $a$ | Enters at $a=0$ | Coupling |
+|---|---|---|---|
+| Age of infection | time since infection | new infections | $\int\beta(a)I(a,t)\,\mathrm{d}a$ |
+| Classical age structure | chronological age | births | $\int\beta(a,a')I(a',t)\,\mathrm{d}a'$ |
+
+: Two readings of the same equation. {#tbl-ch04-two-models}
+
+## Learning goals
+
+You will:
+
+- derive a conservation law in age and time and recognise it as advection;
+- discretise it by the method of lines and explain why advection needs upwinding;
+- recover the SIR model of @sec-ordinary-differential-equations as the special
+  case of constant $\beta$ and $\gamma$;
+- build a chronologically age-structured model with an age-mixing kernel; and
+- validate a PDE solver by conservation and grid refinement.
+
+## Model assumptions and classification
+
+Both models are **deterministic, continuous-time, continuous-state and
+population-level**, as in @sec-ordinary-differential-equations. What is new is a
+second continuous independent variable. The state is a *density*: $I(a,t)\,
+\mathrm{d}a$ is the number of individuals with age in $[a, a+\mathrm{d}a]$, so
+$I$ has units of people per unit age and only its integral is a headcount. That
+distinction is the source of most implementation errors, including the factors
+of $\Delta a$ below.
+
+The age domain is truncated at $a_{\max}$. Individuals reaching it leave the
+density, and we must decide where they go; discarding them silently is the most
+common way to lose population.
+
+## Equations
+
+Consider individuals whose age advances at rate exactly 1 — a day of elapsed
+time is a day of infection age, or of chronological age. Counting the
+individuals in $[a, a+\mathrm{d}a]$ over an interval $\mathrm{d}t$, the change
+equals what flows in at $a$, minus what flows out at $a+\mathrm{d}a$, minus what
+is removed. In the limit this is the **McKendrick--von Foerster** equation
+
+$$
+\frac{\partial I(a,t)}{\partial t} + \frac{\partial I(a,t)}{\partial a}
+= -\gamma(a)\,I(a,t).
+$$ {#eq-ch04-mvf}
+
+The left side is advection at unit speed: without the right side, the density
+simply translates towards larger $a$, unchanged in shape.
+
+### Age of infection
+
+Here $a$ is time since infection. Individuals are *created* at age zero at the
+rate new infections occur, which is the boundary condition
+
+$$
+I(0,t) = \lambda(t)\,S(t),
+\qquad
+\lambda(t) = \frac{1}{N}\int_0^{a_{\max}}\beta(a)\,I(a,t)\,\mathrm{d}a ,
+$$ {#eq-ch04-aoi-boundary}
+
+with $\dot S = -\lambda(t) S$. Recovery removes individuals at the age-dependent
+rate $\gamma(a)$, and whatever reaches $a_{\max}$ leaves the density there, so
+
+$$
+\dot R = \int_0^{a_{\max}}\gamma(a) I(a,t)\,\mathrm{d}a \;+\; I(a_{\max},t).
+$$ {#eq-ch04-aoi-removed}
+
+The final term is the flux out of the truncated domain. Without it the model
+loses people.
+
+Setting $\beta(a)=\beta$ and $\gamma(a)=\gamma$ recovers
+@sec-ordinary-differential-equations exactly: with a constant hazard the age
+structure is irrelevant and only the total $\int I\,\mathrm{d}a$ matters. The
+Validation section checks this numerically, and it is the sense in which the ODE
+is a special case rather than a different model.
+
+### Classical age structure
+
+Now $a$ is chronological age and every compartment is age-structured:
+
+$$
+\begin{aligned}
+\partial_t S + \partial_a S &= -\lambda(a,t)\,S(a,t),\\
+\partial_t I + \partial_a I &= \lambda(a,t)\,S(a,t) - \gamma I(a,t),\\
+\partial_t R + \partial_a R &= \gamma I(a,t),
+\end{aligned}
+$$ {#eq-ch04-age-structured}
+
+with births entering susceptible at age zero, $S(0,t) = B$ and $I(0,t)=R(0,t)=0$,
+and a force of infection that mixes ages through a **contact kernel**
+$\beta(a,a')$:
+
+$$
+\lambda(a,t) = \frac{1}{N}\int_0^{a_{\max}} \beta(a,a')\,I(a',t)\,\mathrm{d}a'.
+$$ {#eq-ch04-mixing}
+
+The kernel is where age-specific epidemiology lives: children contact children
+far more than they contact adults, which is why childhood infections concentrate
+in school-age groups and why vaccination is targeted by age.
+
+### Method of lines
+
+Discretise age into $n$ bins of width $\Delta a$ and leave time continuous. The
+advection term is approximated by a first-order **upwind** difference,
+
+$$
+\left.\frac{\partial I}{\partial a}\right|_{a_j} \approx \frac{I_j - I_{j-1}}{\Delta a},
+$$ {#eq-ch04-upwind}
+
+taking the neighbour on the side the flow comes *from*. Since age always
+advances, information arrives from smaller $a$, so the backward difference is
+the stable choice; a centred difference on a pure advection problem produces
+oscillations and negative densities. The price is first-order accuracy and some
+artificial smearing, quantified in the Validation section.
+
+## Julia implementation
+
+### Age of infection
+
+The `Δa` factors are the whole difficulty. `I` holds a density, so `sum(I)*Δa`
+is a headcount, and the boundary inflow `λ*S` is a flux that must be divided by
+`Δa` to become a density rate in the first bin.
+
+```{julia}
+#| label: code-ch04-aoi
+using OrdinaryDiffEq
+using CairoMakie
+
+function age_of_infection!(du, u, p, t)
+    (; Δa, n, βvec, γvec, N) = p
+    S = u[1]
+    I = @view u[2:n+1]
+    λ = sum(βvec .* I) * Δa / N
+    du[1] = -λ * S
+    du[2] = -(I[1] - λ*S)/Δa - γvec[1]*I[1]        # inflow at age zero
+    @inbounds for j in 2:n
+        du[j+1] = -(I[j] - I[j-1])/Δa - γvec[j]*I[j]
+    end
+    du[end] = sum(γvec .* I)*Δa + I[n]              # recovery + ageing out
+    return nothing
+end
+
+const N = 1000.0
+const amax = 40.0
+const tspan = (0.0, 40.0)
+const times = collect(0.0:0.5:40.0)
+
+function solve_aoi(; n = 400, β_profile = a -> 0.5, γ_profile = a -> 0.25)
+    Δa = amax/n
+    ages = range(Δa/2, amax - Δa/2, length = n)
+    p = (Δa = Δa, n = n, βvec = β_profile.(ages), γvec = γ_profile.(ages), N = N)
+    u₀ = zeros(n + 2)
+    u₀[1] = 990.0
+    u₀[2] = 10.0/Δa                                 # 10 people spread over one bin
+    solution = solve(ODEProblem(age_of_infection!, u₀, tspan, p), Tsit5();
+                     saveat = times, abstol = 1e-9, reltol = 1e-9)
+    prevalence = [sum(u[2:n+1])*Δa for u in solution.u]
+    total = [u[1] + sum(u[2:n+1])*Δa + u[end] for u in solution.u]
+    return (; solution, prevalence, total, ages, Δa, n)
+end
+
+aoi = solve_aoi()
+(peak_prevalence = round(maximum(aoi.prevalence); digits = 3),
+ population_drift = maximum(aoi.total) - minimum(aoi.total))
+```
+
+### Classical age structure
+
+The same upwind stencil, applied to three compartments at once, with births as
+the inflow to the first age bin.
+
+```{julia}
+#| label: code-ch04-age-structured
+function age_structured!(du, u, p, t)
+    (; Δa, n, C, γ, births, N) = p
+    S = @view u[1:n]
+    I = @view u[n+1:2n]
+    R = @view u[2n+1:3n]
+    λ = (C * I) .* (Δa / N)
+    @inbounds for j in 1:n
+        S_in = j == 1 ? births/Δa : S[j-1]          # births enter age zero
+        I_in = j == 1 ? 0.0 : I[j-1]
+        R_in = j == 1 ? 0.0 : R[j-1]
+        du[j]      = -(S[j] - S_in)/Δa - λ[j]*S[j]
+        du[n+j]    = -(I[j] - I_in)/Δa + λ[j]*S[j] - γ*I[j]
+        du[2n+j]   = -(R[j] - R_in)/Δa + γ*I[j]
+    end
+    return nothing
+end
+
+const life_expectancy = 80.0
+
+function solve_age_structured(; n = 80, child_contact = 1.2, other_contact = 0.3,
+                                γ = 0.2, horizon = 200.0, mean_age_guess = 16.0)
+    Δa = life_expectancy/n
+    ages = range(Δa/2, life_expectancy - Δa/2, length = n)
+    C = [2.0 * ((a < 15 && a′ < 15) ? child_contact : other_contact)
+         for a in ages, a′ in ages]
+    births = (N/life_expectancy) * Δa
+    p = (Δa = Δa, n = n, C = C, γ = γ, births = births, N = N)
+
+    # Start near the endemic age profile rather than with everyone susceptible.
+    # At equilibrium a susceptible survives infection-free with probability
+    # exp(-λa), and the classical approximation λ ≈ 1/A relates that to the mean
+    # age at infection A. Seeding this way removes a large opening epidemic that
+    # is a transient of the initial condition, not a feature of the model.
+    density = N/life_expectancy
+    λ₀ = 1/mean_age_guess
+    u₀ = zeros(3n)
+    for (j, a) in enumerate(ages)
+        susceptible_fraction = exp(-λ₀*a)
+        u₀[j]      = density * susceptible_fraction
+        u₀[n+j]    = density * susceptible_fraction * λ₀/γ      # quasi-steady I ≈ λS/γ
+        u₀[2n+j]   = density * (1 - susceptible_fraction) - u₀[n+j]
+    end
+
+    solution = solve(ODEProblem(age_structured!, u₀, (0.0, horizon), p), Tsit5();
+                     saveat = 2.0, abstol = 1e-9, reltol = 1e-9)
+    final = solution.u[end]
+    infectious = final[n+1:2n]
+    return (; solution, ages, Δa, n,
+            population = sum(final)*Δa,
+            prevalence = sum(infectious)*Δa,
+            mean_age_at_infection = sum(ages .* infectious)/max(sum(infectious), eps()))
+end
+
+structured = solve_age_structured()
+(population = round(structured.population; digits = 3),
+ endemic_prevalence = round(structured.prevalence; digits = 3),
+ mean_age_at_infection = round(structured.mean_age_at_infection; digits = 2))
+```
+
+The population settles at exactly $N$: births balance the flux ageing out at
+$a_{\max}$. The mean age at infection is the classical summary of an endemic
+childhood infection, and it falls as transmission rises.
+
+The initial condition is worth a second look. Starting with everyone susceptible
+is the obvious choice and a poor one: the model then burns through a full
+epidemic before settling, taking roughly four times as long to reach equilibrium
+and passing through a peak several times the endemic level. Since the endemic
+state is what we want to show, we instead seed the age profile that theory
+predicts, using $\lambda \approx 1/A$ from the same classical approximation the
+model is about to illustrate. The equilibrium reached is identical either way —
+only the transient changes.
+
+## Validation
+
+Three checks, in increasing order of stringency.
+
+**Conservation.** The stencil is conservative by construction, provided the flux
+leaving at $a_{\max}$ is credited to $R$.
+
+**Agreement with the ODE.** With constant $\beta$ and $\gamma$ the age-of-infection
+model must reproduce @sec-ordinary-differential-equations exactly.
+
+```{julia}
+#| label: code-ch04-validation
+function sir_reference!(du, u, p, t)
+    β, γ, N_ = p
+    du[1] = -β*u[1]*u[2]/N_
+    du[2] =  β*u[1]*u[2]/N_ - γ*u[2]
+    du[3] =  γ*u[2]
+end
+
+reference = solve(ODEProblem(sir_reference!, [990.0, 10.0, 0.0], tspan, (0.5, 0.25, N)),
+                  Tsit5(); saveat = times, abstol = 1e-9, reltol = 1e-9)
+
+discrepancy(n) = maximum(abs.(solve_aoi(; n).prevalence .- reference[2, :]))
+
+(population_drift = aoi.total[end] - aoi.total[1],
+ max_difference_from_ode = round(discrepancy(400); digits = 5))
+```
+
+**Grid refinement.** Halving $\Delta a$ should halve the error for a first-order
+upwind scheme. The ratio of successive errors is the observed order.
+
+```{julia}
+#| label: code-ch04-convergence
+resolutions = [50, 100, 200, 400, 800]
+errors = discrepancy.(resolutions)
+ratios = errors[1:end-1] ./ errors[2:end]
+(resolutions = resolutions,
+ errors = round.(errors; sigdigits = 3),
+ error_ratios = round.(ratios; digits = 2))
+```
+
+The error falls monotonically under refinement, which is the property that
+matters: the discretisation is converging on something rather than wandering.
+But the ratios are worth reading carefully rather than glancing at. They start
+above 2 and then *fall below* it, so this is not the clean first-order behaviour
+@eq-ch04-upwind promises in the interior.
+
+That is normal, and worth seeing once. A refinement study measures the *total*
+error, and the interior stencil is only one contributor. Here the boundary inflow
+at age zero is also treated to first order, the age domain is truncated at
+$a_{\max}$, and the time integrator has its own tolerance. As $\Delta a$ shrinks,
+the interior term shrinks with it while those other contributions do not, so the
+measured order degrades once they become comparable. A tidy ratio of 2 across
+every refinement usually means the other error sources are far smaller — not that
+they are absent.
+
+The lesson transfers directly from the timestep-refinement check in
+@sec-discrete-time-models: refine until the answer stops changing at the
+precision you care about, and treat a clean convergence order as a claim to
+verify rather than assume.
+
+```{julia}
+#| label: fig-ch04-models
+#| fig-cap: "Left: the age-of-infection model with constant rates reproduces the SIR ODE, and the two curves are indistinguishable. Right: endemic age profile of the classical age-structured model, showing susceptibles depleted and recovereds accumulating with age, with infection concentrated in childhood."
+figure = Figure(size = (900, 360))
+
+axis1 = Axis(figure[1, 1], xlabel = "Time", ylabel = "Infectious",
+             title = "Age of infection vs ODE")
+lines!(axis1, times, aoi.prevalence; color = :firebrick, linewidth = 3,
+       label = "PDE, ∫I da")
+lines!(axis1, times, reference[2, :]; color = :steelblue, linewidth = 1.5,
+       linestyle = :dash, label = "ODE")
+axislegend(axis1; position = :rt, framevisible = false)
+
+final_state = structured.solution.u[end]
+m = structured.n
+axis2 = Axis(figure[1, 2], xlabel = "Chronological age", ylabel = "Density",
+             title = "Endemic age profile")
+lines!(axis2, structured.ages, final_state[1:m]; color = :steelblue,
+       linewidth = 2, label = "S")
+lines!(axis2, structured.ages, final_state[m+1:2m]; color = :firebrick,
+       linewidth = 2, label = "I")
+lines!(axis2, structured.ages, final_state[2m+1:3m]; color = :seagreen,
+       linewidth = 2, label = "R")
+axislegend(axis2; position = :rc, framevisible = false)
+figure
+```
+
+## Interpretation and limitations
+
+Age structure buys realism that compartmental models cannot express: a
+non-exponential infectious period, an infectiousness profile that rises and
+falls, and transmission that depends on who contacts whom. The cost is a state
+vector that grows with the number of age bins, and a discretisation whose errors
+must be checked rather than assumed.
+
+Three limitations deserve naming. **Truncation**: $a_{\max}$ must be large
+enough that the flux leaving is genuinely negligible or genuinely accounted for.
+**Numerical diffusion**: first-order upwinding smears sharp features, so a
+narrow cohort spreads out as it ages — visible if you seed a delta-like initial
+condition and watch it travel. **Cost**: the age-structured model above carries
+$3n$ states and a dense $n\times n$ kernel, and refining the age grid is
+quadratic in the mixing term.
+
+A declarative alternative exists in principle. `ModelingToolkit` can express
+@eq-ch04-mvf symbolically and `MethodOfLines` can discretise it, which would
+avoid hand-writing @eq-ch04-upwind. In practice, at MethodOfLines v0.11.18 the
+boundary flux term $I(a_{\max},t)$ of @eq-ch04-aoi-removed is rejected outright:
+
+```
+ArgumentError: Time-dependent variables must have exactly one independent
+variable argument. Found I(40.0, t) with multiple arguments.
+```
+
+Since that term is exactly what conserves population, the declarative route
+currently cannot express a conservative age-of-infection model, a limitation
+also reported in [MethodOfLines issue #445](https://github.com/SciML/MethodOfLines.jl/issues/445),
+which remains open. Truncating far enough to drop the term is possible, but it
+trades an exact conservation law for a truncation error. The explicit
+construction above is used here for that reason, and because writing the stencil
+is what makes @eq-ch04-upwind concrete.
+
+## Exercises
+
+### Exercise 1 {#ch04-ex1}
+
+Replace the constant recovery hazard with one that makes the infectious period
+nearly fixed: use $\gamma(a) = 0$ for $a < 3$ and a large constant thereafter, so
+that almost everyone recovers close to three days after infection. Keeping
+$\beta(a) = 0.5$ and the same $R_0$, compare the epidemic curve against the
+exponential-recovery case of this chapter. Report how the peak height and timing
+change, and explain the direction of the change in terms of the generation
+interval.
+
+### Exercise 2 {#ch04-ex2}
+
+In the age-structured model, raise `child_contact` from 1.2 to 2.5 while leaving
+`other_contact` unchanged. Report the endemic prevalence and the mean age at
+infection before and after. Explain the direction of the shift, and relate it to
+the classical approximation $A \approx L/R_0$ for mean age at infection $A$ and
+life expectancy $L$.
+
+## Companion materials
+
+- [Slides](../slides/chapters/04-partial-differential-equations.html)
+- [Pluto preview](../notebook-exports/chapters/04-partial-differential-equations.html)
+- [Pluto source](../notebooks/chapters/04-partial-differential-equations.jl)

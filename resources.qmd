@@ -50,44 +50,44 @@ The **Pluto preview** is a saved copy of the notebook: it shows the model at its
 
 ### Continuous-time Markov chains and jump processes — Day 2, Session 1
 
-- [Book](chapters/04-jump-processes.html)
-- [Slides](slides/chapters/04-jump-processes.html)
-- [Worksheet](worksheets/chapters/04-jump-processes.qmd)
-- Optional: [Pluto preview](notebook-exports/chapters/04-jump-processes.html) · [Pluto source](notebooks/chapters/04-jump-processes.jl)
+- [Book](chapters/05-jump-processes.html)
+- [Slides](slides/chapters/05-jump-processes.html)
+- [Worksheet](worksheets/chapters/05-jump-processes.qmd)
+- Optional: [Pluto preview](notebook-exports/chapters/05-jump-processes.html) · [Pluto source](notebooks/chapters/05-jump-processes.jl)
 
 ### Stochastic differential equations — Day 2, Session 2
 
-- [Book](chapters/05-stochastic-differential-equations.html)
-- [Slides](slides/chapters/05-stochastic-differential-equations.html)
-- [Worksheet](worksheets/chapters/05-stochastic-differential-equations.qmd)
-- Optional: [Pluto preview](notebook-exports/chapters/05-stochastic-differential-equations.html) · [Pluto source](notebooks/chapters/05-stochastic-differential-equations.jl)
+- [Book](chapters/06-stochastic-differential-equations.html)
+- [Slides](slides/chapters/06-stochastic-differential-equations.html)
+- [Worksheet](worksheets/chapters/06-stochastic-differential-equations.qmd)
+- Optional: [Pluto preview](notebook-exports/chapters/06-stochastic-differential-equations.html) · [Pluto source](notebooks/chapters/06-stochastic-differential-equations.jl)
 
 ### Reaction networks and moment closure — Day 2, Session 3
 
-- [Book](chapters/06-reaction-networks.html)
-- [Slides](slides/chapters/06-reaction-networks.html)
-- [Worksheet](worksheets/chapters/06-reaction-networks.qmd)
-- Optional: [Pluto preview](notebook-exports/chapters/06-reaction-networks.html) · [Pluto source](notebooks/chapters/06-reaction-networks.jl)
+- [Book](chapters/07-reaction-networks.html)
+- [Slides](slides/chapters/07-reaction-networks.html)
+- [Worksheet](worksheets/chapters/07-reaction-networks.qmd)
+- Optional: [Pluto preview](notebook-exports/chapters/07-reaction-networks.html) · [Pluto source](notebooks/chapters/07-reaction-networks.jl)
 
 ### Sensitivity and identifiability — Day 2, Session 4
 
-- [Book](chapters/11-sensitivity-and-identifiability.html)
-- [Slides](slides/chapters/11-sensitivity-and-identifiability.html)
-- [Worksheet](worksheets/chapters/11-sensitivity-and-identifiability.qmd)
-- Optional: [Pluto preview](notebook-exports/chapters/11-sensitivity-and-identifiability.html) · [Pluto source](notebooks/chapters/11-sensitivity-and-identifiability.jl)
+- [Book](chapters/12-sensitivity-and-identifiability.html)
+- [Slides](slides/chapters/12-sensitivity-and-identifiability.html)
+- [Worksheet](worksheets/chapters/12-sensitivity-and-identifiability.qmd)
+- Optional: [Pluto preview](notebook-exports/chapters/12-sensitivity-and-identifiability.html) · [Pluto source](notebooks/chapters/12-sensitivity-and-identifiability.jl)
 
 ## Day 3
 
 ### Interventions and optimization — Day 3, Session 1
 
-- [Book](chapters/12-interventions-and-optimization.html)
-- [Slides](slides/chapters/12-interventions-and-optimization.html)
-- [Worksheet](worksheets/chapters/12-interventions-and-optimization.qmd)
-- Optional: [Pluto preview](notebook-exports/chapters/12-interventions-and-optimization.html) · [Pluto source](notebooks/chapters/12-interventions-and-optimization.jl)
+- [Book](chapters/13-interventions-and-optimization.html)
+- [Slides](slides/chapters/13-interventions-and-optimization.html)
+- [Worksheet](worksheets/chapters/13-interventions-and-optimization.qmd)
+- Optional: [Pluto preview](notebook-exports/chapters/13-interventions-and-optimization.html) · [Pluto source](notebooks/chapters/13-interventions-and-optimization.jl)
 
 ### Agent-based models — Day 3, Session 2
 
-- [Book](chapters/07-agent-based-models.html)
-- [Slides](slides/chapters/07-agent-based-models.html)
-- [Worksheet](worksheets/chapters/07-agent-based-models.qmd)
-- Optional: [Pluto preview](notebook-exports/chapters/07-agent-based-models.html) · [Pluto source](notebooks/chapters/07-agent-based-models.jl)
+- [Book](chapters/08-agent-based-models.html)
+- [Slides](slides/chapters/08-agent-based-models.html)
+- [Worksheet](worksheets/chapters/08-agent-based-models.qmd)
+- Optional: [Pluto preview](notebook-exports/chapters/08-agent-based-models.html) · [Pluto source](notebooks/chapters/08-agent-based-models.jl)

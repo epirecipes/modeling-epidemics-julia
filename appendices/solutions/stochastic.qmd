@@ -6,7 +6,7 @@ turn stochastic results into universal constants.
 
 ### Continuous-time Markov chains and jump processes
 
-#### Solution to Exercise 1 {#solution-ch04-ex1}
+#### Solution to Exercise 1 {#solution-ch05-ex1}
 
 The two infectious stages use rate $2\gamma$.  Their sum is an Erlang
 distribution with mean $2/(2\gamma)=1/\gamma$, matching the original
@@ -54,7 +54,7 @@ another.  Compared with one exponential infectious period, the two-stage
 construction reduces unrealistically short and long durations while preserving
 the mean.
 
-#### Solution to Exercise 2 {#solution-ch04-ex2}
+#### Solution to Exercise 2 {#solution-ch05-ex2}
 
 For an immigration--death count $Z$, a `DiscreteProblem` and two
 `ConstantRateJump`s are sufficient.  Arrivals occur at the constant rate
@@ -184,7 +184,7 @@ using the pre-change values until the next jump fires.
 
 ### Stochastic differential equations
 
-#### Solution to Exercise 1 {#solution-ch05-ex1}
+#### Solution to Exercise 1 {#solution-ch06-ex1}
 
 The experiment keeps the model, seed, and output grid fixed while changing the
 Euler--Maruyama step.  Conservation is a structural property of the
@@ -267,7 +267,7 @@ not a pathwise convergence measurement.  To measure strong convergence,
 generate the noise once and reuse it across the solves with `NoiseWrapper`
 from `DiffEqNoiseProcess`.
 
-#### Solution to Exercise 2 {#solution-ch05-ex2}
+#### Solution to Exercise 2 {#solution-ch06-ex2}
 
 Independent state noise has a diagonal $3\times3$ diffusion.  The comparison
 below uses the same drift and seed as the reaction-level SDE.  The shared seed
@@ -345,13 +345,13 @@ for the jump process and the reaction-level SDE.
 
 ### Reaction networks and moment closure
 
-#### Solution to Exercise 1 {#solution-ch06-ex1}
+#### Solution to Exercise 1 {#solution-ch07-ex1}
 
 Adding a latent class is an edit to the network, not a rewrite of the dynamics:
 the two lowerings follow from the amended specification exactly as before.
 
 ```{julia}
-#| label: sol-ch06-ex1
+#| label: sol-ch07-ex1
 using Catalyst
 using OrdinaryDiffEq
 using JumpProcesses
@@ -394,7 +394,7 @@ infectious_row = findfirst(==("I(t)"), string.(species(seir_network)))
 ```
 
 ```{julia}
-#| label: fig-sol-ch06-ex1
+#| label: fig-sol-ch07-ex1
 #| fig-cap: "SEIR infectious class: the ODE lowering (dashed) against the mean of 100 jump trajectories (solid), both generated from one reaction network."
 figure = Figure(size = (720, 340))
 axis = Axis(figure[1, 1], xlabel = "Time", ylabel = "Infectious")
@@ -414,14 +414,14 @@ and the ensemble mean persists for the reason given in @eq-ch06-unclosed: the
 transmission propensity is still bimolecular, so the ODE still discards
 $\operatorname{Cov}(S,I)$.
 
-#### Solution to Exercise 2 {#solution-ch06-ex2}
+#### Solution to Exercise 2 {#solution-ch07-ex2}
 
 Shrinking the population while holding the per-contact rates fixed makes the
 relative fluctuations larger, which is precisely where a normal closure is
 expected to struggle.
 
 ```{julia}
-#| label: sol-ch06-ex2
+#| label: sol-ch07-ex2
 #| warning: false
 using MomentClosure
 
@@ -486,7 +486,7 @@ form: always check the return code before reading the numbers.
 
 ### Agent-based models
 
-#### Solution to Exercise 1 {#solution-ch07-ex1}
+#### Solution to Exercise 1 {#solution-ch08-ex1}
 
 The grid model changes the contact assumption: a susceptible samples only
 agents in its Moore neighborhood.  `GridSpaceSingle` holds at most one agent
@@ -711,7 +711,7 @@ recovered in the limit of a large neighborhood, which is exactly the limit in
 which "uniform over the population" becomes a fair description of local
 mixing.
 
-#### Solution to Exercise 2 {#solution-ch07-ex2}
+#### Solution to Exercise 2 {#solution-ch08-ex2}
 
 The physical horizon is held at 30 time units, so each run uses
 `round(Int, 30 / Δt)` updates.  Each timestep gets its own seeded ensemble,
