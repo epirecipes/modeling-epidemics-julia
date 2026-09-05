@@ -94,117 +94,9 @@ trajectory, but it is less smooth as a function of parameters and its
 accuracy also depends on the output time grid. That is why an emulator for
 peak prevalence needs a denser design and an explicit time-resolution check.
 
-### Advanced optimal control
-
-#### Solution to Exercise 1 {#solution-a08-ex1}
-
-Run the same InfiniteOpt model with two collocation resolutions. The helper
-returns the support values and the collocated control, so the comparison does
-not confuse support refinement with a change in the objective.
-
-```{julia}
-using InfiniteOpt, Ipopt, Statistics
-
-function a08_solve(nsupports)
-    tf, βc, γ, umax, budget = 20.0, 0.5, 0.25, 0.5, 2.0
-    model = InfiniteModel(Ipopt.Optimizer)
-    set_optimizer_attribute(model, "print_level", 0)
-    set_optimizer_attribute(model, "max_iter", 500)
-    @infinite_parameter(model, t in [0.0, tf], num_supports=nsupports,
-                        derivative_method=OrthogonalCollocation(2))
-    @variable(model, S >= 0, Infinite(t), start=0.99)
-    @variable(model, I >= 0, Infinite(t), start=0.01)
-    @variable(model, C >= 0, Infinite(t), start=0.0)
-    @variable(model, 0 <= u <= umax, Infinite(t), start=0.0)
-    @constraint(model, S(0.0) == 0.99)
-    @constraint(model, I(0.0) == 0.01)
-    @constraint(model, C(0.0) == 0.0)
-    @constraint(model, deriv(S,t) == -(1-u)*βc*S*I)
-    @constraint(model, deriv(I,t) == (1-u)*βc*S*I - γ*I)
-    @constraint(model, deriv(C,t) == (1-u)*βc*S*I)
-    @constraint(model, integral(u,t) <= budget)
-    @objective(model, Min, C(tf) + 1e-3*integral(u^2,t))
-    constant_over_collocation(u,t)
-    optimize!(model)
-    (
-        objective = InfiniteOpt.objective_value(model),
-        time = InfiniteOpt.supports(t),
-        C = InfiniteOpt.value.(C),
-        u = InfiniteOpt.value.(u),
-    )
-end
-
-coarse, fine = a08_solve(21), a08_solve(41)
-function piecewise_value(x, y, z)
-    j = clamp(searchsortedlast(x, z), 1, length(x)-1)
-    w = (z-x[j])/(x[j+1]-x[j])
-    (1-w)*y[j] + w*y[j+1]
-end
-common = collect(range(0.0, 20.0; length=101))
-coarse_u = [piecewise_value(coarse.time, coarse.u, z) for z in common]
-fine_u = [piecewise_value(fine.time, fine.u, z) for z in common]
-comparison = (
-    coarse_objective=coarse.objective,
-    fine_objective=fine.objective,
-    objective_difference=fine.objective-coarse.objective,
-    max_policy_difference=maximum(abs.(coarse_u-fine_u)),
-    coarse_final_cases=coarse.C[end],
-    fine_final_cases=fine.C[end],
-)
-comparison
-```
-
-The objective and final cases measure transcription sensitivity; the common-grid
-control difference measures policy sensitivity. A discrepancy that shrinks as
-supports increase is consistent with discretization error. A different
-qualitative policy after refinement can instead indicate local optima in the
-nonconvex Ipopt solve, so rerun from other starts before interpreting it.
-
-#### Solution to Exercise 2 {#solution-a08-ex2}
-
-Current `SDDP.LinearPolicyGraph` requires affine constraints and objectives.
-The following deliberately solves a small **linear budget proxy** with
-exogenous capacity shocks. It is not the nonlinear controlled SIR model:
-infection products, exponentials, and the state-dependent transmission effect
-are all omitted.
-
-```{julia}
-using Ipopt, SDDP
-const JuMP = SDDP.JuMP
-
-stages, initial_budget = 4, 1.0
-proxy = SDDP.LinearPolicyGraph(
-    stages=stages, sense=:Min, lower_bound=0.0, optimizer=Ipopt.Optimizer,
-) do sp, stage
-    JuMP.@variable(sp, 0 <= remaining <= initial_budget,
-                   SDDP.State, initial_value=initial_budget)
-    JuMP.@variable(sp, 0 <= action <= 0.5)
-    capacity = JuMP.@constraint(sp, action <= 0.25)
-    JuMP.@constraint(sp, remaining.out == remaining.in - action)
-    SDDP.parameterize(sp, [0.0, 0.25]) do shock
-        JuMP.set_normalized_rhs(capacity, 0.25 + shock)
-    end
-    SDDP.@stageobjective(sp, (1.0 + 0.2*stage)*action +
-                              0.1*remaining.out)
-end
-SDDP.train(proxy; iteration_limit=5, print_level=0, log_file=tempname())
-path = first(SDDP.simulate(proxy, 1, [:remaining, :action]))
-actions = [record[:action] for record in path]
-total_action = sum(actions)
-@assert total_action <= initial_budget + 1e-5
-(actions=actions, total_action=total_action,
- interpretation="affine budget-allocation proxy, not nonlinear SIR control")
-```
-
-`parameterize` represents exogenous scenario variation in available capacity.
-The example demonstrates the supported policy-graph mechanics and the budget
-state, but its action cost is only a proxy for epidemic harm. A valid
-epidemiological use would require a separately justified linearization and an
-error comparison against InfiniteOpt or the original simulator.
-
 ### Model composition and structured populations
 
-#### Solution to Exercise 1 {#solution-a09-ex1}
+#### Solution to Exercise 1 {#solution-a08-ex1}
 
 Add a third group and keep total population at 1000. The ODE and jump solves
 use the same Catalyst reaction system, so conservation is a stoichiometric
@@ -256,7 +148,7 @@ especially if only total incidence is observed. Group-specific observations
 or informative contact data are needed to distinguish the contact rates and
 mixing factors.
 
-#### Solution to Exercise 2 {#solution-a09-ex2}
+#### Solution to Exercise 2 {#solution-a08-ex2}
 
 Run 100 seeded jump realizations, summarize each time point by a central
 interval, and compare the ensemble mean with the deterministic ODE.
@@ -306,13 +198,13 @@ nonnegative without additional modeling choices.
 
 ### Symbolic equilibrium and stability analysis
 
-#### Solution to Exercise 1 {#solution-a10-ex1}
+#### Solution to Exercise 1 {#solution-a09-ex1}
 
 The latent class enlarges the infected subsystem from one dimension to two, so
 the threshold now comes from a quadratic rather than a single eigenvalue.
 
 ```{julia}
-#| label: sol-a10-ex1
+#| label: sol-a09-ex1
 using Symbolics
 
 # Six loaded packages export `@variables` (Symbolics, Catalyst,
@@ -332,7 +224,7 @@ J_infected
 ```
 
 ```{julia}
-#| label: sol-a10-ex1-charpoly
+#| label: sol-a09-ex1-charpoly
 # For a 2x2 matrix the characteristic polynomial is λ² - tr(J)λ + det(J),
 # so the Routh--Hurwitz coefficients are available without extracting them.
 a₁ = Symbolics.simplify(-(J_infected[1, 1] + J_infected[2, 2]); expand = true)
@@ -354,7 +246,7 @@ R_0 = \frac{\beta c\,\sigma}{(\sigma+\mu)(\gamma+\mu)} < 1 .
 $$
 
 ```{julia}
-#| label: sol-a10-ex1-check
+#| label: sol-a09-ex1-check
 R₀_seir = βc*σ/((σ + μ)*(γ + μ))
 values = Dict(βc => 0.5, γ => 0.25, μ => 0.01, σ => 0.5, N => 1000.0)
 ev(x) = Float64(Symbolics.value(Symbolics.substitute(x, values)))
@@ -370,13 +262,13 @@ probability of surviving latency. A long latent period is protective at the
 population level when mortality is non-negligible — the exposed individual may
 die before ever infecting anyone.
 
-#### Solution to Exercise 2 {#solution-a10-ex2}
+#### Solution to Exercise 2 {#solution-a09-ex2}
 
 Waning immunity replaces demography, so the population is closed and
 $R = N - S - I$ eliminates the third equation.
 
 ```{julia}
-#| label: sol-a10-ex2
+#| label: sol-a09-ex2
 Symbolics.@variables ω
 sirs = [-βc*S*I/N + ω*(N - S - I),
         βc*S*I/N - γ*I]
@@ -394,7 +286,7 @@ $I^\star = \omega N(\beta c-\gamma)/(\beta c(\gamma+\omega))$, positive exactly
 when $R_0 = \beta c/\gamma > 1$.
 
 ```{julia}
-#| label: sol-a10-ex2-stability
+#| label: sol-a09-ex2-stability
 J_sirs = Symbolics.simplify.(Symbolics.substitute.(
     Symbolics.jacobian(sirs, [S, I]), (Dict(S => S_star, I => I_star),)); expand = true)
 trace_sirs = Symbolics.simplify(J_sirs[1, 1] + J_sirs[2, 2]; expand = true)
@@ -411,7 +303,7 @@ $\operatorname{tr}^2 - 4\det$: negative means complex eigenvalues and a damped
 oscillation, positive means a monotone approach.
 
 ```{julia}
-#| label: sol-a10-ex2-simulate
+#| label: sol-a09-ex2-simulate
 using OrdinaryDiffEq
 using CairoMakie
 using LinearAlgebra
@@ -451,7 +343,7 @@ monotone_case = classify(boundary * 2)
 ```
 
 ```{julia}
-#| label: fig-sol-a10-ex2
+#| label: fig-sol-a09-ex2
 #| fig-cap: "Approach to the SIRS endemic equilibrium either side of the discriminant condition. Slow waning gives complex eigenvalues and damped oscillations; fast waning gives a monotone approach."
 figure = Figure(size = (760, 360))
 axis = Axis(figure[1, 1], xlabel = "Time", ylabel = "Infectious")

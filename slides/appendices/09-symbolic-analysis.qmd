@@ -1,0 +1,118 @@
+---
+title: "Symbolic equilibrium and stability analysis"
+course-unit: a09-symbolic-analysis
+status: complete
+---
+
+## Analysis, not simulation
+
+- The course has simulated, fitted and optimised models. It has not *analysed* one.
+- Chapter 4 asserted $R_0=\beta c/\gamma$ and the threshold $S/N>1/R_0$, both by hand.
+- A CAS manipulates expressions, so a result holds for **all** parameter values at
+  once — not just the ones you simulated.
+
+::: {.notes}
+Frame the appendix as finishing something the foundations chapter started. The
+distinction to stress: a simulation answers a question about one parameter set,
+an analysis answers it about the whole parameter space.
+:::
+
+## Plain SIR is the wrong model here
+
+- Without demography every state with $I=0$ is an equilibrium — a *line*, not a point.
+- The Jacobian inherits a structural zero eigenvalue; linear stability degenerates.
+- Add births $\mu N$ and per-capita death $\mu$: population constant, individuals turn over.
+
+$$
+\dot S = \mu N - \beta c\frac{SI}{N} - \mu S,\quad
+\dot I = \beta c\frac{SI}{N} - (\gamma+\mu) I,\quad
+\dot R = \gamma I - \mu R.
+$$
+
+::: {.notes}
+Worth dwelling on. Students often try stability analysis on plain SIR and get
+confused by the zero eigenvalue. It is not a numerical artefact — it reflects
+that the model has no endemic state to be stable about.
+:::
+
+## Differentiating a vector field exactly
+
+```{julia}
+#| label: slide-a10-jacobian
+#| echo: true
+using Symbolics, LinearAlgebra
+@variables S I R λ βc γ μ N
+f = [μ*N - βc*S*I/N - μ*S, βc*S*I/N - γ*I - μ*I, γ*I - μ*R]
+J_dfe = Symbolics.simplify.(Symbolics.substitute.(
+    Symbolics.jacobian(f, [S, I, R]), (Dict(S => N, I => 0),)))
+Symbolics.simplify(Symbolics.det(J_dfe - λ*[1 0 0; 0 1 0; 0 0 1]))
+```
+
+The polynomial factors on its own: eigenvalues $-\mu$, $-\mu$, and
+$\beta c-\gamma-\mu$.
+
+::: {.notes}
+No numbers anywhere. The threshold falls out of the third eigenvalue: stable
+exactly when βc < γ + μ. That is the foundations result, now derived, and
+corrected for infectives dying before they recover.
+:::
+
+## Routh--Hurwitz: stability without roots
+
+- Quadratic $\lambda^2+a_1\lambda+a_2$: $a_1>0$ and $a_2>0$.
+- Cubic $\lambda^3+a_1\lambda^2+a_2\lambda+a_3$: $a_1>0$, $a_3>0$, $a_1a_2>a_3$.
+
+Why this pairs well with a CAS:
+
+- the **coefficients** are polynomial in the parameters and come out exactly;
+- the **roots** of a cubic are unusable as symbolic expressions.
+
+::: {.notes}
+This is the key methodological point of the session. Do not compute eigenvalues
+symbolically — compute the characteristic polynomial and test inequalities on
+its coefficients.
+:::
+
+## $R_0$ from a next-generation matrix
+
+```{julia}
+#| label: slide-a10-ngm
+#| echo: true
+Symbolics.simplify(Symbolics.substitute((βc*S/N) / (γ + μ), Dict(S => N)))
+```
+
+$$
+R_0=\frac{\beta c}{\gamma+\mu} \xrightarrow{\ \mu\to0\ } \frac{\beta c}{\gamma}.
+$$
+
+::: {.notes}
+Exactly the chapter 4 formula in the limit of no demography. The correction is
+the probability of dying before recovering.
+:::
+
+## What a CAS will not do
+
+- `symbolic_solve` cannot solve this system: it is **rational**, not polynomial.
+- Clearing denominators is a *modelling judgement*, not an algebraic one.
+- So: derive the equilibrium by hand, let the CAS **verify** it — substitution
+  gives an identically zero residual.
+- Expression swell kills the approach beyond four or so compartments.
+
+::: {.notes}
+Resist presenting the CAS as an oracle. The honest workflow is the one used in
+the chapter: human does the modelling judgement, machine does the mechanical
+algebra and checks the result.
+:::
+
+## Takeaways
+
+- Analysis complements simulation: results for **all** parameters, not one set.
+- Add demography before asking about endemic equilibria.
+- Routh--Hurwitz decides stability from coefficients — no roots required.
+- The two equilibria exchange stability at $R_0=1$.
+- Verify symbolic results numerically; they are only as good as the model.
+
+::: {.notes}
+Point at the exercises: SEIR gives a genuine cubic where Routh-Hurwitz earns its
+keep, and SIRS shows when the approach to endemicity becomes oscillatory.
+:::

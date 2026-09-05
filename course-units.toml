@@ -206,6 +206,17 @@ sources = ["../sir-julia/tutorials/ode_lockdown/ode_lockdown.jmd", "../sir-julia
 
 [[units]]
 id = "ch14"
+slug = "advanced-optimal-control"
+title = "Advanced optimal control"
+kind = "core"
+status = "complete"
+track = "self-study"
+environment = "root"
+packages = ["InfiniteOpt", "Ipopt", "SDDP", "JuMP", "CairoMakie"]
+sources = ["../sir-julia/tutorials/ode_lockdown_infiniteopt/ode_lockdown_infiniteopt.jmd", "../sir-julia/tutorials/sddp/sddp.jmd"]
+
+[[units]]
+id = "ch15"
 slug = "data-to-decision-capstone"
 title = "Data-to-decision capstone"
 kind = "core"
@@ -294,17 +305,6 @@ sources = ["../sir-julia/tutorials/ode_surrogate_1d_1d/ode_surrogate_1d_1d.jmd"]
 
 [[units]]
 id = "a08"
-slug = "advanced-optimal-control"
-title = "Advanced optimal control"
-kind = "advanced"
-status = "complete"
-track = "self-study"
-environment = "root"
-packages = ["InfiniteOpt", "Ipopt", "SDDP", "JuMP", "CairoMakie"]
-sources = ["../sir-julia/tutorials/ode_lockdown_infiniteopt/ode_lockdown_infiniteopt.jmd", "../sir-julia/tutorials/sddp/sddp.jmd"]
-
-[[units]]
-id = "a09"
 slug = "model-composition"
 title = "Model composition and structured populations"
 kind = "advanced"
@@ -315,7 +315,7 @@ packages = ["ModelingToolkit", "Catalyst", "OrdinaryDiffEq", "StochasticDiffEq",
 sources = ["../sir-julia/tutorials/ode_stages/ode_stages.jmd", "../sir-julia/tutorials/ode_multigroup/ode_multigroup.jmd", "../sir-julia/tutorials/rn_mtk/rn_mtk.jmd", "../sir-julia/tutorials/ode_compose/ode_compose.jmd"]
 
 [[units]]
-id = "a10"
+id = "a09"
 slug = "symbolic-analysis"
 title = "Symbolic equilibrium and stability analysis"
 kind = "advanced"

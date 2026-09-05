@@ -54,7 +54,7 @@ $\beta=0.05$, $c=10$, and $\gamma=0.25$. The intervention used below reduces
 transmission by $v_{\max}=0.5$ for a fixed duration of 10 time units. The
 decision variable is only the start time $t_1$, bounded to $0\leq t_1\leq25$.
 More general time-varying controls belong in the advanced
-[InfiniteOpt/SDDP unit](../appendices/08-advanced-optimal-control.html).
+[InfiniteOpt/SDDP unit](../chapters/14-advanced-optimal-control.html).
 
 ## Equations
 
@@ -415,10 +415,10 @@ appendix.
   same `OptimizationProblem` pattern, with a likelihood as the objective instead
   of final incidence. This is the natural next step if you want to fit rather
   than choose.
-- [Advanced optimal control](../appendices/08-advanced-optimal-control.html)
+- [Advanced optimal control](../chapters/14-advanced-optimal-control.html)
   replaces the single start time with a control *function* of time, using
   InfiniteOpt and SDDP.
-- [Data-to-decision capstone](14-data-to-decision-capstone.html) runs the whole
+- [Data-to-decision capstone](15-data-to-decision-capstone.html) runs the whole
   chain end to end: data, fit, and policy choice.
 
 ## Exercises
