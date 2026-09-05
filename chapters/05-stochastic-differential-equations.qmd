@@ -3,7 +3,7 @@ course-unit: ch05-stochastic-differential-equations
 status: complete
 ---
 
-# Stochastic differential equations
+# Stochastic differential equations {#sec-stochastic-differential-equations}
 
 ::: {.callout-note appearance="simple"}
 **Workshop programme**: taught live on Day 2, Session 2. See the [full schedule](../workshop.qmd).
@@ -34,7 +34,7 @@ $S+I\to 2I$ and $I\to R$, but replace integer event counts by a diffusion.
 This is a **stochastic, continuous-time, continuous-state, population-level**
 model. “Continuous state” means the numerical approximation can produce real
 values, not that people are fractional. It is an approximation to the
-discrete-state CTMC from Chapter 4, and is most defensible when propensities
+discrete-state CTMC from @sec-jump-processes, and is most defensible when propensities
 are large and the process is away from absorbing boundaries.
 
 ## Equations

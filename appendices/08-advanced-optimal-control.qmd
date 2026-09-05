@@ -20,7 +20,7 @@ produce a finite nonlinear program solved by Ipopt.
 By the end of this appendix you should be able to:
 
 - distinguish a continuous-time, function-valued control from the
-  finite-dimensional intervention in Chapter 11;
+  finite-dimensional intervention in @sec-interventions-and-optimization;
 - formulate an ODE-constrained problem with `InfiniteOpt` 0.6;
 - inspect the collocated trajectory and check structural identities; and
 - explain why the historical nonlinear SDDP example is not a valid current
@@ -71,7 +71,7 @@ with the initial conditions above. `deriv(S, t)` in the code is
 `\dot S(t)`, `integral(u, t)` is the budget measure, and `S(tf)` is a
 restricted value of the infinite variable at the terminal time.
 
-This is not the same problem class as the core Chapter 11 example, which
+This is not the same problem class as the core @sec-interventions-and-optimization example, which
 optimizes a finite set of intervention parameters around an ODE simulation.
 Here `u` is declared as `Infinite(t)` and is represented numerically by
 orthogonal collocation supports.

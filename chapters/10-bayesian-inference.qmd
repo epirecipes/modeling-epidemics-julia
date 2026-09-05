@@ -1,0 +1,301 @@
+---
+course-unit: ch10-bayesian-inference
+status: complete
+---
+
+# Bayesian inference {#sec-bayesian-inference}
+
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
+## Learning goals
+
+@sec-parameter-estimation treated the parameters as fixed unknowns and summarised uncertainty
+through the sampling distribution of an estimator. The Bayesian approach instead
+treats the parameters as random variables and updates a **prior** belief into a
+**posterior** using the data [@gelman2013]. This chapter fits the same SIR model
+to the same kind of simulated case reports, but with
+[Turing.jl](https://turinglang.org/). By the end you should be able to
+
+- state Bayes' theorem for the SIR observation model and identify the prior,
+  likelihood, and posterior;
+- write a probabilistic model with the `@model` macro and sample it with the
+  No-U-Turn Sampler (NUTS);
+- assess convergence with $\hat R$ and effective sample size using
+  [MCMCChains.jl](https://turinglang.org/MCMCChains.jl/stable/); and
+- summarise parameter uncertainty and propagate it into a **posterior
+  predictive** check.
+
+## Model assumptions and classification
+
+The process and observation models are unchanged from the previous two chapters:
+a deterministic SIR ODE with cumulative incidence @eq-sir-cumulative and a
+Poisson observation model @eq-poisson with full reporting. As in @sec-parameter-estimation we
+infer $\theta = (i_0, \beta)$ with $c=10$ and $\gamma=0.25$ fixed. The difference
+is entirely in the treatment of uncertainty.
+
+| Aspect | Frequentist (Ch. 8) | Bayesian (this chapter) |
+| --- | --- | --- |
+| Parameters | fixed unknowns | random variables with a prior |
+| Output | point estimate + confidence interval | posterior distribution |
+| Uncertainty | sampling variability of the estimator | posterior probability |
+| Engine | optimisation (`Optimization.jl`) | MCMC sampling (`Turing.jl`) |
+
+## Equations
+
+Bayes' theorem combines the prior density $p(\theta)$ with the likelihood
+$p(y_{1:n}\mid\theta)$ — the same Poisson likelihood whose logarithm is
+@eq-loglik — to give the posterior
+
+$$
+p(\theta \mid y_{1:n}) = \frac{p(y_{1:n}\mid\theta)\,p(\theta)}{p(y_{1:n})},
+\qquad
+p(y_{1:n}) = \int p(y_{1:n}\mid\theta)\,p(\theta)\,\mathrm{d}\theta .
+$$ {#eq-bayes}
+
+The normalising constant $p(y_{1:n})$ is intractable here, so we never compute it
+directly; instead NUTS draws samples $\theta^{(1)},\dots,\theta^{(m)}$ whose
+histogram approximates the posterior. We place weakly informative Beta priors
+that respect the natural $[0,1]$ range of both parameters,
+
+$$
+i_0 \sim \operatorname{Beta}(1, 20), \qquad
+\beta \sim \operatorname{Beta}(1, 10),
+$$ {#eq-priors}
+
+with prior means $1/21 \approx 0.048$ and $1/11 \approx 0.091$: broad enough to
+be uninformative near the truth ($i_0=0.01$, $\beta=0.05$) but supported only on
+plausible values. Any posterior expectation, such as the predictive incidence,
+is an integral against the posterior that we estimate by averaging over the
+draws.
+
+## Julia implementation
+
+```{julia}
+#| label: setup
+#| output: false
+using OrdinaryDiffEq
+using SciMLSensitivity
+using Turing
+using MCMCChains
+using Distributions
+using StableRNGs
+using CairoMakie
+
+CairoMakie.activate!(type = "png")
+colors = (data = :grey20, post = :steelblue, band = (:steelblue, 0.3), truth = :firebrick)
+```
+
+### Process kernel and simulated data
+
+We reuse the deterministic kernel and the Poisson observation model to generate a
+reproducible dataset, exactly as in @sec-parameter-estimation.
+
+```{julia}
+#| label: data
+function sir_ode!(du, u, p, t)
+    S, I, R, C = u
+    β, c, γ = p
+    N = S + I + R
+    infection = β * c * I / N * S
+    recovery = γ * I
+    @inbounds begin
+        du[1] = -infection
+        du[2] = infection - recovery
+        du[3] = recovery
+        du[4] = infection
+    end
+    return nothing
+end
+
+tmax = 40.0
+tspan = (0.0, tmax)
+obstimes = 1.0:1.0:tmax
+u0 = [990.0, 10.0, 0.0, 0.0]
+p = [0.05, 10.0, 0.25]
+
+prob_ode = ODEProblem(sir_ode!, u0, tspan, p)
+sol = solve(prob_ode, Tsit5(); saveat = 1.0)
+incidence = Array(sol)[4, 2:end] .- Array(sol)[4, 1:(end - 1)]
+data = rand.(StableRNG(20240607), Poisson.(incidence))
+```
+
+### The probabilistic model
+
+The `@model` macro turns @eq-bayes and @eq-priors into executable code. The `~`
+statements declare the priors; the loop declares the Poisson likelihood of each
+observation given the model incidence. We reject failed ODE solves and floor the
+Poisson rate by a negligible constant so that the sampler never evaluates
+`Poisson(0)` on the burned-out tail of the epidemic.
+
+```{julia}
+#| label: turing-model
+@model function bayes_sir(y, prob)
+    l = length(y)
+    i₀ ~ Beta(1.0, 20.0)
+    β ~ Beta(1.0, 10.0)
+
+    I = i₀ * 1000.0
+    u0 = [1000.0 - I, I, 0.0, 0.0]
+    θ = [β, 10.0, 0.25]
+    prob = remake(prob; u0 = u0, p = θ, tspan = (0.0, float(l)))
+    sol = solve(prob, Tsit5(); saveat = 1.0)
+    if !SciMLBase.successful_retcode(sol)
+        Turing.@addlogprob! -Inf
+        return nothing
+    end
+
+    C = Array(sol)[4, :]
+    X = C[2:end] .- C[1:(end - 1)]
+    for i in 1:l
+        y[i] ~ Poisson(max(X[i], 0.0) + 1e-6)
+    end
+    return nothing
+end
+```
+
+### Sampling with NUTS
+
+We draw three independent chains of 500 iterations each. Multiple chains are
+what make the $\hat R$ diagnostic meaningful, and NUTS uses automatic
+differentiation through the ODE solver, enabled here by
+[SciMLSensitivity.jl](https://docs.sciml.ai/SciMLSensitivity/stable/). The
+`StableRNG` seed makes the run reproducible. The sample counts here are modest so
+that the chapter runs in seconds; a real analysis wants more, and $\hat{R}$ with
+the effective sample size are what tell you when you have enough.
+
+```{julia}
+#| label: sample
+#| warning: false
+model = bayes_sir(data, prob_ode)
+chain = sample(StableRNG(2), model, NUTS(0.8), MCMCSerial(), 500, 3;
+    chain_type = MCMCChains.Chains, progress = false)
+summarize(chain)
+```
+
+## Validation
+
+MCMC results are only trustworthy once the chains have converged. The potential
+scale reduction factor $\hat R$ should be close to $1$ (values above $\approx
+1.01$ suggest the chains disagree), and the effective sample size (ESS) should be
+comfortably large. We also confirm that the posterior concentrates near the true
+parameters.
+
+```{julia}
+#| label: diagnostics
+truth = (i₀ = 0.01, β = 0.05)
+i0_mat = Array(chain[:, :i₀, :])
+β_mat = Array(chain[:, :β, :])
+i0s = vec(i0_mat)
+βs = vec(β_mat)
+
+(max_rhat = maximum(rhat(chain).nt.rhat),
+ min_ess = minimum(ess(chain).nt.ess),
+ posterior_mean = (i₀ = round(mean(i0s); digits = 4),
+                   β = round(mean(βs); digits = 4)),
+ truth = truth)
+```
+
+The trace plots should look like well-mixed "fuzzy caterpillars" that overlap
+across chains, and the marginal densities should be unimodal and bracket the
+true values.
+
+```{julia}
+#| label: fig-diagnostics
+#| fig-cap: "Trace plots (left) and marginal posterior densities (right) for i₀ and β. The three chains overlap, and the densities (blue) concentrate around the true values (red)."
+fig = Figure(size = (900, 560))
+for (row, (name, mat, tru)) in enumerate((("i₀", i0_mat, truth.i₀),
+                                          ("β", β_mat, truth.β)))
+    axt = Axis(fig[row, 1]; xlabel = "Iteration", ylabel = name)
+    for ch in 1:size(mat, 2)
+        lines!(axt, 1:size(mat, 1), mat[:, ch])
+    end
+    axd = Axis(fig[row, 2]; xlabel = name, ylabel = "Density")
+    density!(axd, vec(mat); color = (colors.post, 0.4), strokecolor = colors.post,
+        strokewidth = 2)
+    vlines!(axd, [tru]; color = colors.truth, linewidth = 2)
+end
+fig
+```
+
+### Posterior predictive check
+
+A posterior that fits well should reproduce the data when pushed back through the
+model. We draw parameter pairs from the posterior, simulate incidence for each,
+and summarise the resulting curves by pointwise $95\%$ intervals — a Monte Carlo
+estimate of the posterior predictive integral implied by @eq-bayes.
+
+```{julia}
+#| label: fig-posterior-predictive
+#| fig-cap: "Posterior predictive interval for daily incidence (95% band and median, blue) against the observed case reports (grey). The band tracks the data across the whole epidemic."
+function incidence_at(i₀, β, l)
+    I = i₀ * 1000.0
+    prob_pp = remake(prob_ode; u0 = [1000.0 - I, I, 0.0, 0.0],
+        p = [β, 10.0, 0.25], tspan = (0.0, float(l)))
+    solp = solve(prob_pp, Tsit5(); saveat = 1.0)
+    C = Array(solp)[4, :]
+    return C[2:end] .- C[1:(end - 1)]
+end
+
+l = length(data)
+idx = rand(StableRNG(3), 1:length(βs), 200)
+curves = reduce(hcat, [incidence_at(i0s[k], βs[k], l) for k in idx])
+lower = [quantile(curves[t, :], 0.025) for t in 1:l]
+upper = [quantile(curves[t, :], 0.975) for t in 1:l]
+median_curve = [quantile(curves[t, :], 0.5) for t in 1:l]
+
+fig = Figure(size = (760, 420))
+ax = Axis(fig[1, 1]; xlabel = "Time (days)", ylabel = "New cases per day")
+band!(ax, collect(obstimes), lower, upper; color = colors.band, label = "95% band")
+lines!(ax, collect(obstimes), median_curve; color = colors.post, linewidth = 3,
+    label = "Posterior median")
+scatter!(ax, collect(obstimes), data; color = colors.data, label = "Data")
+axislegend(ax; position = :rt)
+fig
+```
+
+## Interpretation and limitations
+
+The posterior concentrates near the true parameters, the chains converge
+($\hat R \approx 1$), and the predictive band envelops the data — a coherent
+story that also carries caveats. The priors of @eq-priors are a modelling choice:
+overly tight priors can dominate a small dataset, while flat priors on positive
+parameters can let the sampler wander into regions where the ODE misbehaves,
+which is why we guarded the solve and floored the rate. NUTS is far more
+efficient than random-walk MCMC, but each leapfrog step re-solves the ODE and
+differentiates through it, so the method is more expensive than the
+optimisation of @sec-parameter-estimation — the small sample counts here favour speed over the
+precision a production analysis would demand. The non-identifiability of $\beta$
+and $c$ noted previously persists: the posterior for $\beta$ is conditional on
+the assumed contact rate. Finally, the Poisson likelihood still assumes
+equidispersion; a negative-binomial likelihood @eq-negbin would add a dispersion
+parameter and typically widen the posterior. Bayesian inference makes all of
+these assumptions explicit and propagates their consequences directly into the
+predictive distribution, which is its central practical advantage.
+
+## Exercises
+
+### Exercise 1 {#ch10-ex1}
+
+Replace the Beta priors in @eq-priors with uniform priors
+$i_0 \sim \operatorname{Uniform}(0, 1)$ and $\beta \sim \operatorname{Uniform}(0, 1)$
+and re-run the sampler. Compare the posterior means, the $\hat R$ values, and the
+width of the $95\%$ posterior predictive band with the Beta-prior results.
+Discuss whether the data are informative enough that the choice of prior barely
+matters here.
+
+### Exercise 2 {#ch10-ex2}
+
+Add the recovery rate $\gamma$ as a third estimated parameter with prior
+$\gamma \sim \operatorname{Beta}(2, 8)$, updating the model accordingly. Report
+the posterior summaries and the pairwise posterior correlation between $\beta$
+and $\gamma$ (for example from `Array(chain[:, :β, :])` and the corresponding
+$\gamma$ draws). Relate any strong correlation you find to the identifiability
+discussion in this chapter and in @sec-parameter-estimation.
+
+## Companion materials
+
+- [Slides](../slides/chapters/10-bayesian-inference.html)
+- [Pluto preview](../notebook-exports/chapters/10-bayesian-inference.html)
+- [Pluto source](../notebooks/chapters/10-bayesian-inference.jl)

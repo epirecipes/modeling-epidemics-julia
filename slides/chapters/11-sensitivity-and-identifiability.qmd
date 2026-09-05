@@ -1,0 +1,336 @@
+---
+title: "Sensitivity and identifiability"
+course-unit: ch11-sensitivity-and-identifiability
+status: complete
+---
+
+## Why this unit matters
+
+- **Sensitivity:** which inputs move a chosen output?
+- **Identifiability:** which parameters can the observation process distinguish?
+- A narrow optimizer interval is not evidence that every biological parameter is learned.
+
+::: {.notes}
+Three minutes, and set the shape of the session: three tools, one question each.
+Local sensitivity asks what happens if I nudge a parameter. Global sensitivity
+asks which parameter is responsible for the spread in outcomes across a whole
+plausible range. Structural identifiability asks a different kind of question
+altogether: not what the model does, but what the data could ever tell us about
+it.
+
+Keep one distinction visible all session, because everything here turns on it:
+perturbing a model is not the same as learning from data. This is also the last
+slot of a long day, so promise the payoff early. The session ends by proving
+something about this afternoon's reporting fraction.
+:::
+
+## Baseline SIR model
+
+Deterministic, continuous-time, continuous-state, population model:
+
+$$
+\dot S=-\beta cSI/N,\qquad
+\dot I=\beta cSI/N-\gamma I,\qquad
+\dot R=\gamma I.
+$$
+
+At the course baseline,
+$N=1000$, $(S,I,R)=(990,10,0)$,
+$(\beta,c,\gamma)=(0.05,10,0.25)$, and
+$\mathcal R_0=\beta c/\gamma=2$.
+
+The state sensitivity matrix is
+$J_x(t)=\partial x(t)/\partial(\beta,c,\gamma)$.
+
+::: {.notes}
+Two minutes. Same baseline as every other session, so nothing here is new except
+the notation for the sensitivity matrix.
+
+Plant one seed and move on: beta and c never appear apart in these equations,
+only as the product beta-c. Ask the room what that might mean for estimating them
+separately, take one answer, and say the last part of the session settles it.
+
+One warning about the parameterisation: from here the code uses a positional
+vector [beta, c, gamma] rather than the named tuple of the earlier sessions,
+because the sensitivity and Sobol APIs index parameters by position. The
+worksheet flags this too.
+:::
+
+## Local sensitivity: a derivative, not an uncertainty interval
+
+For a small perturbation,
+
+$$
+\Delta z\approx\nabla_\theta z\,\Delta\theta.
+$$
+
+Raw derivatives carry the units of their own parameter: since the model uses
+only $k=\beta c$, $\partial I/\partial\beta=c\,\partial I/\partial k$ and
+$\partial I/\partial c=\beta\,\partial I/\partial k$, a factor $c/\beta=200$
+apart wherever they are nonzero. The elasticity
+$(\theta_j/I)\,\partial I/\partial\theta_j$ is dimensionless and comparable
+across parameters.
+
+```{julia}
+#| label: fig-slide-ch10-local
+#| fig-cap: "Centered local derivatives of infectious prevalence, raw and as dimensionless elasticities."
+using CairoMakie
+using EpiModelingCourse
+using OrdinaryDiffEq
+
+const N10 = BASELINE_PARAMETERS.N
+const u010 = [BASELINE_INITIAL_STATE.S, BASELINE_INITIAL_STATE.I,
+    BASELINE_INITIAL_STATE.R]
+function sir10!(du, u, p, t)
+    β, c, γ = p
+    incidence = β * c * u[1] * u[2] / N10
+    du[1] = -incidence
+    du[2] = incidence - γ * u[2]
+    du[3] = γ * u[2]
+end
+
+times10 = collect(0.0:1.0:40.0)
+p010 = [0.05, 10.0, 0.25]
+# Differencing two trajectories cancels most of the signal, so the solves need
+# tighter tolerances than the trajectories themselves would.
+solve10(p) = Array(solve(ODEProblem(sir10!, u010, (0.0, 40.0), p),
+    Tsit5(); saveat = times10, abstol = 1e-10, reltol = 1e-10))
+base10 = solve10(p010)
+local10 = Matrix{Float64}(undef, length(times10), 3)
+for j in 1:3
+    δ = 1e-5 * p010[j]
+    plus = copy(p010); plus[j] += δ
+    minus = copy(p010); minus[j] -= δ
+    local10[:, j] = (solve10(plus)[2, :] .- solve10(minus)[2, :]) ./ (2δ)
+end
+fig10 = Figure(size = (980, 380))
+ax10 = Axis(fig10[1, 1], xlabel = "time", ylabel = "∂I/∂θⱼ",
+    title = "Raw: unit-dependent")
+ax10e = Axis(fig10[1, 2], xlabel = "time", ylabel = "(θⱼ/I) ∂I/∂θⱼ",
+    title = "Elasticities: dimensionless")
+for (j, label) in enumerate(["β", "c", "γ"])
+    style = j == 2 ? :dash : :solid
+    lines!(ax10, times10, local10[:, j], label = label, linestyle = style)
+    lines!(ax10e, times10, p010[j] .* local10[:, j] ./ base10[2, :],
+        label = label, linestyle = style)
+end
+axislegend(ax10e)
+fig10
+```
+
+::: {.notes}
+Eight minutes, and the curves are worth reading aloud rather than summarising.
+Each one is the derivative of infectious prevalence with respect to one
+parameter, over time. They start at zero, since at day zero nothing has happened
+yet, peak around the epidemic peak, and change sign afterwards, because raising
+transmission moves the epidemic *earlier* as well as higher, so late in the
+window a bigger beta means fewer people still infectious.
+
+Read the left panel first and let the room fall into the trap. Beta looks
+overwhelming and c looks like a flat line at zero. Ask whether that means beta
+matters more, then spring it: the two curves differ by exactly two hundred,
+which is c over beta. Beta is measured per contact and c in contacts per day, so
+the derivatives are in different units and the comparison is meaningless. Nudging
+beta by 0.01 is a twenty percent change; nudging c by 0.01 is nothing at all.
+
+The right panel divides that out, asking instead for the percentage change in I
+per percentage change in each parameter. Now beta and c lie exactly on top of
+each other, which is why c is dashed — otherwise it would be invisible. That
+coincidence is the session in one picture: nothing in this plot could tell the
+two apart, and Worksheet Part A has them verify it numerically.
+
+Two warnings. This is a derivative at one parameter vector, so it says nothing
+about behaviour a long way from the baseline; that is the next slide. And a
+derivative is not an uncertainty interval and not a posterior; a large derivative
+means a parameter matters, not that we know it badly.
+:::
+
+## Global variation: sharing out the variance
+
+Vary all three parameters across a plausible box and ask how much of the
+*variance* in peak prevalence each one accounts for:
+
+- $S_1$: the share that parameter explains **on its own**.
+- $S_T$: its share **including every interaction** it takes part in.
+
+$S_T > S_1$ means the parameter matters in combination with others;
+$\sum_i S_1^i < 1$ is the part of the variance no single parameter owns.
+
+```{julia}
+#| label: fig-slide-ch10-global
+#| fig-cap: "One-at-a-time swings and Sobol indices over the same parameter box."
+using GlobalSensitivity
+using Logging
+
+function peak10(p)
+    sol = solve(ODEProblem(sir10!, u010, (0.0, 40.0), Float64.(p)),
+        Tsit5(); abstol = 1e-8, reltol = 1e-8)
+    # Dense interpolation on a sub-daily grid, since the peak falls between days.
+    maximum(sol(t)[2] for t in 0.0:0.05:40.0)
+end
+
+boxes10 = [[0.02, 0.08], [5.0, 15.0], [0.15, 0.40]]
+oat10 = [peak10([j == k ? boxes10[j][2] : p010[j] for j in 1:3]) -
+    peak10([j == k ? boxes10[j][1] : p010[j] for j in 1:3]) for k in 1:3]
+
+Logging.disable_logging(Logging.Warn)
+sobol10 = gsa(peak10, Sobol(), boxes10; samples = 500)
+Logging.disable_logging(Logging.BelowMinLevel)
+
+fig10g = Figure(size = (980, 350))
+ax10a = Axis(fig10g[1, 1], xticks = (1:3, ["β", "c", "γ"]),
+    ylabel = "change in peak I", title = "One at a time")
+barplot!(ax10a, 1:3, oat10; color = :grey65)
+ax10b = Axis(fig10g[1, 2], xticks = (1:3, ["β", "c", "γ"]),
+    ylabel = "share of variance", title = "All three at once (Sobol)")
+barplot!(ax10b, (1:3) .- 0.18, sobol10.S1; width = 0.34, color = :steelblue,
+    label = "first order, alone")
+barplot!(ax10b, (1:3) .+ 0.18, sobol10.ST; width = 0.34, color = :darkorange,
+    label = "total, with interactions")
+ylims!(ax10b, 0, 0.6)
+axislegend(ax10b; position = :lt)
+fig10g
+```
+
+::: {.notes}
+Ten minutes, and it is the heart of the session. Walk the left panel first: move
+one parameter from the bottom of its range to the top, holding the others at
+baseline, and record the swing. It gives a ranking, and it is what most people do
+by hand. Then say what it cannot see: it never leaves the baseline for the other
+two parameters, so a parameter that only matters when transmission is already
+high looks unimportant.
+
+The right panel varies all three together. Point at the gap between the blue and
+orange bars: that gap is interaction. Here the first-order shares sum to roughly
+0.85 — nearer 0.89 on a far larger design — so of the order of a tenth of the
+variance belongs to no parameter individually. Both panels depend entirely on
+the box; widen the bounds and the
+ranking can change, which is the caveat to state out loud.
+
+One caveat that the next slide will sharpen. Beta and c get separate bars here
+only because we sampled them as two independent uniforms, and the sizes of those
+bars follow from the two boxes we chose, not from anything the model
+distinguishes. Sobol answers which input ranges drive the spread in the output;
+it never answers which parameters could be estimated. Anyone reading a taller
+beta bar as "we can measure beta" has confused the two questions, which is
+exactly what the observation map settles next.
+
+Two footnotes if asked. The package warns that its design matrices are not fully
+independent QMC sequences; that is suppressed here for legibility and does not
+change the picture at this sample size. And 500 samples is deliberate: the
+worksheet repeats this at 32 and shows the indices are unstable, even negative,
+when the sample is too small.
+:::
+
+## The observation map
+
+Only incidence is observed:
+
+$$
+y(t)=\beta c\,S(t)I(t)/N.
+$$
+
+The transformation $(\beta,c)\mapsto(a\beta,c/a)$ leaves this map unchanged.
+Thus $\beta$ and $c$ are structurally confounded; $\beta c$ can be learned.
+
+The reporting fraction $\rho$ from the previous session is the same argument with
+a twist: observing $\rho C(t)$, the pair $(\rho,\beta c)$ is confounded **only if
+the initial state is unknown**. Treat $S(0), I(0), R(0), C(0)$ as known and both
+become identifiable. Background knowledge, not more data, is what buys it.
+
+::: {.notes}
+Eight minutes. This is the payoff for the observation-models session, so name the
+callback explicitly: this afternoon we said a small epidemic fully reported and a
+large one partly reported look alike, and here is the precise version.
+
+Be accurate about the twist, because it is the interesting part. Scaling the
+whole population up and the reporting fraction down leaves the observed counts
+unchanged, so with unknown initial conditions only the ratio survives. Declaring
+the initial state breaks that symmetry, and the worksheet runs both cases and
+gets exactly that. Say "the initial state", not "the population size": the
+worksheet marks all four initial values known, which is a stronger assumption
+than knowing $N$ alone. The lesson is that
+identifiability is a property of the model *plus* what you already know, not of
+the equations alone.
+
+Contrast with the beta-c case above, which no amount of external knowledge about
+population size repairs. There you need contact data or an independently
+measured c.
+:::
+
+## API and validation
+
+The derivatives above came from finite differences. The library computes them
+directly, by solving the variational equations alongside the model:
+
+```{julia}
+#| label: ch10-forward-sensitivity
+using SciMLSensitivity
+
+local_problem = ODEForwardSensitivityProblem(sir10!, u010, (0.0, 40.0), p010)
+local_solution = solve(local_problem, Tsit5(); saveat = 0.0:1.0:40.0)
+states, jacobians = extract_local_sensitivities(local_solution, true)
+
+# One Jacobian ∂(S, I, R)/∂(β, c, γ) per saved time; row 2, column 1 is ∂I/∂β.
+forward = [jacobian[2, 1] for jacobian in jacobians]
+finite_difference = local10[:, 1]
+agreement = maximum(abs.(forward .- finite_difference)) /
+    maximum(abs.(finite_difference))
+(; saved_times = length(jacobians),
+   relative_difference = round(agreement; sigdigits = 2))
+```
+
+- `SciMLSensitivity`: forward sensitivities or adjoints.
+- `GlobalSensitivity`: Sobol first-order and total indices.
+- `StructuralIdentifiability`: `assess_identifiability`, run in the worksheet.
+- Validate: check $S+I+R=N$, and one derivative two ways, as above.
+
+::: {.notes}
+Five minutes. The point of running this live is that the augmented problem and
+the finite differences agree to about one part in ten thousand, so the earlier
+plot was not an artefact of the perturbation size, and you now have the API that
+scales to models where finite differences would be hopeless.
+
+Worth one aside if the room is with you: that agreement needs tight solver
+tolerances on both slides. A centered difference subtracts two trajectories that
+differ in the fifth decimal place, so at the default tolerances the same
+comparison only agrees to a couple of percent, and the error is in the finite
+difference, not in the library. That is the practical argument for the
+variational equations even when a finite difference is available.
+
+The one API not executed here is `assess_identifiability`: it compiles for tens
+of seconds on a cold session, which is not something to do in front of an
+audience. That is why it lives in the worksheet, and why the warm-up cell during
+the break matters. Say that out loud rather than skipping past it.
+:::
+
+## Takeaways and limitations
+
+- Local: neighborhood behavior around one parameter vector.
+- Global: ranking conditional on ranges and a design.
+- Structural: information available in an idealized observation map, and in
+  what you already know, such as the initial state.
+- Practical identifiability also depends on noise, sampling, initial states, and misspecification.
+
+Read the [book chapter](../../chapters/11-sensitivity-and-identifiability.html)
+for derivations and exercises; see the
+[SciMLSensitivity](https://docs.sciml.ai/SciMLSensitivity/stable/),
+[GlobalSensitivity](https://docs.sciml.ai/GlobalSensitivity/stable/), and
+[StructuralIdentifiability](https://docs.sciml.ai/StructuralIdentifiability/stable/)
+documentation for APIs.
+
+::: {.notes}
+Four minutes, and it is the last thing anyone hears on Day 2, so land it rather
+than reading the bullets.
+
+Ask which of the session's conclusions are about the model and which are about
+the data. The Sobol ranking is about the model and the box we chose; the
+identifiability results are about the data and what we already know. Confusing
+the two is how people end up reporting a confident estimate of a quantity their
+data never contained.
+
+Then hand over to tomorrow: sensitivity tells you which parameter to spend effort
+on, and the intervention session asks what to do about it. Flag that
+Part C of the worksheet is where the reporting-fraction result gets proved, and
+that the two inference chapters it points at are self-study, not sessions here.
+:::

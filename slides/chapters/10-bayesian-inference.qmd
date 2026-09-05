@@ -1,0 +1,158 @@
+---
+title: "Bayesian inference"
+course-unit: ch10-bayesian-inference
+status: complete
+---
+
+## Why this unit matters
+
+- The frequentist parameter estimation chapter: parameters are fixed unknowns, uncertainty is sampling variability.
+- **Bayesian view:** parameters are random variables; a **prior** is updated into
+  a **posterior** by the data.
+- Same SIR model, same reports — different treatment of uncertainty, with
+  [Turing.jl](https://turinglang.org/).
+
+::: {.notes}
+The engine changes from optimisation to MCMC sampling, and the output changes
+from a point estimate plus interval to a full posterior distribution.
+:::
+
+## Bayes' theorem for the SIR model
+
+$$
+p(\theta\mid y_{1:n})=\frac{p(y_{1:n}\mid\theta)\,p(\theta)}{p(y_{1:n})},
+$$
+
+same Poisson likelihood as the frequentist parameter estimation chapter, with weakly informative priors on the
+natural $[0,1]$ ranges:
+
+$$
+i_0\sim\operatorname{Beta}(1,20),\qquad \beta\sim\operatorname{Beta}(1,10).
+$$
+
+The normalising constant is intractable; **NUTS** draws samples whose histogram
+approximates the posterior.
+
+::: {.notes}
+Prior means $1/21\approx0.048$ and $1/11\approx0.091$ are broad near the truth
+($i_0=0.01,\beta=0.05$) but supported only on plausible values.
+:::
+
+## The probabilistic model and sampler
+
+```{julia}
+#| label: ch09-sample
+#| output: false
+#| warning: false
+using OrdinaryDiffEq, SciMLSensitivity, Turing, MCMCChains
+using Distributions, StableRNGs
+
+function sir_ode09!(du, u, p, t)
+    S, I, R, C = u
+    β, c, γ = p
+    N = S + I + R
+    infection = β * c * I / N * S
+    du[1] = -infection
+    du[2] = infection - γ * I
+    du[3] = γ * I
+    du[4] = infection
+end
+
+tmax = 40.0
+prob09 = ODEProblem(sir_ode09!, [990.0, 10.0, 0.0, 0.0], (0.0, tmax), [0.05, 10.0, 0.25])
+sol = solve(prob09, Tsit5(); saveat = 1.0)
+incidence = Array(sol)[4, 2:end] .- Array(sol)[4, 1:(end - 1)]
+data = rand.(StableRNG(20240607), Poisson.(incidence))
+
+@model function bayes_sir(y, prob)
+    l = length(y)
+    i₀ ~ Beta(1.0, 20.0)
+    β ~ Beta(1.0, 10.0)
+    I = i₀ * 1000.0
+    prob = remake(prob; u0 = [1000.0 - I, I, 0.0, 0.0], p = [β, 10.0, 0.25],
+        tspan = (0.0, float(l)))
+    sol = solve(prob, Tsit5(); saveat = 1.0)
+    SciMLBase.successful_retcode(sol) || (Turing.@addlogprob! -Inf; return nothing)
+    C = Array(sol)[4, :]
+    X = C[2:end] .- C[1:(end - 1)]
+    for i in 1:l
+        y[i] ~ Poisson(max(X[i], 0.0) + 1e-6)
+    end
+end
+
+chain = sample(StableRNG(2), bayes_sir(data, prob09), NUTS(0.8),
+    MCMCSerial(), 300, 2; chain_type = MCMCChains.Chains, progress = false)
+```
+
+```{julia}
+#| label: ch09-diagnostics
+(max_rhat = round(maximum(rhat(chain).nt.rhat); digits = 3),
+ posterior_mean = (i₀ = round(mean(vec(Array(chain[:, :i₀, :]))); digits = 4),
+                   β = round(mean(vec(Array(chain[:, :β, :]))); digits = 4)),
+ truth = (i₀ = 0.01, β = 0.05))
+```
+
+::: {.notes}
+Three hundred draws over two chains run fast enough to demonstrate live while
+still giving a meaningful $\hat R$. Say out loud that a real analysis wants more.
+NUTS differentiates through the ODE solve via `SciMLSensitivity`.
+:::
+
+## Posterior and predictive check
+
+```{julia}
+#| label: fig-slide-ch09-posterior
+#| fig-cap: "Left: marginal posteriors (blue) around the truth (red). Right: 95% posterior predictive band vs the data (grey)."
+using CairoMakie
+CairoMakie.activate!(type = "png")
+i0s = vec(Array(chain[:, :i₀, :]))
+βs = vec(Array(chain[:, :β, :]))
+
+function incidence_at(i₀, β, l)
+    I = i₀ * 1000.0
+    solp = solve(remake(prob09; u0 = [1000.0 - I, I, 0.0, 0.0],
+        p = [β, 10.0, 0.25], tspan = (0.0, float(l))), Tsit5(); saveat = 1.0)
+    C = Array(solp)[4, :]
+    C[2:end] .- C[1:(end - 1)]
+end
+l = length(data); obstimes = 1.0:1.0:tmax
+idx = rand(StableRNG(3), 1:length(βs), 150)
+curves = reduce(hcat, [incidence_at(i0s[k], βs[k], l) for k in idx])
+lo = [quantile(curves[t, :], 0.025) for t in 1:l]
+hi = [quantile(curves[t, :], 0.975) for t in 1:l]
+md = [quantile(curves[t, :], 0.5) for t in 1:l]
+
+fig09 = Figure(size = (900, 360))
+axd = Axis(fig09[1, 1]; xlabel = "value", ylabel = "density", title = "Marginals")
+density!(axd, i0s; color = (:steelblue, 0.4), strokecolor = :steelblue, strokewidth = 2)
+density!(axd, βs; color = (:darkorange, 0.4), strokecolor = :darkorange, strokewidth = 2)
+vlines!(axd, [0.01, 0.05]; color = :firebrick, linewidth = 2)
+axp = Axis(fig09[1, 2]; xlabel = "time (days)", ylabel = "new cases/day",
+    title = "Posterior predictive")
+band!(axp, collect(obstimes), lo, hi; color = (:steelblue, 0.3))
+lines!(axp, collect(obstimes), md; color = :steelblue, linewidth = 3)
+scatter!(axp, collect(obstimes), data; color = :grey20)
+fig09
+```
+
+::: {.notes}
+The predictive band envelops the data; the marginals concentrate around the
+truth. The book chapter also shows trace plots and full $\hat R$ / ESS tables.
+:::
+
+## Takeaways and limitations
+
+- `@model` + `NUTS` turns Bayes' theorem into executable sampling.
+- Check convergence with $\hat R\approx1$ and effective sample size.
+- Priors are modelling choices; guard the ODE solve and floor the rate.
+- NUTS re-solves + differentiates the ODE each step — costlier than the frequentist parameter estimation chapter.
+- $\beta$–$c$ non-identifiability persists; Poisson still assumes equidispersion.
+
+Read the [book chapter](../../chapters/10-bayesian-inference.html); see
+[Turing.jl](https://turinglang.org/) and
+[MCMCChains.jl](https://turinglang.org/MCMCChains.jl/stable/).
+
+::: {.notes}
+The central advantage: Bayesian inference makes assumptions explicit and
+propagates them directly into the posterior predictive distribution.
+:::

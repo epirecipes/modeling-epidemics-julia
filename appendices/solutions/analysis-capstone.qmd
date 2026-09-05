@@ -9,7 +9,7 @@ way after changing a bound or a parameter.
 
 ### Sensitivity and identifiability
 
-#### Solution to Exercise 1 {#solution-ch10-ex1}
+#### Solution to Exercise 1 {#solution-ch11-ex1}
 
 The output is changed from the transient infectious peak to the cumulative
 removed state at the final time. The model and parameter bounds stay fixed.
@@ -99,7 +99,7 @@ indices:
 @assert all(isfinite, removed_sobol.ST)
 ```
 
-#### Solution to Exercise 2 {#solution-ch10-ex2}
+#### Solution to Exercise 2 {#solution-ch11-ex2}
 
 The extra observable is the total population,
 $n(t)=S(t)+I(t)+R(t)$. As in the chapter, `assess_identifiability` is called
@@ -147,7 +147,7 @@ from reporting error or model misspecification.
 
 ### Interventions and optimization
 
-#### Solution to Exercise 1 {#solution-ch11-ex1}
+#### Solution to Exercise 1 {#solution-ch12-ex1}
 
 Make the reduction an argument to the existing scenario function, then solve
 the same bounded one-dimensional problem for each value:
@@ -238,7 +238,7 @@ three reductions by $C(45)$ held at both horizons checked — stronger was bette
 at $T=45$ and at $T=200$ — but quoting the improvement as infections averted is
 not safe unless $T$ is long enough that the number has stopped moving.
 
-#### Solution to Exercise 2 {#solution-ch11-ex2}
+#### Solution to Exercise 2 {#solution-ch12-ex2}
 
 For a rectangular policy contained in the horizon, the intervention integral is
 $\int_0^{T}v(t)\,\mathrm dt=v_{\max}d$, so no quadrature is needed: the cost
@@ -363,7 +363,7 @@ end
 
 ### Data-to-decision capstone
 
-#### Solution to Exercise 1 {#solution-ch12-ex1}
+#### Solution to Exercise 1 {#solution-ch13-ex1}
 
 Define an infectious-only loss while retaining the same fixed initial state and
 the same bounded parameter box:
@@ -434,7 +434,7 @@ states carry information about susceptible depletion and removal timing; an
 observation model could weight the three series differently instead of
 silently dropping two of them.
 
-#### Solution to Exercise 2 {#solution-ch12-ex2}
+#### Solution to Exercise 2 {#solution-ch13-ex2}
 
 Evaluate the two reductions for every accepted local parameter candidate. The
 helper below uses the capstone intervention kernel and returns cumulative

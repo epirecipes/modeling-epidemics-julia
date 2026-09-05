@@ -2,7 +2,7 @@
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "212b706371661b1e4fc1314c8848b408021a3935"
+project_hash = "7cc526c9eda300294c49a31ddbd00d9832c2c6b9"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "ec6be48a85c93d995563b84bff8a86bc98df45ce"
@@ -839,6 +839,12 @@ version = "0.3.1"
 git-tree-sha1 = "249fe38abf76d48563e2f4556bebd215aa317e15"
 uuid = "a8cc5b0e-0ffa-5ad4-8c14-923d3ee1735f"
 version = "4.1.1"
+
+[[deps.Cumulants]]
+deps = ["Combinatorics", "CompilerSupportLibraries_jll", "Distributed", "Distributions", "SymmetricTensors"]
+git-tree-sha1 = "ecdae283cbdb5518bf3fdb61ff99eb973fab580b"
+uuid = "01e79fc4-f247-5fa3-af0e-2bd1d4cc767f"
+version = "1.0.6"
 
 [[deps.DSP]]
 deps = ["Bessels", "FFTW", "IterTools", "LinearAlgebra", "Polynomials", "Random", "Reexport", "SpecialFunctions", "Statistics"]
@@ -2859,6 +2865,12 @@ git-tree-sha1 = "9040edd10d9db468eaecc2007663e1f6d754c74c"
 uuid = "6bb917b9-1269-42b9-9f7c-b0dca72083ab"
 version = "1.18.2"
 
+[[deps.MomentClosure]]
+deps = ["Catalyst", "Combinatorics", "Cumulants", "DataStructures", "Distributions", "DocStringExtensions", "Latexify", "ModelingToolkitBase", "PrecompileTools", "Random", "SciMLBase", "StatsBase", "SymbolicIndexingInterface", "SymbolicUtils", "Symbolics", "TermInterface"]
+git-tree-sha1 = "ac694e79f318231e2ed9578d539da97261ab44d2"
+uuid = "01a1b25a-ecf0-48c5-ae58-55bfd5393600"
+version = "0.4.7"
+
 [[deps.MosaicViews]]
 deps = ["MappedArrays", "OffsetArrays", "PaddedViews", "StackViews"]
 git-tree-sha1 = "7b86a5d4d70a9f5cdf2dacb3cbe6d251d1a61dbe"
@@ -4480,6 +4492,12 @@ version = "7.31.0"
     PreallocationTools = "d236fae5-4411-538c-8e31-a6e3d9e00b46"
     SymPy = "24249f21-da20-56a4-8eb1-6a02cf4ae2e6"
     SymPyPythonCall = "bc8888f7-b21e-4b7c-a06a-5d9c9496438c"
+
+[[deps.SymmetricTensors]]
+deps = ["Combinatorics", "CompilerSupportLibraries_jll", "LinearAlgebra", "Random", "StatsBase"]
+git-tree-sha1 = "544ee2461e2b69c2e04bd4e1b596d9cf5c38142f"
+uuid = "1ab33d94-6c6c-50cc-93f0-e3f623a46aa0"
+version = "1.0.7"
 
 [[deps.TOML]]
 deps = ["Dates"]

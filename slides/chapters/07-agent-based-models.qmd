@@ -1,0 +1,155 @@
+---
+title: "Agent-based models"
+course-unit: ch07-agent-based-models
+status: complete
+---
+
+## Why model individuals?
+
+- An ABM stores each individual's status, so the population counts are
+  something we compute rather than the model's only state.
+- Contact rules can be changed without deriving a new aggregate equation.
+- Who contacts whom *can* be made explicit, but only if you record it.
+
+This unit uses a stochastic, discrete-time, discrete-state, individual-level
+model with $\Delta t=0.1$, $c=10$, $\beta=0.05$, and $\gamma=0.25$.
+
+::: {.notes}
+The model is well mixed rather than spatial.  That keeps the connection to the
+SIR equations visible before adding networks or households.
+
+Be careful with the third bullet: this implementation does *not* log contacts or
+transmission sources.  They exist during an update and are discarded.  Recording
+who infected whom needs an event history or extra agent fields.  Worth saying
+aloud, because "ABMs track who infected whom" is a common overstatement.
+:::
+
+## Individual transition probabilities
+
+For $K_i\sim\operatorname{Poisson}(c\Delta t)$ contacts,
+$$
+\Pr(S\to I\mid I_t)=1-\exp\left[-c\Delta t\,\beta I_t/N\right].
+$$
+Recovery uses
+$$
+\Pr(I\to R)=1-\exp(-\gamma\Delta t).
+$$
+For small $\Delta t$, the aggregate limit is
+$$
+\dot S=-\beta cSI/N,\quad
+\dot I=\beta cSI/N-\gamma I,\quad
+\dot R=\gamma I.
+$$
+
+::: {.notes}
+The Poisson contact calculation explains why the ABM's well-mixed rule
+approximates mass action while retaining individual randomness.
+:::
+
+## Agents.jl 7 model logic
+
+```{julia}
+using Agents, Distributions, StableRNGs
+
+@agent struct Person(NoSpaceAgent)
+    status::Symbol
+    next_status::Symbol
+end
+
+function model_step!(model)
+    for p in allagents(model)
+        p.status = p.next_status
+    end
+end
+
+susceptible_count(model) = count(p.status == :S for p in allagents(model))
+infected_count(model) = count(p.status == :I for p in allagents(model))
+recovered_count(model) = count(p.status == :R for p in allagents(model))
+
+function agent_step!(p, model)
+    p.next_status = p.status
+    if p.status == :S
+        for _ in 1:rand(abmrng(model), Poisson(model.c*model.Δt))
+            q = random_agent(model)
+            if q.status == :I && rand(abmrng(model)) < model.β
+                p.next_status = :I; break
+            end
+        end
+    elseif p.status == :I &&
+           rand(abmrng(model)) < 1-exp(-model.γ*model.Δt)
+        p.next_status = :R
+    end
+end
+```
+
+The second field makes the update synchronous.
+
+::: {.notes}
+Without `next_status`, activation order could let an agent infected early in a
+step transmit during that same step.  That would be an unintended scheduling
+assumption.
+:::
+
+## Current-code result
+
+```{julia}
+model = StandardABM(Person; agent_step!, model_step!,
+    properties=(β=0.05, c=10.0, γ=0.25, Δt=0.1),
+    rng=StableRNG(20250711))
+for id in 1:200
+    status = id <= 5 ? :I : :S
+    add_agent!(Person(; id, status, next_status=status), model)
+end
+_, data = run!(model, 200; mdata=[susceptible_count,
+    infected_count, recovered_count], showprogress=false)
+counts = Matrix(data[:, [:susceptible_count, :infected_count,
+    :recovered_count]])'
+(peak_I=maximum(counts[2,:]),
+    population_error=maximum(abs.(sum(counts; dims=1) .- 200)))
+```
+
+The result is generated from the current `run!` API.  Conservation should be
+exact even though the infectious curve is random.
+
+::: {.notes}
+The small population keeps a slide render quick.  The Pluto notebook exposes
+population, initial infections, contact rate, and horizon as controls.
+:::
+
+## Extensions and checks
+
+- Use `GridSpaceSingle` and `nearby_agents` for local contacts: with a fixed
+  neighborhood, $\beta c/\gamma$ is no longer the model's $R_0$.
+- Run seeded replicates, but say *which* summary you compare with the ODE.
+- Measure timestep error with a deterministic map, not a small ensemble.
+
+ABMs can represent clustering, households, behavior, and networks, but those
+mechanisms introduce parameters that may be difficult to observe or identify.
+
+::: {.notes}
+An ABM is not automatically more realistic.  The contact mechanism and
+calibration target determine whether its extra detail is useful.
+
+On the second bullet: the peak of the ensemble mean and the mean of the
+per-replicate peaks straddle the ODE peak, and neither converges to it at finite
+$N$: averaging and maximizing do not commute.  On the third: a 16-path ensemble
+has a standard error of several people, so it cannot resolve a timestep error of
+that size, and failing to resolve one is not evidence of its absence.
+:::
+
+## Takeaways and links
+
+- Agent state makes contact and scheduling assumptions explicit.
+- Synchronous updates protect the intended discrete-time semantics.
+- Aggregate validation must be paired with checks of the individual rule.
+
+Further reading:
+
+- [Agents.jl v7 agent definitions](https://juliadynamics.github.io/Agents.jl/v7.0.3/agents/)
+- [Agents.jl v7 data collection](https://juliadynamics.github.io/Agents.jl/v7.0.3/data/)
+- [Book chapter](../../chapters/07-agent-based-models.html) · [Pluto notebook](../../notebook-exports/chapters/07-agent-based-models.html)
+
+::: {.notes}
+The book develops the equations and exercises.  Use the companion notebook to
+experiment with controls while keeping the random seed fixed.
+:::

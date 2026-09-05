@@ -1,0 +1,560 @@
+---
+course-unit: ch13-data-to-decision-capstone
+status: complete
+---
+
+# Data-to-decision capstone {#sec-data-to-decision-capstone}
+
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
+This capstone follows one analysis from a committed data file to a conditional
+intervention comparison. The point is not to make a historical claim from a
+small table. It is to make every transition visible: provenance, model choice,
+fitting, diagnostics, uncertainty, sensitivity, and a decision-relevant
+scenario.
+
+## Learning goals
+
+By the end of this chapter you should be able to:
+
+- load and verify a versioned local dataset without a render-time download;
+- distinguish observations from reconstructed latent SIR states;
+- fit a small ODE model with bounded `Optimization.jl` parameters;
+- diagnose fit mismatch and summarize deterministic parameter uncertainty;
+- propagate parameter changes through a sensitivity calculation; and
+- compare an intervention scenario with a fitted-rate reference trajectory.
+
+## Model assumptions and classification
+
+The data are the eight committed Eyam observations described in
+[`data/README.md`](../data/README.md). The versioned
+[dataset](../data/eyam_plague_1666.csv) and its
+[provenance metadata](../data/eyam_plague_1666.toml) are both in the course
+repository. They cover the second wave beginning on 18 June 1666, with a
+modeled population of 261. The historical context is discussed by Raggett
+(@raggett1982) and by the later epidemiological analysis of Whittles and
+Didelot (@whittles2016).
+
+We choose a deterministic, continuous-time, continuous-state, homogeneous
+closed SIR model because it is the smallest model that connects the three
+columns and the preceding course units. This is a deliberately limited model
+choice. The `S` and `I` values are **reconstructed from historical records and
+model assumptions, not direct measurements**. A homogeneous closed SIR model
+also omits important plague mechanisms, including rodent-to-human
+transmission, household structure, population movement, and changing
+reporting. The modeled population is the population at the start of the
+second wave, not the pre-plague village population.
+
+## Equations
+
+For this small dataset we fit an effective transmission rate
+$\lambda=\beta c$ and a recovery/removal rate $\gamma$:
+
+$$
+\begin{aligned}
+\frac{\mathrm dS}{\mathrm dt} &= -\lambda\frac{SI}{N},\\
+\frac{\mathrm dI}{\mathrm dt} &= \lambda\frac{SI}{N}-\gamma I,\\
+\frac{\mathrm dR}{\mathrm dt} &= \gamma I.
+\end{aligned}
+$$ {#eq-capstone-sir}
+
+The initial state is fixed to the first row, and the fitted trajectory is
+compared with all three reconstructed state columns. For an intervention
+scenario we add cumulative incidence $C$ and multiply $\lambda$ by
+$1-v(t)$:
+
+$$
+\frac{\mathrm dC}{\mathrm dt}
+  = (1-v(t))\lambda\frac{SI}{N}.
+$$ {#eq-capstone-intervention}
+
+The least-squares objective is
+
+$$
+L(\lambda,\gamma)=
+\sum_{k=1}^{8}\sum_{j\in\{S,I,R\}}
+\left(\frac{x_j(t_k;\lambda,\gamma)-x_{j,k}}{N}\right)^2.
+$$ {#eq-capstone-loss}
+
+This is a transparent teaching objective, not a claim that historical counts
+have Gaussian errors. A count likelihood, reporting model, or mechanistic
+plague model would be appropriate for a substantive historical analysis.
+
+The three residual series are not independent. Both the data and the model
+conserve the population, so at every observation time
+
+$$
+e_S(t_k)+e_I(t_k)+e_R(t_k)=0,
+\qquad e_j(t_k)=x_j(t_k;\lambda,\gamma)-x_{j,k}.
+$$ {#eq-capstone-residual-constraint}
+
+Fitting all three states is therefore an equal-weighted redundant criterion
+rather than three independent sources of information: only two of the three
+residuals can be chosen freely. The objective remains usable as a teaching
+criterion, but it should not be read as three times the evidence of a
+single-state fit.
+
+## Julia implementation
+
+The data path is local and there is no fallback: a capstone about provenance
+must not silently substitute anything for the committed file. If the CSV is
+missing or its bytes do not match the recorded digest, the render fails here
+rather than producing a clean figure of something else. No code in this
+chapter fetches epidemiological data from the network.
+
+```{julia}
+using CairoMakie
+using CSV
+using DataFrames
+using DiffEqCallbacks
+using OrdinaryDiffEq
+using Optimization
+using OptimizationOptimJL
+using SHA
+using TOML
+
+course_root = normpath(joinpath(@__DIR__, ".."))
+include(joinpath(course_root, "src", "EpiModelingCourse.jl"))
+using .EpiModelingCourse
+
+data_path = joinpath(course_root, "data", "eyam_plague_1666.csv")
+metadata_path = joinpath(course_root, "data", "eyam_plague_1666.toml")
+metadata = TOML.parsefile(metadata_path)
+population = Float64(metadata["population"])
+observation_columns = [:time_months, :S, :I, :R]
+
+@assert isfile(data_path) "Committed Eyam dataset is missing: $(data_path)"
+actual_checksum = bytes2hex(sha256(read(data_path)))
+@assert actual_checksum == metadata["csv_sha256"]
+
+data = CSV.read(data_path, DataFrame)
+data_source = "committed Eyam CSV, SHA-256 verified"
+
+@assert String.(names(data)) == String.(observation_columns)
+@assert nrow(data) == 8
+@assert all(diff(data.time_months) .> 0)
+@assert all(isapprox.(data.S .+ data.I .+ data.R, population; atol = 1e-8))
+```
+
+The metadata records the expected SHA-256 digest, the packaged MultiBD source,
+and the Apache 2.0 license. A checksum verifies that this checkout contains
+the committed bytes; it does not prove that the historical reconstruction is
+correct. Provenance and interpretation caveats remain part of the model
+decision.
+
+```{julia}
+data_source, metadata["provenance"], metadata["interpretation"]["caveats"]
+```
+
+### Fitting the effective SIR model
+
+The fitting kernel is written out in full below. Its `λ` parameter is an effective
+rate; it should not be reported as a separately identified contact rate and
+transmission probability.
+
+```{julia}
+observation_times = Float64.(data.time_months)
+initial_state = Float64.(collect(data[1, [:S, :I, :R]]))
+observed_states = permutedims(Matrix{Float64}(data[:, [:S, :I, :R]]))
+
+function fit_rhs!(du, u, p, t)
+    λ, γ = p
+    S, I, R = u
+    incidence = λ * S * I / population
+    du[1] = -incidence
+    du[2] = incidence - γ * I
+    du[3] = γ * I
+    return nothing
+end
+
+function fit_loss(θ, _)
+    problem = ODEProblem(
+        fit_rhs!,
+        initial_state,
+        (first(observation_times), last(observation_times)),
+        θ,
+    )
+    solution = solve(
+        problem,
+        Tsit5();
+        saveat = observation_times,
+        abstol = 1e-8,
+        reltol = 1e-8,
+    )
+    prediction = Array(solution)
+    return sum(((prediction .- observed_states) ./ population) .^ 2)
+end
+
+coarse_grid = [
+    (fit_loss([λ, γ], nothing), λ, γ)
+    for λ in range(0.5, 6.0; length = 15)
+    for γ in range(0.5, 4.0; length = 15)
+]
+grid_start = coarse_grid[argmin(first.(coarse_grid))]
+fit_objective = OptimizationFunction(fit_loss, AutoFiniteDiff())
+fit_problem = OptimizationProblem(
+    fit_objective,
+    [grid_start[2], grid_start[3]],
+    nothing;
+    lb = [1e-4, 1e-4],
+    ub = [8.0, 8.0],
+)
+fit_solution = solve(fit_problem, Fminbox(LBFGS()); maxiters = 60)
+fitted_parameters = Float64.(fit_solution.u)
+fitted_loss = fit_solution.objective
+fitted_parameters, fitted_loss
+```
+
+### Diagnostics
+
+The model and data are shown together, followed by residuals. The residual
+pattern is more useful than a single loss value: systematic timing or peak
+mismatch is evidence that the homogeneous SIR mechanism is inadequate for
+the question.
+
+```{julia}
+fitted_solution = solve(
+    ODEProblem(
+        fit_rhs!,
+        initial_state,
+        (first(observation_times), last(observation_times)),
+        fitted_parameters,
+    ),
+    Tsit5();
+    saveat = observation_times,
+    abstol = 1e-8,
+    reltol = 1e-8,
+)
+fitted_states = Array(fitted_solution)
+residuals = fitted_states .- observed_states
+state_rmse = sqrt.(vec(sum(residuals .^ 2; dims = 2)) ./ nrow(data))
+```
+
+```{julia}
+#| label: fig-ch12-fit-diagnostics
+#| fig-cap: "Fitted homogeneous SIR states and residuals for the committed Eyam observations."
+fig = Figure(size = (950, 750))
+ax1 = Axis(fig[1, 1], xlabel = "months since 18 June 1666", ylabel = "people")
+state_labels = ["S", "I", "R"]
+state_colors = [:steelblue, :firebrick, :seagreen]
+for j in 1:3
+    lines!(ax1, observation_times, fitted_states[j, :],
+        color = state_colors[j], label = "$(state_labels[j]) model")
+    scatter!(ax1, observation_times, observed_states[j, :],
+        color = state_colors[j], markersize = 9, label = "$(state_labels[j]) data")
+end
+axislegend(ax1, position = :rb, nbanks = 2)
+ax2 = Axis(fig[2, 1], xlabel = "months since 18 June 1666", ylabel = "model − data")
+for j in 1:3
+    lines!(ax2, observation_times, residuals[j, :],
+        color = state_colors[j], label = state_labels[j])
+end
+hlines!(ax2, [0.0], color = :black, linestyle = :dash)
+axislegend(ax2)
+fig
+```
+
+### Deterministic uncertainty envelope
+
+The historical states are reconstructed and there are only eight rows, so a
+formal confidence interval would require an explicit observation model. As a
+transparent alternative, we construct a deterministic parameter envelope:
+the $3\times3$ combinations of $\pm10\%$ around the fitted parameters are
+retained when their loss is close to the best loss. This is an uncertainty
+scenario, not a calibrated confidence interval.
+
+The acceptance tolerance is a modeling choice, so it is worth stating in units
+a reader can check. @eq-capstone-loss sums $8\times3=24$ squared residuals
+scaled by $N$, so a total loss $L$ corresponds to a root-mean-square residual
+of $N\sqrt{L/24}$ people per state observation. The tolerance $0.02$ therefore
+admits candidates whose typical residual is about eight people rather than the
+fitted three — roughly a doubling of the misfit, chosen to be visible on the
+figure without admitting parameters the data clearly reject. Because some
+$\pm10\%$ candidates fail this test, the band below is an *accepted local-grid
+envelope*, not a $\pm10\%$ envelope; `length(accepted_parameters)` reports how
+many of the nine survived.
+
+```{julia}
+parameter_candidates = [
+    fitted_parameters .* [λ_scale, γ_scale]
+    for λ_scale in [0.9, 1.0, 1.1]
+    for γ_scale in [0.9, 1.0, 1.1]
+]
+accepted_parameters = [
+    parameters for parameters in parameter_candidates
+    if fit_loss(parameters, nothing) <= fitted_loss + 0.02
+]
+accepted_predictions = [
+    Array(solve(
+        ODEProblem(
+            fit_rhs!,
+            initial_state,
+            (first(observation_times), last(observation_times)),
+            parameters,
+        ),
+        Tsit5();
+        saveat = observation_times,
+    )) for parameters in accepted_parameters
+]
+infectious_lower = [minimum(prediction[2, k] for prediction in accepted_predictions)
+    for k in eachindex(observation_times)]
+infectious_upper = [maximum(prediction[2, k] for prediction in accepted_predictions)
+    for k in eachindex(observation_times)]
+(candidates = length(parameter_candidates), accepted = length(accepted_parameters))
+```
+
+The candidates that survive are the ones that scale $\lambda$ and $\gamma$
+together, leaving $\lambda/\gamma$ near its fitted value; the off-diagonal
+combinations that change the ratio are rejected. The envelope is therefore
+tracing the ridge of near-equivalent fits rather than a box around the
+optimum, which is the same identifiability structure that the sensitivity
+calculation below picks up.
+
+```{julia}
+#| label: fig-ch12-uncertainty
+#| fig-cap: "A deterministic accepted local-grid envelope for infectious prevalence."
+fig = Figure(size = (850, 450))
+ax = Axis(fig[1, 1], xlabel = "months since 18 June 1666", ylabel = "infectious people")
+band!(ax, observation_times, infectious_lower, infectious_upper,
+    color = (:steelblue, 0.25), label = "accepted local-grid envelope")
+lines!(ax, observation_times, fitted_states[2, :], color = :firebrick, label = "fitted model")
+scatter!(ax, observation_times, observed_states[2, :], color = :black, label = "reconstructed I")
+axislegend(ax)
+fig
+```
+
+### Sensitivity and intervention comparison
+
+For a decision-oriented output, we propagate the fitted parameters to
+cumulative incidence at a fixed horizon. Three things about that output need
+stating before it is used.
+
+First, the horizon is month 8 but the observations end at month 4, so every
+number below is a four-month extrapolation of a model fitted to the first four
+months. It is not an observed endpoint, and it is the model's cumulative
+incidence at month 8 rather than a guaranteed asymptotic final size — whether
+the two coincide is something the trajectory has to show, not something the
+horizon guarantees. The variable names carry the horizon for this reason.
+
+Second, $C$ is initialized at $C(0)=0$, so it counts new infections *after*
+the first observation and excludes the seven people already infectious at
+$t=0$. Since $\mathrm dC/\mathrm dt=-\mathrm dS/\mathrm dt$, it satisfies
+$C(t)=S(0)-S(t)$; the total ever infected is $C(t)+I(0)$.
+
+Third, the reduction is applied on top of the fitted rate. The fitted
+$\lambda$ was estimated from data recorded during the outbreak itself, so it
+already summarizes whatever conditions and actions were in force at the time.
+Because the fitted effective transmission rate already reflects conditions
+during the observed period, the reference trajectory represents no additional
+modeled reduction — not the historical outbreak with actual Eyam actions
+removed. The comparison below is between a fitted-rate reference and the same
+rate with an additional modeled reduction, and it is named that way throughout.
+
+The summary below reports incidence at the last observation alongside
+incidence at the horizon, and the infectious prevalence still remaining at the
+horizon, so you can see for yourself how much of the reported number was
+extrapolated and whether the model has actually burned out by month 8.
+
+The centered one-percent perturbation is a local sensitivity check; it is not
+a replacement for the broader analysis in @sec-sensitivity-and-identifiability.
+
+```{julia}
+function decision_rhs!(du, u, p, t)
+    λ, γ, reduction, N = p
+    S, I, R, C = u
+    incidence = (1 - reduction) * λ * S * I / N
+    du[1] = -incidence
+    du[2] = incidence - γ * I
+    du[3] = γ * I
+    du[4] = incidence
+    return nothing
+end
+
+function decision_solution(
+    start_time;
+    duration = 1.0,
+    reduction = 0.5,
+    horizon = 8.0,
+)
+    stop_time = start_time + duration
+    @assert 0 <= reduction <= 1 "reduction must be a fraction in [0, 1]"
+    @assert duration >= 0 "duration must be nonnegative"
+    @assert 0 <= start_time <= horizon "start_time must lie within [0, horizon]"
+    @assert stop_time <= horizon "the intervention must end within the horizon"
+    parameters = [fitted_parameters[1], fitted_parameters[2], 0.0, population]
+    problem = ODEProblem(
+        decision_rhs!,
+        [initial_state..., 0.0],
+        (0.0, horizon),
+        parameters,
+    )
+    if duration <= 0.0 || reduction <= 0.0
+        return solve(problem, Tsit5(); saveat = 0.1)
+    end
+    function affect!(integrator)
+        integrator.p[3] = integrator.t < stop_time ? reduction : 0.0
+        return nothing
+    end
+    callback = PresetTimeCallback([start_time, stop_time], affect!)
+    return solve(problem, Tsit5(); callback = callback, saveat = 0.1)
+end
+
+function cumulative_incidence_at_month_8(start_time; duration = 1.0, reduction = 0.5)
+    return Array(decision_solution(
+        start_time;
+        duration = duration,
+        reduction = reduction,
+    ))[4, end]
+end
+
+function month8_incidence_for_parameters(parameters)
+    solution = solve(
+        ODEProblem(
+            decision_rhs!,
+            [initial_state..., 0.0],
+            (0.0, 8.0),
+            [parameters[1], parameters[2], 0.0, population],
+        ),
+        Tsit5();
+        saveat = 0.1,
+    )
+    return Array(solution)[4, end]
+end
+
+function relative_parameter_sensitivity(parameter_index)
+    perturbation = 0.01 * fitted_parameters[parameter_index]
+    lower = copy(fitted_parameters)
+    upper = copy(fitted_parameters)
+    lower[parameter_index] -= perturbation
+    upper[parameter_index] += perturbation
+    lower_output = month8_incidence_for_parameters(lower)
+    upper_output = month8_incidence_for_parameters(upper)
+    baseline_output = month8_incidence_for_parameters(fitted_parameters)
+    return (upper_output - lower_output) / (2 * perturbation) *
+        fitted_parameters[parameter_index] / baseline_output
+end
+
+relative_month8_incidence_sensitivity = [
+    relative_parameter_sensitivity(index) for index in 1:2
+]
+reference_scenario = decision_solution(0.0; duration = 0.0, reduction = 0.0)
+reduced_scenario = decision_solution(1.0; duration = 1.0, reduction = 0.5)
+decision_summary = (
+    λ = fitted_parameters[1],
+    γ = fitted_parameters[2],
+    month4_incidence_reference =
+        Array(reference_scenario)[4, findfirst(≈(last(observation_times)),
+            reference_scenario.t)],
+    month8_incidence_reference = Array(reference_scenario)[4, end],
+    month8_incidence_with_reduction = Array(reduced_scenario)[4, end],
+    infectious_remaining_at_horizon = Array(reference_scenario)[2, end],
+    relative_month8_incidence_sensitivity = relative_month8_incidence_sensitivity,
+)
+decision_summary
+```
+
+```{julia}
+#| label: fig-ch12-decision-comparison
+#| fig-cap: "Cumulative incidence to month 8 with and without an additional modeled reduction, relative to the fitted-rate reference. Observations end at month 4, so the curves are extrapolated beyond that point."
+fig = Figure(size = (900, 500))
+ax = Axis(fig[1, 1], xlabel = "months", ylabel = "cumulative incidence since month 0")
+decision_times = reference_scenario.t
+reference_array = Array(reference_scenario)
+reduced_array = Array(reduced_scenario(decision_times))
+lines!(ax, decision_times, reference_array[4, :],
+    color = :firebrick, label = "fitted-rate reference")
+lines!(ax, decision_times, reduced_array[4, :],
+    color = :steelblue, label = "additional 50% reduction from month 1")
+vlines!(ax, [last(observation_times)], color = :black, linestyle = :dot,
+    label = "last observation")
+vspan!(ax, 1.0, 2.0, color = (:steelblue, 0.15))
+axislegend(ax)
+fig
+```
+
+## Validation
+
+The data checks validate schema, ordering, population conservation, and the
+committed checksum. The model checks validate that the optimizer and every
+solver call actually converged — a finite number can be returned by a failed
+solve, so the return codes are checked rather than inferred — and then that
+the trajectory conserves population, stays nonnegative, and satisfies the
+cumulative-incidence identity $C(t)=S(0)-S(t)$. The decision comparison checks
+that the additional reduction lowers cumulative incidence for this fitted
+scenario. These are structural checks, not evidence that the model is
+historically adequate.
+
+```{julia}
+fit_conservation_error = maximum(
+    abs.(vec(sum(fitted_states; dims = 1)) .- population),
+)
+reference_array_check = Array(reference_scenario)
+cumulative_identity_error = maximum(
+    abs.(reference_array_check[4, :] .-
+        (initial_state[1] .- reference_array_check[1, :])),
+)
+policy_reduction = Array(reference_scenario)[4, end] -
+    Array(reduced_scenario)[4, end]
+
+@assert SciMLBase.successful_retcode(fit_solution.retcode)
+@assert SciMLBase.successful_retcode(fitted_solution.retcode)
+@assert SciMLBase.successful_retcode(reference_scenario.retcode)
+@assert SciMLBase.successful_retcode(reduced_scenario.retcode)
+@assert all(isfinite, fitted_parameters) && isfinite(fitted_loss)
+@assert all(isfinite, fitted_states)
+@assert all(>=(-1e-8), fitted_states)
+@assert all(>=(-1e-8), reference_array_check)
+@assert fit_conservation_error < 1e-6
+@assert cumulative_identity_error < 1e-6
+@assert policy_reduction > 0
+(source = data_source, fit_conservation_error = fit_conservation_error,
+    cumulative_identity_error = cumulative_identity_error,
+    state_rmse = state_rmse, policy_reduction = policy_reduction)
+```
+
+## Interpretation and limitations
+
+The fitted $\lambda$ summarizes transmission under the data's time scale; it
+does not identify separate $\beta$ and $c$. The deterministic envelope
+captures only a deliberately narrow local perturbation and the residual
+diagnostic shows why uncertainty should not be reduced to optimizer digits.
+The intervention comparison is made under the same homogeneous closed SIR
+assumptions, and its reference arm deserves care. The fitted $\lambda$ is an
+*effective* rate estimated from the outbreak as it actually unfolded, so the
+conditions and actions in force during those four months are already baked
+into it. The reference trajectory is therefore a constant-$\lambda$ scenario
+with no additional modeled reduction; it is not Eyam with its historical
+actions stripped out, and the gap between the two curves is not the effect of
+the village's real response. Both arms also run four months past the last
+observation. Because `S` and `I` are reconstructed values and a homogeneous
+closed SIR omits important plague mechanisms, the result is an educational
+model-based comparison, not a historical estimate of the effect of a specific
+Eyam action. Replacing the model with a household, vector-borne, movement, or
+observation model would change both the fit and the decision.
+
+## Exercises
+
+### Exercise 1 {#ch13-ex1}
+
+Replace the state least-squares loss with a loss on `I` only, refit
+$(\lambda,\gamma)$, and compare the residual plot and the implied cumulative
+incidence $S(0)-S(t_8)$ over the observation window with the all-state fit.
+Explain which information is discarded and why a seemingly better infectious
+curve may fit the reconstructed $S$ and $R$ series worse, even though both
+fitted trajectories conserve $S+I+R=N$.
+
+### Exercise 2 {#ch13-ex2}
+
+Use the deterministic envelope to compare a one-month 25% reduction with a
+one-month 50% reduction beginning at month 1. Report the range of cumulative
+incidence at month 8 across accepted parameter candidates for each scenario,
+then state what additional observation or mechanistic assumption would be
+needed before treating that range as decision uncertainty.
+
+## Companion materials
+
+- [Slides](../slides/chapters/13-data-to-decision-capstone.html)
+- [Pluto preview](../notebook-exports/chapters/13-data-to-decision-capstone.html)
+- [Pluto source](../notebooks/chapters/13-data-to-decision-capstone.jl)

@@ -38,12 +38,12 @@ which differs across platforms:
 export QUARTO_JULIA="$(julia +1.12.5 -e 'print(Base.julia_cmd()[1])')"
 ```
 
-Two environments must be instantiated. The second serves chapter 8 alone,
+Two environments must be instantiated. The second serves chapter 9 alone,
 which needs a package that conflicts with the rest of the course:
 
 ```bash
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
-julia --project=environments/ch08 -e 'using Pkg; Pkg.instantiate()'
+julia --project=environments/ch09 -e 'using Pkg; Pkg.instantiate()'
 ```
 
 ## The rule that catches people first
@@ -104,7 +104,7 @@ CI runs all seven of these, and they are the fastest way to check your work.
 Each exits nonzero with specific messages.
 
 ```bash
-# The 24-unit artifact contract and 48 exercise/solution pairs.
+# The 25-unit artifact contract and 50 exercise/solution pairs.
 julia --project=. scripts/check_structure.jl
 
 # Figure captions, slide notes, notebook interactivity, solutions, citations.
