@@ -124,7 +124,7 @@ guarantees convergence, unlike everything else in the course so far.
 - Closure recovers both the **mean** and the **spread**, at a fraction of the cost.
 - The ODE peak sits above the ensemble mean, as the covariance argument predicts.
 
-See the [book chapter](../../chapters/06-reaction-networks.qmd) for the figure and
+See the [book chapter](../../chapters/06-reaction-networks.html) for the figure and
 the full comparison.
 
 ::: {.notes}
