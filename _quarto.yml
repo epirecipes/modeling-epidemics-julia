@@ -47,19 +47,18 @@ book:
         - chapters/11-bayesian-inference.qmd
         - chapters/12-sensitivity-and-identifiability.qmd
         - chapters/13-interventions-and-optimization.qmd
-        - chapters/14-data-to-decision-capstone.qmd
+        - chapters/14-advanced-optimal-control.qmd
+        - chapters/15-data-to-decision-capstone.qmd
     - resources.qmd
   appendices:
     - appendices/01-delay-differential-equations.qmd
     - appendices/02-stochastic-delay-differential-equations.qmd
     - appendices/03-discrete-event-simulation.qmd
     - appendices/04-universal-differential-equations.qmd
-    - appendices/05-finite-state-projection.qmd
-    - appendices/06-probabilistic-numerical-integration.qmd
-    - appendices/07-surrogate-models.qmd
-    - appendices/08-advanced-optimal-control.qmd
-    - appendices/09-model-composition.qmd
-    - appendices/10-symbolic-analysis.qmd
+    - appendices/05-probabilistic-numerical-integration.qmd
+    - appendices/06-surrogate-models.qmd
+    - appendices/07-model-composition.qmd
+    - appendices/08-symbolic-analysis.qmd
     - appendices/cheat-sheet.qmd
     - appendices/solutions.qmd
     - references.qmd

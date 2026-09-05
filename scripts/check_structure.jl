@@ -23,7 +23,7 @@ const WORKSHOP_TIME_LIMIT_MINUTES = parse(Int, get(ENV, "WORKSHOP_TIME_LIMIT_MIN
 units = TOML.parsefile(joinpath(ROOT, "course-units.toml"))["units"]
 errors = String[]
 
-length(units) == 27 || push!(errors, "Expected 27 teaching units, found $(length(units)).")
+length(units) == 26 || push!(errors, "Expected 26 teaching units, found $(length(units)).")
 
 function unit_stem(unit)
     number = replace(unit["id"], r"^[a-z]+" => "")
@@ -161,7 +161,7 @@ for unit in units
 end
 
 solution_matches = collect(eachmatch(r"\{#solution-[a-z0-9]+-ex[0-9]+\}", solutions))
-length(solution_matches) == 54 || push!(errors, "Expected 54 solution anchors, found $(length(solution_matches)).")
+length(solution_matches) == 52 || push!(errors, "Expected 52 solution anchors, found $(length(solution_matches)).")
 
 total_workshop_minutes = sum(workshop_minutes; init = 0)
 total_workshop_minutes > WORKSHOP_TIME_LIMIT_MINUTES && push!(
@@ -188,4 +188,4 @@ if !isempty(errors)
     exit(1)
 end
 
-println("Course structure is valid: 27 teaching units and 54 exercise/solution pairs.")
+println("Course structure is valid: 26 teaching units and 52 exercise/solution pairs.")

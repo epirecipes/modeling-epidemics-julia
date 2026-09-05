@@ -30,7 +30,9 @@ You will:
   agree with the hand-written versions of @sec-ordinary-differential-equations,
   @sec-stochastic-differential-equations and @sec-jump-processes;
 - derive why the moment hierarchy of a bimolecular reaction does not close; and
-- apply a normal closure and judge it against a jump-process ensemble.
+- apply a normal closure and judge it against a jump-process ensemble; and
+- solve the master equation directly by finite state projection to obtain
+  quantities a closure cannot, such as the probability of extinction.
 
 ## Model assumptions and classification
 
@@ -249,6 +251,88 @@ closure_sd = sqrt.(max.(closure_solution[second_index, :] .- closure_mean .^ 2, 
 signature, which emits a deprecation notice from ModelingToolkit; the cell above
 suppresses warnings for that reason alone.
 
+### The whole distribution: finite state projection
+
+Moment closure buys the mean and variance cheaply by assuming a shape. The
+*finite state projection* (FSP) instead solves @eq-ch07-cme directly, on a
+truncated state space, and returns the full joint distribution — no distributional
+assumption at all. `FiniteStateProjection.jl` takes the same network object.
+
+Two choices make this tractable. Writing recovery as `I --> 0` leaves the state
+two-dimensional in $(S,I)$, since $R$ is recoverable by conservation; and the
+population is reduced to $N=50$, because the state space grows as $N^2$ and the
+exactness is paid for in size.
+
+```{julia}
+#| label: code-ch07-fsp
+using FiniteStateProjection
+
+const N_fsp = 50
+const κ_fsp = β * c / N_fsp
+const S₀_fsp, I₀_fsp = 46, 4
+const fsp_times = [0.0, 5.0, 10.0, 40.0]
+
+fsp_network = @reaction_network begin
+    κ, S + I --> 2I
+    γ, I --> 0
+end
+
+initial_distribution = zeros(N_fsp + 1, N_fsp + 1)
+initial_distribution[S₀_fsp + 1, I₀_fsp + 1] = 1.0   # all probability on one state
+
+fsp_solution = solve(
+    ODEProblem(FSPSystem(fsp_network), initial_distribution, (0.0, 40.0),
+               [:κ => κ_fsp, :γ => γ]),           # a symbol map, not a tuple
+    Vern7(); abstol = 1e-10, saveat = fsp_times)
+
+expected_infectious = [sum(P[s+1, i+1]*i for s in 0:N_fsp, i in 0:N_fsp)
+                       for P in fsp_solution.u]
+extinction_probability = [sum(P[s+1, 1] for s in 0:N_fsp) for P in fsp_solution.u]
+
+(states = (N_fsp + 1)^2,
+ retcode = fsp_solution.retcode,
+ probability_mass = round.(sum.(fsp_solution.u); digits = 8),
+ expected_infectious = round.(expected_infectious; digits = 3),
+ extinction_probability = round.(extinction_probability; digits = 4))
+```
+
+Probability mass stays at 1 to eight digits, which is the FSP analogue of the
+conservation check: the truncated generator still describes a probability
+distribution, so no probability has leaked off the edge of the projected space.
+
+The last row is what neither the ODE, the SDE nor the closure can produce. By
+$t=40$ the probability that the outbreak has already died out is around 0.92 —
+a statement about the *distribution*, not about a mean. A closure has no
+mechanism to represent an atom of probability at $I=0$; solving the master
+equation does it directly.
+
+```{julia}
+#| label: code-ch07-fsp-validation
+function simulate_small(seed)
+    problem = JumpProblem(
+        fsp_network, [:S => S₀_fsp, :I => I₀_fsp], (0.0, 40.0),
+        [:κ => κ_fsp, :γ => γ]; aggregator = Direct(), rng = StableRNG(seed))
+    return Array(solve(problem, SSAStepper(); saveat = fsp_times)(fsp_times))
+end
+
+small_ensemble = Array{Float64}(undef, 2, length(fsp_times), 4000)
+for k in axes(small_ensemble, 3)
+    small_ensemble[:, :, k] = simulate_small(11_000 + k)
+end
+
+[(time = fsp_times[k],
+  fsp_mean = round(expected_infectious[k]; digits = 3),
+  ensemble_mean = round(mean(small_ensemble[2, k, :]); digits = 3),
+  fsp_extinction = round(extinction_probability[k]; digits = 4),
+  ensemble_extinction = round(mean(small_ensemble[2, k, :] .== 0); digits = 4))
+ for k in eachindex(fsp_times)]
+```
+
+The FSP means and extinction probabilities agree with 4000 stochastic
+simulations, as they must: the master equation *is* the process the simulations
+sample from, so this is a check on the truncation and the numerics rather than on
+the model.
+
 ## Validation
 
 The claim to test is that the closure reproduces what an ensemble of jump
@@ -338,7 +422,9 @@ matter most, when counts are small, near the start of an outbreak or near
 extinction. The normal closure can also return negative variances or negative
 means, both meaningless. And a closure describes the *ensemble*, not any single
 outbreak: it can tell you the spread of epidemic sizes, but never the
-probability that an outbreak fades out, which needs the distribution itself.
+probability that an outbreak fades out, which needs the distribution itself —
+which is precisely what the finite state projection above supplies, at the cost
+of a state space that grows with the square of the population.
 
 Mass action is the network's own assumption. Contact structure, households and
 age mixing are not expressible as a two-reaction network, and @sec-agent-based-models
