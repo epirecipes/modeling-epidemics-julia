@@ -71,8 +71,8 @@ It asks you to confirm where it will install things; press `Enter` to accept the
 Then close and reopen your terminal, and install the version this course is built and tested against. These two lines are typed, on every platform including Windows:
 
 ```bash
-juliaup add 1.12
-juliaup default 1.12
+juliaup add 1.12.5
+juliaup default 1.12.5
 ```
 
 Check that it worked by typing `julia`:
@@ -84,14 +84,14 @@ $ julia
   (_)     | (_) (_)    |
    _ _   _| |_  __ _   |  Type "?" for help, "]?" for Pkg help.
   | | | | | | |/ _` |  |
-  | | |_| | | | (_| |  |  Version 1.12.7
+  | | |_| | | | (_| |  |  Version 1.12.5
  _/ |\__'_|_|_|\__'_|  |
 |__/                   |
 
 julia>
 ```
 
-Your patch version may be higher than `1.12.7`; anything starting `1.12` is right. That prompt is the Julia **REPL**. Leave it with `exit()` or `Ctrl-D`.
+It must read exactly `1.12.5`, patch version included. The course's `Manifest.toml` records the Julia version everything was resolved and tested against, and Quarto refuses to run a document when the Julia you started differs from it, so a newer patch release stops worksheets rendering with a `Julia version mismatch` error. This is why the commands above name the full version rather than the `1.12` channel, which would follow whichever patch is newest. That prompt is the Julia **REPL**. Leave it with `exit()` or `Ctrl-D`.
 
 If `julia` is not found, see [Julia is not found](#julia-is-not-found) below.
 
