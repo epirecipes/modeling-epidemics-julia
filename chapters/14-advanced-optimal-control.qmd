@@ -1,0 +1,313 @@
+---
+course-unit: ch14-advanced-optimal-control
+status: complete
+---
+
+# Advanced optimal control {#sec-advanced-optimal-control}
+
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
+@sec-interventions-and-optimization optimised a *finite* set of intervention
+parameters — when to start a lockdown, how long to hold it — around an ODE
+simulation. This chapter treats the intervention itself as an unknown
+**function** of time. Nothing constrains the policy to be a step; the solver is
+free to return whatever shape minimises the objective, and the shape it returns
+is informative.
+
+The chapter follows the formulations collected in
+[EpiPolicies](https://github.com/epirecipes/EpiPolicies): minimising cases under
+a resource budget, holding prevalence beneath a capacity threshold, and
+combining a non-pharmaceutical intervention with vaccination.
+
+## Learning goals
+
+You will:
+
+- state a continuous-time optimal control problem and discretise it by collocation;
+- read the shape of an optimal policy rather than only its objective value;
+- impose a **path constraint** and see what it costs;
+- combine two controls with different mechanisms and budgets; and
+- distinguish a binding constraint from a slack one, and both from infeasibility.
+
+## Model assumptions and classification
+
+The controlled model is the SIR system of @sec-ordinary-differential-equations
+in proportions, with $S(0)=0.99$, $I(0)=0.01$, $\beta c = 0.5$ and
+$\gamma = 0.25$, so $R_0 = 2$. It stays **deterministic, continuous-time,
+continuous-state and population-level**; what is new is that some coefficients
+are decision variables rather than parameters.
+
+Two controls appear. A non-pharmaceutical intervention $u(t) \in [0, u_{\max}]$
+reduces transmission by the factor $1-u(t)$, and is *costly to sustain*, so its
+time integral is bounded by a budget $B$. A vaccination rate
+$v(t) \in [0, v_{\max}]$ moves susceptibles directly to immunity, and is limited
+by a total supply $V$. The distinction matters: $u$ suppresses transmission only
+while it is applied, whereas $v$ permanently removes susceptibles.
+
+## Equations
+
+The controlled dynamics, with cumulative incidence $C$ tracked for the objective:
+
+$$
+\begin{aligned}
+\dot S(t) &= -(1-u(t))\,\beta c\,S(t)I(t) - v(t)S(t),\\
+\dot I(t) &= (1-u(t))\,\beta c\,S(t)I(t)-\gamma I(t),\\
+\dot C(t) &= (1-u(t))\,\beta c\,S(t)I(t).
+\end{aligned}
+$$ {#eq-ch14-controlled-sir}
+
+The base problem minimises final cumulative incidence with a small quadratic
+regulariser, which discourages the numerically awkward chattering that an
+unregularised bang-bang solution can produce:
+
+$$
+\begin{aligned}
+\underset{S,I,C,u}{\operatorname{minimize}}\quad
+& C(t_f) + 10^{-3}\int_0^{t_f}u(t)^2\,\mathrm dt\\
+\text{subject to}\quad
+& 0\le u(t)\le u_{\max},\qquad \int_0^{t_f}u(t)\,\mathrm dt\le B .
+\end{aligned}
+$$ {#eq-ch14-objective}
+
+Two extensions follow. A **path constraint**
+
+$$
+I(t) \le I_{\max} \qquad \text{for all } t
+$$ {#eq-ch14-path}
+
+expresses finite hospital capacity: it constrains the trajectory at every
+instant, not merely at the end. And a **second control** adds the vaccination
+terms of @eq-ch14-controlled-sir with $\int_0^{t_f} v(t)\,\mathrm dt \le V$.
+
+Because $u$ is a function, the problem is infinite-dimensional. Collocation
+replaces it with a finite nonlinear program by representing each variable on a
+grid of supports and enforcing the dynamics there.
+
+## Julia implementation
+
+One builder covers all three problems, so the comparisons that follow differ
+only in the arguments passed.
+
+```{julia}
+#| label: code-ch14-builder
+using CairoMakie
+using InfiniteOpt
+using Ipopt
+
+const tf = 20.0
+const βc = 0.5
+const γ = 0.25
+
+function control_problem(; umax = 0.5, budget = 2.0, capacity = nothing,
+                           vaccination = false, vmax = 0.05, supply = 0.4,
+                           n_supports = 41)
+    model = InfiniteModel(Ipopt.Optimizer)
+    set_optimizer_attribute(model, "print_level", 0)
+    set_optimizer_attribute(model, "max_iter", 3000)
+    set_optimizer_attribute(model, "tol", 1e-7)
+
+    @infinite_parameter(model, t in [0.0, tf], num_supports = n_supports,
+                        derivative_method = OrthogonalCollocation(2))
+    @variable(model, S >= 0, Infinite(t), start = 0.99)
+    @variable(model, I >= 0, Infinite(t), start = 0.01)
+    @variable(model, C >= 0, Infinite(t), start = 0.0)
+    @variable(model, 0 <= u <= umax, Infinite(t), start = 0.0)
+
+    @constraint(model, S(0) == 0.99)
+    @constraint(model, I(0) == 0.01)
+    @constraint(model, C(0) == 0.0)
+
+    if vaccination
+        @variable(model, 0 <= v <= vmax, Infinite(t), start = 0.0)
+        @constraint(model, deriv(S, t) == -(1 - u)*βc*S*I - v*S)
+        @constraint(model, integral(v, t) <= supply)
+        constant_over_collocation(v, t)
+    else
+        @constraint(model, deriv(S, t) == -(1 - u)*βc*S*I)
+    end
+    @constraint(model, deriv(I, t) == (1 - u)*βc*S*I - γ*I)
+    @constraint(model, deriv(C, t) == (1 - u)*βc*S*I)
+    @constraint(model, integral(u, t) <= budget)
+    capacity === nothing || @constraint(model, I <= capacity)
+
+    @objective(model, Min, C(tf) + 1e-3*integral(u^2, t))
+    constant_over_collocation(u, t)
+    optimize!(model)
+
+    solved = has_values(model)
+    grid = supports(t)
+    control = solved ? value.(u) : Float64[]
+    # Collocation supports are not uniformly spaced, so integrate on the actual grid.
+    used = solved ? sum((grid[i+1] - grid[i])*(control[i+1] + control[i])/2
+                        for i in 1:length(grid)-1) : NaN
+    return (; model, t,
+            status = termination_status(model),
+            budget_used = used,
+            final_cases = solved ? value(C(tf)) : NaN,
+            peak_prevalence = solved ? maximum(value.(I)) : NaN,
+            times = supports(t),
+            S = solved ? value.(S) : Float64[],
+            I = solved ? value.(I) : Float64[],
+            u = solved ? value.(u) : Float64[],
+            v = (vaccination && solved) ? value.(model[:v]) : Float64[])
+end
+
+baseline = control_problem()
+(status = baseline.status,
+ final_cases = round(baseline.final_cases; digits = 4),
+ peak_prevalence = round(baseline.peak_prevalence; digits = 4))
+```
+
+### Capacity as a path constraint
+
+@eq-ch14-path is enforced at every support rather than only at $t_f$. Whether it
+changes anything depends on what the unconstrained optimum already does.
+
+```{julia}
+#| label: code-ch14-capacity
+generous = control_problem(; budget = 6.0, umax = 0.8)
+slack    = control_problem(; budget = 6.0, umax = 0.8, capacity = 0.06)
+binding  = control_problem(; budget = 6.0, umax = 0.8, capacity = 0.04)
+starved  = control_problem(; budget = 2.0, capacity = 0.04)
+
+[(label = "no cap",           status = generous.status,
+  final_cases = round(generous.final_cases; digits = 4),
+  peak = round(generous.peak_prevalence; digits = 4)),
+ (label = "cap 0.06, slack",  status = slack.status,
+  final_cases = round(slack.final_cases; digits = 4),
+  peak = round(slack.peak_prevalence; digits = 4)),
+ (label = "cap 0.04, binding", status = binding.status,
+  final_cases = round(binding.final_cases; digits = 4),
+  peak = round(binding.peak_prevalence; digits = 4)),
+ (label = "cap 0.04, budget 2", status = starved.status,
+  final_cases = round(starved.final_cases; digits = 4),
+  peak = round(starved.peak_prevalence; digits = 4))]
+```
+
+Three regimes, and the distinction between them is the practical content of this
+section. With a cap of 0.06 the constraint is **slack**: the case-minimising
+policy already keeps prevalence below it, so adding the constraint changes
+nothing. At 0.04 it **binds**, the peak sits exactly on the cap — and final cases
+*rise*. Holding the peak down means spending control early, when suppression buys
+less total reduction, so a capacity constraint is not free: it is paid for in
+cases. With a budget of 2.0 the same cap is **infeasible**; no admissible policy
+can hold prevalence that low for twenty days, and the solver says so rather than
+returning a misleadingly plausible answer.
+
+### Two controls
+
+Vaccination removes susceptibles permanently, so a unit of it is worth more late
+in an epidemic than a unit of transmission reduction, which lapses the moment it
+stops.
+
+```{julia}
+#| label: code-ch14-vaccination
+vaccinated = control_problem(; vaccination = true)
+(status = vaccinated.status,
+ final_cases = round(vaccinated.final_cases; digits = 4),
+ peak_prevalence = round(vaccinated.peak_prevalence; digits = 4),
+ reduction_versus_baseline =
+     round(1 - vaccinated.final_cases/baseline.final_cases; digits = 3))
+```
+
+```{julia}
+#| label: fig-ch14-policies
+#| fig-cap: "Optimal policies and the trajectories they produce. Left: prevalence under the case-minimising policy, under a binding capacity cap, and with vaccination added. Right: the corresponding non-pharmaceutical control, showing that a capacity constraint pulls control earlier while vaccination substitutes for it."
+figure = Figure(size = (920, 380))
+
+axis1 = Axis(figure[1, 1], xlabel = "Time", ylabel = "Prevalence I(t)")
+lines!(axis1, baseline.times, baseline.I; color = :steelblue, linewidth = 2,
+       label = "Minimise cases")
+lines!(axis1, binding.times, binding.I; color = :firebrick, linewidth = 2,
+       label = "Capacity cap 0.04")
+lines!(axis1, vaccinated.times, vaccinated.I; color = :seagreen, linewidth = 2,
+       label = "With vaccination")
+hlines!(axis1, [0.04]; color = :grey, linestyle = :dash)
+axislegend(axis1; position = :rt, framevisible = false)
+
+axis2 = Axis(figure[1, 2], xlabel = "Time", ylabel = "Control u(t)")
+lines!(axis2, baseline.times, baseline.u; color = :steelblue, linewidth = 2,
+       label = "Minimise cases")
+lines!(axis2, binding.times, binding.u; color = :firebrick, linewidth = 2,
+       label = "Capacity cap 0.04")
+lines!(axis2, vaccinated.times, vaccinated.u; color = :seagreen, linewidth = 2,
+       label = "With vaccination")
+axislegend(axis2; position = :rt, framevisible = false)
+figure
+```
+
+## Validation
+
+An optimiser returning a number is not evidence that the number is right. Three
+checks apply here.
+
+```{julia}
+#| label: code-ch14-validation
+# 1. The optimiser must respect the constraints it was given.
+# 2. A control of zero must reproduce the uncontrolled epidemic.
+uncontrolled = control_problem(; umax = 1e-9)
+# 3. Refining the collocation grid must not move the answer much.
+refined = control_problem(; n_supports = 81)
+
+(budget_used = round(baseline.budget_used; digits = 4),
+ budget_respected = baseline.budget_used <= 2.0 + 1e-6,
+ uncontrolled_final_cases = round(uncontrolled.final_cases; digits = 4),
+ controlled_final_cases = round(baseline.final_cases; digits = 4),
+ coarse_grid = round(baseline.final_cases; digits = 4),
+ fine_grid = round(refined.final_cases; digits = 4),
+ grid_sensitivity = round(abs(refined.final_cases - baseline.final_cases); digits = 5))
+```
+
+The budget holds, forbidding control reproduces a substantially larger epidemic,
+and doubling the number of supports moves the objective only slightly — so the
+answer is a property of the problem rather than of the discretisation. The last
+check is the one most often skipped, and the one that catches a transcription
+that is too coarse to represent the policy it is asked to find.
+
+## Interpretation and limitations
+
+The shape of the optimal policy carries more information than its objective
+value. Under a pure case-minimising objective with a limited budget, control is
+deployed in a concentrated burst near the peak, where each unit of transmission
+reduction averts most infections. Under a capacity constraint it is spread
+earlier and more thinly, because the binding requirement is no longer total cases
+but never exceeding the threshold. Those are different policies arising from
+different stated aims, and neither is "the" optimum.
+
+The limitations are worth stating plainly. Ipopt returns **local** solutions:
+`LOCALLY_SOLVED` means a point satisfying first-order conditions, not a global
+optimum, and a nonconvex problem may have others. The model is deterministic, so
+the policy is computed with perfect foresight of a trajectory that no real
+outbreak provides — a genuinely useful policy must be recomputed as data arrive,
+which is closer to model predictive control than to a single open-loop solve. The
+objective encodes only what is written down: minimising cases with a quadratic
+penalty says nothing about the distribution of harm, the economic cost of
+lockdown, or adherence. And the regulariser is a numerical convenience whose
+weight is a modelling choice; making it large enough to matter changes the
+problem being solved.
+
+## Exercises
+
+### Exercise 1 {#ch14-ex1}
+
+Vary the capacity threshold in @eq-ch14-path across a range spanning the slack,
+binding and infeasible regimes at fixed budget, and plot final cumulative cases
+against the threshold. Identify the value at which the constraint begins to bind
+and the value at which the problem becomes infeasible, and explain why the curve
+is flat on one side of the first and rising on the other.
+
+### Exercise 2 {#ch14-ex2}
+
+With both controls active, halve the vaccine supply $V$ while doubling the
+non-pharmaceutical budget $B$. Report the final cumulative cases and describe how
+the timing of the two controls changes relative to each other. Explain which
+control the optimiser prefers to spend first, in terms of the difference between
+removing susceptibles permanently and suppressing transmission temporarily.
+
+## Companion materials
+
+- [Slides](../slides/chapters/14-advanced-optimal-control.html)
+- [Pluto preview](../notebook-exports/chapters/14-advanced-optimal-control.html)
+- [Pluto source](../notebooks/chapters/14-advanced-optimal-control.jl)

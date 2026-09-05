@@ -202,8 +202,8 @@ $$
   differentiation backends.
 - [Parameter estimation](../../chapters/10-parameter-estimation.html): the same
   problem shape with a likelihood as the objective.
-- [Advanced optimal control](../../appendices/08-advanced-optimal-control.html):
-  a control function of time, via InfiniteOpt and SDDP.
+- [Advanced optimal control](../../chapters/14-advanced-optimal-control.html):
+  a control function of time, via InfiniteOpt.
 - [Book chapter](../../chapters/13-interventions-and-optimization.html) and
   [DiffEqCallbacks.jl](https://docs.sciml.ai/DiffEqCallbacks/stable/).
 

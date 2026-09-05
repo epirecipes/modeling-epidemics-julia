@@ -1,0 +1,126 @@
+---
+title: "Advanced optimal control"
+course-unit: ch14-advanced-optimal-control
+status: complete
+---
+
+## From a timing decision to a control function
+
+- The interventions and optimization chapter chooses one intervention start time.
+- Here $u(t)$ is a bounded, function-valued intervention.
+- Classification: deterministic, continuous-time, continuous-state,
+  population-level, ODE-constrained.
+
+Use normalized states $S,I,C$ with $S(0)=0.99$, $I(0)=0.01$ and $C(0)=0$.
+The horizon is $T=20$, $0\leq u\leq0.5$, and $\int_0^T u(t)\,dt\leq2$.
+
+::: {.notes}
+The support points used by the transcription are numerical degrees of freedom;
+they do not make the mathematical control discrete.
+:::
+
+## Controlled SIR and objective
+
+$$
+\dot S=-(1-u)\beta cSI,\quad
+\dot I=(1-u)\beta cSI-\gamma I,\quad
+\dot C=(1-u)\beta cSI.
+$$
+
+$$
+\min_u C(T)+10^{-3}\int_0^T u(t)^2dt
+\quad\text{s.t.}\quad
+0\le u(t)\le u_{\max},\quad \int_0^T u(t)dt\le B.
+$$
+
+The identity $C(t)=S(0)-S(t)$ is a structural validation.
+
+## Current InfiniteOpt formulation
+
+```{julia}
+using CairoMakie, InfiniteOpt, Ipopt
+T, βc, γ, umax, B = 20.0, 0.5, 0.25, 0.5, 2.0
+model = InfiniteModel(Ipopt.Optimizer)
+set_optimizer_attribute(model, "print_level", 0)
+@infinite_parameter(model, t in [0.0, T], num_supports=15,
+                    derivative_method=OrthogonalCollocation(2))
+@variable(model, S >= 0, Infinite(t), start=0.99)
+@variable(model, I >= 0, Infinite(t), start=0.01)
+@variable(model, C >= 0, Infinite(t), start=0.0)
+@variable(model, 0 <= u <= umax, Infinite(t), start=0.0)
+@constraint(model, S(0.0) == 0.99); @constraint(model, I(0.0) == 0.01)
+@constraint(model, C(0.0) == 0.0)
+@constraint(model, deriv(S,t) == -(1-u)*βc*S*I)
+@constraint(model, deriv(I,t) == (1-u)*βc*S*I - γ*I)
+@constraint(model, deriv(C,t) == (1-u)*βc*S*I)
+@constraint(model, integral(u,t) <= B)
+@objective(model, Min, C(T) + 1e-3*integral(u^2,t))
+constant_over_collocation(u,t)
+optimize!(model)
+```
+
+::: {.notes}
+This is the supported InfiniteOpt 0.6 path in the root environment. Ipopt
+returns a local solution to the collocated nonlinear program.
+:::
+
+## Read the transcription and plot it
+
+```{julia}
+#| fig-cap: "Collocated SIR trajectory and the optimized bounded intervention over time."
+ts = supports(t)
+Ŝ, Î, Ĉ, û = value.(S), value.(I), value.(C), value.(u)
+fig = Figure(size=(850, 350))
+ax1 = Axis(fig[1,1], xlabel="time", ylabel="fraction")
+lines!(ax1, ts, Ŝ, label="S"); lines!(ax1, ts, Î, label="I")
+lines!(ax1, ts, Ĉ, label="C"); axislegend(ax1)
+ax2 = Axis(fig[1,2], xlabel="time", ylabel="u(t)")
+stairs!(ax2, ts, û); hlines!(ax2, [umax], linestyle=:dash)
+fig
+```
+
+Check bounds, nonnegativity, and the incidence identity before interpretation.
+Refining supports is the relevant numerical convergence experiment.
+
+## Capacity as a path constraint
+
+$$
+I(t) \le I_{\max}\quad\text{for all } t
+$$
+
+Constrains the whole trajectory, not just the endpoint. Three regimes:
+
+| Cap | Status | Final cases | Peak |
+|---|---|---|---|
+| none | solved | 0.128 | 0.053 |
+| 0.06 | **slack** | 0.128 | 0.053 |
+| 0.04 | **binding** | 0.174 | 0.040 |
+| 0.04, budget 2 | **infeasible** | — | — |
+
+A binding cap *raises* total cases: capacity is paid for in infections.
+
+::: {.notes}
+The middle two rows are the teaching moment. Tightening a constraint the optimum
+already satisfies changes nothing; tightening it past that point costs you the
+objective. And with too small a budget the problem is simply infeasible — the
+solver says so rather than returning something plausible.
+:::
+
+## Two controls, different mechanisms
+
+- $u(t)$ reduces transmission **while applied**; budget $\int u \le B$.
+- $v(t)$ removes susceptibles **permanently**; supply $\int v \le V$.
+
+Adding vaccination cuts final cases by 76% against the same NPI budget alone.
+
+::: {.notes}
+The asymmetry is the point: transmission reduction lapses the moment it stops,
+whereas a vaccinated susceptible stays removed. That changes when the optimiser
+prefers to spend each control, which is what exercise 2 asks about.
+:::
+
+::: {.notes}
+The limitation is a modeling boundary, not a missing macro. Use a supported
+transcription for the deterministic nonlinear problem and a different method
+when stochastic nonlinear dynamics are essential.
+:::

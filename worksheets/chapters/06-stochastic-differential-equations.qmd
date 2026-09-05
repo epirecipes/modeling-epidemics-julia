@@ -445,5 +445,5 @@ Nothing here is assigned. The whole project stays available to you afterwards.
   `noise_rate_prototype` is a mathematical statement rather than an API detail.
 - [The Pluto notebook](../../notebooks/chapters/06-stochastic-differential-equations.jl):
   sliders over the same model.
-- [Model composition and structured populations](../../appendices/09-model-composition.qmd):
+- [Model composition and structured populations](../../appendices/07-model-composition.qmd):
   the self-study unit that takes this construction to multi-group populations.

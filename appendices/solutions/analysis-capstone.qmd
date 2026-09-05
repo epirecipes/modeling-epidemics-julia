@@ -363,7 +363,7 @@ end
 
 ### Data-to-decision capstone
 
-#### Solution to Exercise 1 {#solution-ch14-ex1}
+#### Solution to Exercise 1 {#solution-ch15-ex1}
 
 Define an infectious-only loss while retaining the same fixed initial state and
 the same bounded parameter box:
@@ -434,7 +434,7 @@ states carry information about susceptible depletion and removal timing; an
 observation model could weight the three series differently instead of
 silently dropping two of them.
 
-#### Solution to Exercise 2 {#solution-ch14-ex2}
+#### Solution to Exercise 2 {#solution-ch15-ex2}
 
 Evaluate the two reductions for every accepted local parameter candidate. The
 helper below uses the capstone intervention kernel and returns cumulative
@@ -498,3 +498,176 @@ collect data that constrain the effective transmission and removal rates. For
 historical plague questions, a mechanistic model of household, movement, or
 rodent-to-human transmission would also be needed before assigning a causal
 interpretation to the policy comparison.
+
+### Advanced optimal control
+
+#### Solution to Exercise 1 {#solution-ch14-ex1}
+
+Sweeping the capacity threshold traces out the three regimes the chapter
+describes, and the shape of the curve is the answer.
+
+```{julia}
+#| label: sol-ch14-ex1
+using InfiniteOpt
+using Ipopt
+using CairoMakie
+
+const oc_tf = 20.0
+const oc_βc = 0.5
+const oc_γ = 0.25
+
+function sweep_problem(; capacity = nothing, budget = 6.0, umax = 0.8, n_supports = 41)
+    model = InfiniteModel(Ipopt.Optimizer)
+    set_optimizer_attribute(model, "print_level", 0)
+    set_optimizer_attribute(model, "max_iter", 3000)
+    @infinite_parameter(model, t in [0.0, oc_tf], num_supports = n_supports,
+                        derivative_method = OrthogonalCollocation(2))
+    @variable(model, S >= 0, Infinite(t), start = 0.99)
+    @variable(model, I >= 0, Infinite(t), start = 0.01)
+    @variable(model, C >= 0, Infinite(t), start = 0.0)
+    @variable(model, 0 <= u <= umax, Infinite(t), start = 0.0)
+    @constraint(model, S(0) == 0.99)
+    @constraint(model, I(0) == 0.01)
+    @constraint(model, C(0) == 0.0)
+    @constraint(model, deriv(S, t) == -(1 - u)*oc_βc*S*I)
+    @constraint(model, deriv(I, t) == (1 - u)*oc_βc*S*I - oc_γ*I)
+    @constraint(model, deriv(C, t) == (1 - u)*oc_βc*S*I)
+    @constraint(model, integral(u, t) <= budget)
+    capacity === nothing || @constraint(model, I <= capacity)
+    @objective(model, Min, C(oc_tf) + 1e-3*integral(u^2, t))
+    constant_over_collocation(u, t)
+    optimize!(model)
+    solved = has_values(model)
+    return (status = termination_status(model),
+            final_cases = solved ? value(C(oc_tf)) : NaN,
+            peak = solved ? maximum(value.(I)) : NaN)
+end
+
+unconstrained = sweep_problem()
+thresholds = [0.09, 0.07, 0.055, 0.05, 0.045, 0.04, 0.035, 0.03]
+sweep = [(threshold = c, sweep_problem(; capacity = c)...) for c in thresholds]
+
+(unconstrained_peak = round(unconstrained.peak; digits = 4),
+ unconstrained_cases = round(unconstrained.final_cases; digits = 4),
+ sweep = [(c.threshold, string(c.status), round(c.final_cases; digits = 4)) for c in sweep])
+```
+
+```{julia}
+#| label: fig-sol-ch14-ex1
+#| fig-cap: "Final cumulative cases against the capacity threshold. The curve is flat where the constraint is slack and rises as it binds, showing that capacity is bought with infections."
+solved = [c for c in sweep if !isnan(c.final_cases)]
+figure = Figure(size = (720, 340))
+axis = Axis(figure[1, 1], xlabel = "Capacity threshold Imax",
+            ylabel = "Final cumulative cases")
+lines!(axis, [c.threshold for c in solved], [c.final_cases for c in solved];
+       color = :firebrick, linewidth = 2)
+scatter!(axis, [c.threshold for c in solved], [c.final_cases for c in solved];
+         color = :firebrick, markersize = 8)
+hlines!(axis, [unconstrained.final_cases]; color = :steelblue, linestyle = :dash,
+        label = "Unconstrained optimum")
+vlines!(axis, [unconstrained.peak]; color = :grey, linestyle = :dot,
+        label = "Unconstrained peak")
+axislegend(axis; position = :rt, framevisible = false)
+figure
+```
+
+**Why the curve has this shape.** To the right of the unconstrained peak the
+constraint is slack: the case-minimising policy already satisfies it, so imposing
+it changes neither the policy nor the objective, and the curve is flat at the
+unconstrained value. The kink occurs where the threshold crosses that peak. To
+the left the constraint binds, and every further reduction forces control to be
+spent earlier — when the susceptible pool is large and suppression averts fewer
+infections per unit of control — so the objective rises monotonically.
+
+Pushed far enough the problem becomes infeasible: no admissible policy within the
+budget can hold prevalence that low for the whole horizon. The practical reading
+is that a capacity target and a control budget are not independent choices, and
+declaring a target without the resources to meet it produces an infeasible
+problem rather than a merely expensive one.
+
+#### Solution to Exercise 2 {#solution-ch14-ex2}
+
+Halving supply while doubling the budget substitutes a permanent control for a
+temporary one, and the timing shifts accordingly.
+
+```{julia}
+#| label: sol-ch14-ex2
+function two_control_problem(; budget = 2.0, supply = 0.4, umax = 0.5,
+                               vmax = 0.05, n_supports = 41)
+    model = InfiniteModel(Ipopt.Optimizer)
+    set_optimizer_attribute(model, "print_level", 0)
+    set_optimizer_attribute(model, "max_iter", 3000)
+    @infinite_parameter(model, t in [0.0, oc_tf], num_supports = n_supports,
+                        derivative_method = OrthogonalCollocation(2))
+    @variable(model, S >= 0, Infinite(t), start = 0.99)
+    @variable(model, I >= 0, Infinite(t), start = 0.01)
+    @variable(model, C >= 0, Infinite(t), start = 0.0)
+    @variable(model, 0 <= u <= umax, Infinite(t), start = 0.0)
+    @variable(model, 0 <= v <= vmax, Infinite(t), start = 0.0)
+    @constraint(model, S(0) == 0.99)
+    @constraint(model, I(0) == 0.01)
+    @constraint(model, C(0) == 0.0)
+    @constraint(model, deriv(S, t) == -(1 - u)*oc_βc*S*I - v*S)
+    @constraint(model, deriv(I, t) == (1 - u)*oc_βc*S*I - oc_γ*I)
+    @constraint(model, deriv(C, t) == (1 - u)*oc_βc*S*I)
+    @constraint(model, integral(u, t) <= budget)
+    @constraint(model, integral(v, t) <= supply)
+    @objective(model, Min, C(oc_tf) + 1e-3*integral(u^2, t))
+    constant_over_collocation(u, t)
+    constant_over_collocation(v, t)
+    optimize!(model)
+    grid = supports(t)
+    uu, vv = value.(u), value.(v)
+    weight(x) = sum(grid[i]*x[i] for i in eachindex(grid)) / max(sum(x), eps())
+    return (status = termination_status(model),
+            final_cases = value(C(oc_tf)),
+            mean_time_u = weight(uu), mean_time_v = weight(vv),
+            times = grid, u = uu, v = vv)
+end
+
+original = two_control_problem()
+swapped  = two_control_problem(; budget = 4.0, supply = 0.2)
+
+(original = (final_cases = round(original.final_cases; digits = 4),
+             mean_time_u = round(original.mean_time_u; digits = 2),
+             mean_time_v = round(original.mean_time_v; digits = 2)),
+ swapped  = (final_cases = round(swapped.final_cases; digits = 4),
+             mean_time_u = round(swapped.mean_time_u; digits = 2),
+             mean_time_v = round(swapped.mean_time_v; digits = 2)))
+```
+
+```{julia}
+#| label: fig-sol-ch14-ex2
+#| fig-cap: "The two controls before and after halving vaccine supply and doubling the transmission-reduction budget. Vaccination is spent early because a removed susceptible stays removed; transmission reduction is spent near the peak, where it averts most infections per unit applied."
+figure = Figure(size = (900, 340))
+axis1 = Axis(figure[1, 1], xlabel = "Time", ylabel = "Control",
+             title = "Budget 2.0, supply 0.4")
+lines!(axis1, original.times, original.u; color = :steelblue, linewidth = 2, label = "u (NPI)")
+lines!(axis1, original.times, original.v; color = :seagreen, linewidth = 2, label = "v (vaccination)")
+axislegend(axis1; position = :rt, framevisible = false)
+axis2 = Axis(figure[1, 2], xlabel = "Time", ylabel = "Control",
+             title = "Budget 4.0, supply 0.2")
+lines!(axis2, swapped.times, swapped.u; color = :steelblue, linewidth = 2, label = "u (NPI)")
+lines!(axis2, swapped.times, swapped.v; color = :seagreen, linewidth = 2, label = "v (vaccination)")
+axislegend(axis2; position = :rt, framevisible = false)
+figure
+```
+
+**Which control is spent first, and why.** Vaccination is used as early as its
+supply allows. A vaccinated susceptible is removed permanently, so the benefit of
+each dose compounds over the whole remaining horizon — every subsequent infection
+that person would have caused is averted too. Delaying a dose wastes that
+compounding, and doses given after the epidemic has passed are worthless.
+
+Transmission reduction behaves oppositely. It lapses the instant it stops, so its
+value depends on *when* it is applied: a unit spent when prevalence is high and
+the susceptible pool still large averts far more infections than the same unit
+spent early against a handful of cases. The optimiser therefore concentrates it
+around the peak.
+
+Doubling the budget while halving supply shifts the burden towards the temporary
+control, so the mean application time of the combined policy moves later, and
+final cases rise relative to the original allocation despite the larger nominal
+budget. The asymmetry is a general lesson about intervention portfolios:
+permanent and temporary measures are not interchangeable units of "control", and
+a budget expressed in undifferentiated effort hides that.
