@@ -453,24 +453,36 @@ function closure_versus_ensemble(population; trajectories = 200, seed0 = 8000)
     ensemble = cat((one_run(seed0 + k) for k in 1:trajectories)...; dims = 3)
     ensemble_mean = dropdims(mean(ensemble; dims = 3), dims = 3)[2, :]
 
+    # At small N the closure can terminate early, returning fewer saved points
+    # than requested, so compare only over the range it actually produced.
+    n = min(length(mean_series), length(ensemble_mean))
+    gap = maximum(abs.(mean_series[1:n] .- ensemble_mean[1:n]))
     return (population = population,
-            max_absolute_gap = round(maximum(abs.(mean_series .- ensemble_mean)); digits = 3),
-            relative_to_population =
-                round(maximum(abs.(mean_series .- ensemble_mean)) / population; digits = 4))
+            closure_retcode = closure.retcode,
+            points_returned = n,
+            max_absolute_gap = round(gap; digits = 3),
+            relative_to_population = round(gap / population; digits = 4))
 end
 
 [closure_versus_ensemble(1000), closure_versus_ensemble(100)]
 ```
 
-The absolute gap is smaller at $N=100$ simply because every count is smaller;
-the gap *relative to the population* is what grows. The argument after
-@eq-ch06-unclosed explains the direction. The closure is exact except for the
-neglected third central moments, and the size of those relative to the first two
+The result at $N=100$ is sharper than a larger error: the solver returns
+`ReturnCode.Unstable` and stops early, so only part of the time range is
+comparable at all. The normal closure does not gracefully degrade here — it
+breaks.
+
+The argument after @eq-ch06-unclosed explains why. The closure is exact except
+for the neglected third central moments, and their size relative to the first two
 scales roughly as $N^{-1/2}$: with fewer individuals the distribution of $I$ is
-further from normal, more skewed, and increasingly affected by trajectories that
-fade out early — which no symmetric closure can represent. At $N=100$ a
-noticeable fraction of runs go extinct before an outbreak takes off, dragging the
-ensemble mean below a closure that has no mechanism for extinction.
+further from normal and more skewed. Worse, a noticeable fraction of runs go
+extinct before an outbreak takes off, so the true distribution has an atom of
+probability at zero. A symmetric closure has no way to represent that, and the
+variance it infers can go negative — at which point the moment equations lose any
+solution to follow and the integration fails.
+
+This is the practical lesson of the chapter's limitations section in concrete
+form: always check the return code before reading the numbers.
 
 ### Agent-based models
 
