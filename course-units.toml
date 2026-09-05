@@ -302,3 +302,14 @@ track = "self-study"
 environment = "root"
 packages = ["ModelingToolkit", "Catalyst", "OrdinaryDiffEq", "StochasticDiffEq", "JumpProcesses", "CairoMakie"]
 sources = ["../sir-julia/tutorials/ode_stages/ode_stages.jmd", "../sir-julia/tutorials/ode_multigroup/ode_multigroup.jmd", "../sir-julia/tutorials/rn_mtk/rn_mtk.jmd", "../sir-julia/tutorials/ode_compose/ode_compose.jmd"]
+
+[[units]]
+id = "a10"
+slug = "symbolic-analysis"
+title = "Symbolic equilibrium and stability analysis"
+kind = "advanced"
+status = "complete"
+track = "self-study"
+environment = "root"
+packages = ["Symbolics", "OrdinaryDiffEq", "CairoMakie"]
+sources = ["../sir-julia/tutorials/ode_steadystate/ode_steadystate.jmd"]

@@ -58,6 +58,7 @@ book:
     - appendices/07-surrogate-models.qmd
     - appendices/08-advanced-optimal-control.qmd
     - appendices/09-model-composition.qmd
+    - appendices/10-symbolic-analysis.qmd
     - appendices/cheat-sheet.qmd
     - appendices/solutions.qmd
     - references.qmd

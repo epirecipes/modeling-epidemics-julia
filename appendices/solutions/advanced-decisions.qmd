@@ -303,3 +303,173 @@ Increasing `N` makes the diffusion approximation relatively more plausible,
 while small counts make discreteness and extinction important. The SDE is a
 Gaussian approximation and need not remain inside the jump interval or remain
 nonnegative without additional modeling choices.
+
+### Symbolic equilibrium and stability analysis
+
+#### Solution to Exercise 1 {#solution-a10-ex1}
+
+The latent class enlarges the infected subsystem from one dimension to two, so
+the threshold now comes from a quadratic rather than a single eigenvalue.
+
+```{julia}
+#| label: sol-a10-ex1
+using Symbolics
+
+# Six loaded packages export `@variables` (Symbolics, Catalyst,
+# ModelingToolkitBase, JuMP, InfiniteOpt, SDDP), so it must be qualified here.
+Symbolics.@variables S E I R λ
+Symbolics.@variables βc γ μ σ N
+
+seir = [μ*N - βc*S*I/N - μ*S,
+        βc*S*I/N - (σ + μ)*E,
+        σ*E - (γ + μ)*I,
+        γ*I - μ*R]
+
+# The infected subsystem is (E, I); evaluate its Jacobian at the disease-free state.
+J_infected = Symbolics.simplify.(Symbolics.substitute.(
+    Symbolics.jacobian(seir[2:3], [E, I]), (Dict(S => N, E => 0, I => 0),)))
+J_infected
+```
+
+```{julia}
+#| label: sol-a10-ex1-charpoly
+# For a 2x2 matrix the characteristic polynomial is λ² - tr(J)λ + det(J),
+# so the Routh--Hurwitz coefficients are available without extracting them.
+a₁ = Symbolics.simplify(-(J_infected[1, 1] + J_infected[2, 2]); expand = true)
+a₂ = Symbolics.simplify(
+    J_infected[1, 1]*J_infected[2, 2] - J_infected[1, 2]*J_infected[2, 1]; expand = true)
+(a₁ = a₁, a₂ = a₂)
+```
+
+The polynomial is $\lambda^2 + a_1\lambda + a_2$ with
+$a_1 = (\sigma+\mu)+(\gamma+\mu)$ and
+$a_2 = (\sigma+\mu)(\gamma+\mu) - \beta c\,\sigma$. Routh--Hurwitz for a
+quadratic, @eq-a10-rh-quadratic, requires both positive. Since all rates are
+positive, $a_1 > 0$ always, so stability turns entirely on $a_2 > 0$:
+
+$$
+(\sigma+\mu)(\gamma+\mu) > \beta c\,\sigma
+\iff
+R_0 = \frac{\beta c\,\sigma}{(\sigma+\mu)(\gamma+\mu)} < 1 .
+$$
+
+```{julia}
+#| label: sol-a10-ex1-check
+R₀_seir = βc*σ/((σ + μ)*(γ + μ))
+values = Dict(βc => 0.5, γ => 0.25, μ => 0.01, σ => 0.5, N => 1000.0)
+ev(x) = Float64(Symbolics.value(Symbolics.substitute(x, values)))
+(R₀ = round(ev(R₀_seir); digits = 4),
+ a₂_sign_matches = (ev(a₂) > 0) == (ev(R₀_seir) < 1))
+```
+
+**Interpreting $\sigma/(\sigma+\mu)$.** An individual leaves $E$ either by
+becoming infectious, at rate $\sigma$, or by dying, at rate $\mu$. The fraction
+that survives the latent period is therefore $\sigma/(\sigma+\mu)$. So the SEIR
+reproduction number is the SIR one, $\beta c/(\gamma+\mu)$, discounted by the
+probability of surviving latency. A long latent period is protective at the
+population level when mortality is non-negligible — the exposed individual may
+die before ever infecting anyone.
+
+#### Solution to Exercise 2 {#solution-a10-ex2}
+
+Waning immunity replaces demography, so the population is closed and
+$R = N - S - I$ eliminates the third equation.
+
+```{julia}
+#| label: sol-a10-ex2
+Symbolics.@variables ω
+sirs = [-βc*S*I/N + ω*(N - S - I),
+        βc*S*I/N - γ*I]
+
+S_star = γ*N/βc
+I_star = ω*N*(βc - γ)/(βc*(γ + ω))
+residual = Symbolics.simplify.(
+    Symbolics.substitute.(sirs, (Dict(S => S_star, I => I_star),)); expand = true)
+residual
+```
+
+Both residuals vanish identically, so @eq-a10-endemic's analogue for SIRS is
+confirmed: $S^\star = \gamma N/\beta c$ and
+$I^\star = \omega N(\beta c-\gamma)/(\beta c(\gamma+\omega))$, positive exactly
+when $R_0 = \beta c/\gamma > 1$.
+
+```{julia}
+#| label: sol-a10-ex2-stability
+J_sirs = Symbolics.simplify.(Symbolics.substitute.(
+    Symbolics.jacobian(sirs, [S, I]), (Dict(S => S_star, I => I_star),)); expand = true)
+trace_sirs = Symbolics.simplify(J_sirs[1, 1] + J_sirs[2, 2]; expand = true)
+det_sirs = Symbolics.simplify(
+    J_sirs[1, 1]*J_sirs[2, 2] - J_sirs[1, 2]*J_sirs[2, 1]; expand = true)
+discriminant = Symbolics.simplify(trace_sirs^2 - 4*det_sirs; expand = true)
+(trace = trace_sirs, determinant = det_sirs)
+```
+
+The trace is negative and the determinant positive whenever $\beta c > \gamma$,
+so the endemic equilibrium is stable throughout its range of existence. The
+*character* of the approach is decided by the discriminant
+$\operatorname{tr}^2 - 4\det$: negative means complex eigenvalues and a damped
+oscillation, positive means a monotone approach.
+
+```{julia}
+#| label: sol-a10-ex2-simulate
+using OrdinaryDiffEq
+using CairoMakie
+using LinearAlgebra
+
+function sirs!(du, u, p, t)
+    βc_, γ_, ω_, N_ = p
+    du[1] = -βc_*u[1]*u[2]/N_ + ω_*(N_ - u[1] - u[2])
+    du[2] = βc_*u[1]*u[2]/N_ - γ_*u[2]
+end
+
+function classify(ω_value)
+    vals = Dict(βc => 0.5, γ => 0.25, ω => ω_value, N => 1000.0)
+    e(x) = Float64(Symbolics.value(Symbolics.substitute(x, vals)))
+    solution = solve(ODEProblem(sirs!, [990.0, 10.0], (0.0, 400.0),
+                                (0.5, 0.25, ω_value, 1000.0)),
+                     Tsit5(); saveat = 0.5)
+    return (ω = ω_value, discriminant = e(discriminant),
+            oscillatory = e(discriminant) < 0, solution = solution)
+end
+
+# Find where the discriminant changes sign rather than guessing values.
+ω_grid = 0.01:0.01:2.0
+discriminants = [Float64(Symbolics.value(Symbolics.substitute(
+    discriminant, Dict(βc => 0.5, γ => 0.25, ω => value, N => 1000.0)))) for value in ω_grid]
+boundary = ω_grid[findfirst(>(0), discriminants)]
+
+oscillatory_case = classify(boundary / 4)
+monotone_case = classify(boundary * 2)
+(boundary_ω = round(boundary; digits = 3),
+ mean_immune_days_at_boundary = round(1 / boundary; digits = 2),
+ oscillatory = (ω = oscillatory_case.ω,
+                discriminant = round(oscillatory_case.discriminant; digits = 6),
+                is_oscillatory = oscillatory_case.oscillatory),
+ monotone = (ω = monotone_case.ω,
+             discriminant = round(monotone_case.discriminant; digits = 6),
+             is_oscillatory = monotone_case.oscillatory))
+```
+
+```{julia}
+#| label: fig-sol-a10-ex2
+#| fig-cap: "Approach to the SIRS endemic equilibrium either side of the discriminant condition. Slow waning gives complex eigenvalues and damped oscillations; fast waning gives a monotone approach."
+figure = Figure(size = (760, 360))
+axis = Axis(figure[1, 1], xlabel = "Time", ylabel = "Infectious")
+lines!(axis, oscillatory_case.solution.t, [u[2] for u in oscillatory_case.solution.u];
+       color = :firebrick, linewidth = 2,
+       label = "ω = $(round(oscillatory_case.ω; digits = 3)) (oscillatory)")
+lines!(axis, monotone_case.solution.t, [u[2] for u in monotone_case.solution.u];
+       color = :steelblue, linewidth = 2,
+       label = "ω = $(round(monotone_case.ω; digits = 3)) (monotone)")
+axislegend(axis; position = :rt, framevisible = false)
+figure
+```
+
+The simulations confirm the symbolic prediction on either side of the boundary.
+The epidemiological reading is the interesting part: the sign change happens only
+at a very large waning rate, corresponding to immunity lasting on the order of a
+single day. For any realistic duration of immunity the discriminant is negative,
+so the approach to endemicity is *oscillatory* — the overshoot-and-return cycle
+familiar from childhood infections. A monotone approach requires immunity to wane
+so fast that the susceptible pool is replenished as quickly as it is depleted,
+which is a mathematical regime rather than an epidemiological one.

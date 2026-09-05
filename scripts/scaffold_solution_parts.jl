@@ -11,7 +11,7 @@ groups = [
     ("analysis-capstone", "Analysis, decisions, and capstone solutions", ["ch11", "ch12", "ch13"]),
     ("advanced-dynamics", "Advanced dynamics solutions", ["a01", "a02", "a03"]),
     ("advanced-sciml", "Advanced scientific machine learning solutions", ["a04", "a05", "a06"]),
-    ("advanced-decisions", "Advanced decision and composition solutions", ["a07", "a08", "a09"]),
+    ("advanced-decisions", "Advanced decision and composition solutions", ["a07", "a08", "a09", "a10"]),
 ]
 
 output_dir = joinpath(ROOT, "appendices", "solutions")
