@@ -5,7 +5,7 @@ are recomputed by the Julia code rather than copied from a previous run.
 
 ### Surrogate and emulator models
 
-#### Solution to Exercise 1 {#solution-a07-ex1}
+#### Solution to Exercise 1 {#solution-a06-ex1}
 
 Use tuples as the two-dimensional design points. `Surrogates.sample` returns
 Latin-hypercube points in the requested rectangle, and the current
@@ -45,7 +45,7 @@ identifies a region where the response surface changes most rapidly or where
 the design is sparse. Increasing the design or adding targeted points should
 be preferred to extrapolating outside the rectangle.
 
-#### Solution to Exercise 2 {#solution-a07-ex2}
+#### Solution to Exercise 2 {#solution-a06-ex2}
 
 The same two-input design can fit both a terminal recovered fraction and an
 internal maximum. The latter is harder because a small parameter change can
@@ -96,7 +96,7 @@ peak prevalence needs a denser design and an explicit time-resolution check.
 
 ### Model composition and structured populations
 
-#### Solution to Exercise 1 {#solution-a08-ex1}
+#### Solution to Exercise 1 {#solution-a07-ex1}
 
 Add a third group and keep total population at 1000. The ODE and jump solves
 use the same Catalyst reaction system, so conservation is a stoichiometric
@@ -148,7 +148,7 @@ especially if only total incidence is observed. Group-specific observations
 or informative contact data are needed to distinguish the contact rates and
 mixing factors.
 
-#### Solution to Exercise 2 {#solution-a08-ex2}
+#### Solution to Exercise 2 {#solution-a07-ex2}
 
 Run 100 seeded jump realizations, summarize each time point by a central
 interval, and compare the ensemble mean with the deterministic ODE.
@@ -198,13 +198,13 @@ nonnegative without additional modeling choices.
 
 ### Symbolic equilibrium and stability analysis
 
-#### Solution to Exercise 1 {#solution-a09-ex1}
+#### Solution to Exercise 1 {#solution-a08-ex1}
 
 The latent class enlarges the infected subsystem from one dimension to two, so
 the threshold now comes from a quadratic rather than a single eigenvalue.
 
 ```{julia}
-#| label: sol-a09-ex1
+#| label: sol-a08-ex1
 using Symbolics
 
 # Several loaded packages export `@variables` (Symbolics, Catalyst,
@@ -224,7 +224,7 @@ J_infected
 ```
 
 ```{julia}
-#| label: sol-a09-ex1-charpoly
+#| label: sol-a08-ex1-charpoly
 # For a 2x2 matrix the characteristic polynomial is λ² - tr(J)λ + det(J),
 # so the Routh--Hurwitz coefficients are available without extracting them.
 a₁ = Symbolics.simplify(-(J_infected[1, 1] + J_infected[2, 2]); expand = true)
@@ -246,7 +246,7 @@ R_0 = \frac{\beta c\,\sigma}{(\sigma+\mu)(\gamma+\mu)} < 1 .
 $$
 
 ```{julia}
-#| label: sol-a09-ex1-check
+#| label: sol-a08-ex1-check
 R₀_seir = βc*σ/((σ + μ)*(γ + μ))
 values = Dict(βc => 0.5, γ => 0.25, μ => 0.01, σ => 0.5, N => 1000.0)
 ev(x) = Float64(Symbolics.value(Symbolics.substitute(x, values)))
@@ -262,13 +262,13 @@ probability of surviving latency. A long latent period is protective at the
 population level when mortality is non-negligible — the exposed individual may
 die before ever infecting anyone.
 
-#### Solution to Exercise 2 {#solution-a09-ex2}
+#### Solution to Exercise 2 {#solution-a08-ex2}
 
 Waning immunity replaces demography, so the population is closed and
 $R = N - S - I$ eliminates the third equation.
 
 ```{julia}
-#| label: sol-a09-ex2
+#| label: sol-a08-ex2
 Symbolics.@variables ω
 sirs = [-βc*S*I/N + ω*(N - S - I),
         βc*S*I/N - γ*I]
@@ -286,7 +286,7 @@ $I^\star = \omega N(\beta c-\gamma)/(\beta c(\gamma+\omega))$, positive exactly
 when $R_0 = \beta c/\gamma > 1$.
 
 ```{julia}
-#| label: sol-a09-ex2-stability
+#| label: sol-a08-ex2-stability
 J_sirs = Symbolics.simplify.(Symbolics.substitute.(
     Symbolics.jacobian(sirs, [S, I]), (Dict(S => S_star, I => I_star),)); expand = true)
 trace_sirs = Symbolics.simplify(J_sirs[1, 1] + J_sirs[2, 2]; expand = true)
@@ -303,7 +303,7 @@ $\operatorname{tr}^2 - 4\det$: negative means complex eigenvalues and a damped
 oscillation, positive means a monotone approach.
 
 ```{julia}
-#| label: sol-a09-ex2-simulate
+#| label: sol-a08-ex2-simulate
 using OrdinaryDiffEq
 using CairoMakie
 using LinearAlgebra
@@ -343,7 +343,7 @@ monotone_case = classify(boundary * 2)
 ```
 
 ```{julia}
-#| label: fig-sol-a09-ex2
+#| label: fig-sol-a08-ex2
 #| fig-cap: "Approach to the SIRS endemic equilibrium either side of the discriminant condition. Slow waning gives complex eigenvalues and damped oscillations; fast waning gives a monotone approach."
 figure = Figure(size = (760, 360))
 axis = Axis(figure[1, 1], xlabel = "Time", ylabel = "Infectious")

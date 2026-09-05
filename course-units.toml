@@ -126,7 +126,7 @@ day = 2
 session = 3
 time_minutes = 90
 environment = "root"
-packages = ["Catalyst", "ModelingToolkit", "OrdinaryDiffEq", "StochasticDiffEq", "JumpProcesses", "MomentClosure", "StableRNGs", "CairoMakie"]
+packages = ["Catalyst", "ModelingToolkit", "OrdinaryDiffEq", "StochasticDiffEq", "JumpProcesses", "MomentClosure", "StableRNGs", "CairoMakie", "FiniteStateProjection"]
 sources = ["../sir-julia/tutorials/rn_mtk/rn_mtk.jmd", "../sir-julia/tutorials/momentclosure/momentclosure.jmd"]
 
 [[units]]
@@ -272,17 +272,6 @@ sources = ["../sir-julia/tutorials/ude/ude.jmd"]
 
 [[units]]
 id = "a05"
-slug = "finite-state-projection"
-title = "Finite-state projection"
-kind = "advanced"
-status = "complete"
-track = "self-study"
-environment = "root"
-packages = ["SparseArrays", "Catalyst", "JumpProcesses", "OrdinaryDiffEq", "CairoMakie"]
-sources = ["../sir-julia/tutorials/ode_fsp/ode_fsp.jmd", "../sir-julia/tutorials/rn_mtk/rn_mtk.jmd"]
-
-[[units]]
-id = "a06"
 slug = "probabilistic-numerical-integration"
 title = "Probabilistic numerical integration"
 kind = "advanced"
@@ -293,7 +282,7 @@ packages = ["OrdinaryDiffEq", "CairoMakie"]
 sources = ["../sir-julia/tutorials/ode_probint_probnumdiffeq/ode_probint_probnumdiffeq.jmd"]
 
 [[units]]
-id = "a07"
+id = "a06"
 slug = "surrogate-models"
 title = "Surrogate and emulator models"
 kind = "advanced"
@@ -304,7 +293,7 @@ packages = ["Surrogates", "OrdinaryDiffEq", "Optimization", "CairoMakie"]
 sources = ["../sir-julia/tutorials/ode_surrogate_1d_1d/ode_surrogate_1d_1d.jmd"]
 
 [[units]]
-id = "a08"
+id = "a07"
 slug = "model-composition"
 title = "Model composition and structured populations"
 kind = "advanced"
@@ -315,7 +304,7 @@ packages = ["ModelingToolkit", "Catalyst", "OrdinaryDiffEq", "StochasticDiffEq",
 sources = ["../sir-julia/tutorials/ode_stages/ode_stages.jmd", "../sir-julia/tutorials/ode_multigroup/ode_multigroup.jmd", "../sir-julia/tutorials/rn_mtk/rn_mtk.jmd", "../sir-julia/tutorials/ode_compose/ode_compose.jmd"]
 
 [[units]]
-id = "a09"
+id = "a08"
 slug = "symbolic-analysis"
 title = "Symbolic equilibrium and stability analysis"
 kind = "advanced"

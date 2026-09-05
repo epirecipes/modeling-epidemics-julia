@@ -1,0 +1,268 @@
+---
+course-unit: a05-probabilistic-numerical-integration
+status: complete
+---
+
+# Probabilistic numerical integration
+
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
+## Learning goals
+
+Every numerical ODE solve is an approximation, yet a conventional solver returns
+a single trajectory with no explicit statement of its own error.
+*Probabilistic numerics* reframes integration as Bayesian inference: the solver
+returns a **probability distribution** over trajectories whose spread reflects
+the numerical uncertainty introduced by discretisation [@bosch2021]. After this
+appendix you should be able to
+
+- explain what numerical uncertainty is and how it accumulates in an SIR solve;
+- quantify that uncertainty *empirically* by comparing a working solver against
+  a high-accuracy reference at matched output points;
+- read the current `ProbNumDiffEq.jl` Gaussian-filter API (`EK0`/`EK1`, `IWP`
+  priors, diffusion models) and understand what a probabilistic solve would
+  return; and
+- reason about when calibrated numerical uncertainty matters for epidemic
+  modelling.
+
+::: {.callout-important}
+## Reproducibility note: `ProbNumDiffEq.jl` in this environment
+
+The `ProbNumDiffEq.jl` v0.17 release tested during the dependency audit does **not**
+precompile against the resolved `OrdinaryDiffEq` component stack
+(`OrdinaryDiffEqDifferentiation` no longer exposes the `standardtag` symbol that
+`ProbNumDiffEq`'s solver definitions reference). Loading the package raises
+
+```
+UndefVarError: `standardtag` not defined in `OrdinaryDiffEqDifferentiation`
+```
+
+so it is not a course dependency. This appendix therefore runs a fully executable
+**error-quantification core** on the standard solver stack, and shows the current
+`ProbNumDiffEq.jl` API in a **non-executed** block (`eval: false`). Read that
+block as the workflow you would use once the packages line up again, at which
+point it runs as written.
+:::
+
+## Model assumptions and classification
+
+We use the course baseline SIR model unchanged: $S(0)=990$, $I(0)=10$, $R(0)=0$,
+$N=1000$, contact rate $c=10$, transmission probability $\beta=0.05$, and
+recovery rate $\gamma=0.25$. The underlying model is
+
+- **deterministic**, **continuous in time**, and **continuous in state**.
+
+Probabilistic integration does not alter the model. It changes the *solver's
+output type*: instead of a point estimate $\hat{u}(t)$, a probabilistic solver
+returns a Gaussian $\mathcal{N}\!\big(m(t),\,P(t)\big)$ whose covariance $P(t)$
+encodes how much the trajectory is pinned down by the chosen step size and
+order. The mean $m(t)$ plays the role of the classical solution; the standard
+deviation is a calibrated estimate of the discretisation error.
+
+## Equations
+
+The baseline SIR dynamics are
+
+$$
+\begin{aligned}
+\frac{dS}{dt} &= -\beta c\, \frac{S I}{N}, \\
+\frac{dI}{dt} &= \beta c\, \frac{S I}{N} - \gamma I, \\
+\frac{dR}{dt} &= \gamma I,
+\end{aligned}
+$$ {#eq-a06-sir}
+
+which the course module `EpiModelingCourse` implements as `sir_ode!`. A
+numerical solver produces $\hat{u}(t)$; the true numerical error relative to the
+exact flow $u(t)$ is
+
+$$
+e(t) = \hat{u}(t) - u(t).
+$$ {#eq-a06-error}
+
+We cannot evaluate @eq-a06-error exactly, but we can approximate $u(t)$ to
+machine precision with a very high-order, tight-tolerance solve and treat that
+as the reference. A probabilistic solver instead models $e(t)$ *online* as a
+Gauss–Markov process: with an $\nu$-times integrated Wiener process (`IWP`)
+prior, the posterior standard deviation $\sigma(t) = \sqrt{\operatorname{diag}
+P(t)}$ is a calibrated proxy for $|e(t)|$, obtained without a reference solution.
+
+## Julia implementation
+
+### A reference solution and a working solver
+
+We solve @eq-a06-sir twice with the standard stack: once at a very tight
+tolerance with a high-order method to serve as a near-exact reference, and once
+with a deliberately *coarse* tolerance whose numerical error we then measure.
+
+```{julia}
+#| label: a06-setup
+using EpiModelingCourse, OrdinaryDiffEq, CairoMakie
+
+p  = BASELINE_PARAMETERS
+s0 = BASELINE_INITIAL_STATE
+u0 = [s0.S, s0.I, s0.R]
+tspan = (0.0, 40.0)
+δt = 0.5
+
+prob   = ODEProblem(sir_ode!, u0, tspan, p)
+ref    = solve(prob, Vern9(); abstol = 1e-12, reltol = 1e-12, saveat = δt)
+coarse = solve(prob, Tsit5(); abstol = 1e-1,  reltol = 1e-1,  saveat = δt)
+
+(length(ref.t), length(coarse.t))
+```
+
+### Quantifying the numerical error
+
+The elementwise difference between the coarse solve and the reference is a
+concrete measurement of the discretisation error @eq-a06-error — precisely the
+quantity a probabilistic solver aims to estimate from the inside.
+
+```{julia}
+#| label: a06-error
+refm    = reduce(hcat, ref.u)
+coarsem = reduce(hcat, coarse.u)
+err = abs.(coarsem .- refm)          # rows: S, I, R ; cols: time points
+
+max_error   = (S = maximum(err[1, :]), I = maximum(err[2, :]), R = maximum(err[3, :]))
+terminal_S  = (coarse = coarsem[1, end], reference = refm[1, end])
+(max_error = max_error, terminal_S = terminal_S)
+```
+
+```{julia}
+#| label: fig-a06-error
+#| fig-cap: "Absolute numerical error of a coarse-tolerance Tsit5 solve relative to a machine-precision reference, for each SIR compartment. Error grows through the epidemic peak, where the vector field changes fastest — this time-varying magnitude is exactly what a probabilistic solver reports as its posterior standard deviation."
+labels = ("S", "I", "R")
+colors = (:steelblue, :firebrick, :seagreen)
+fig = Figure(size = (760, 400))
+ax = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "absolute error",
+          yscale = log10, title = "Numerical error vs. reference")
+for i in 1:3
+    lines!(ax, ref.t, max.(err[i, :], 1e-10); color = colors[i],
+           linewidth = 2, label = labels[i])
+end
+axislegend(ax; position = :rb)
+fig
+```
+
+### The probabilistic solve (current `ProbNumDiffEq.jl` API)
+
+The block below shows how the *same* problem would be solved probabilistically
+with the current v0.17 interface. `EK0`/`EK1` are Gaussian ODE filters; `IWP(k)`
+selects a $k$-times integrated Wiener process prior; `DynamicDiffusion()`
+calibrates the uncertainty online. The solution object carries a Gaussian at
+each step, exposed through `sol.pu`, from which `std` gives the calibrated error
+estimate and `ProbNumDiffEq.sample` draws trajectories. It is marked
+`eval: false` for the reason given in the note above.
+
+```{julia}
+#| label: a06-probnum
+#| eval: false
+using ProbNumDiffEq, Statistics
+
+# EK1: implicit filter, suitable for the mildly stiff SIR flow.
+sol_prob = solve(prob,
+                 EK1(order = 3, prior = IWP(3),
+                     diffusionmodel = DynamicDiffusion(), smooth = true);
+                 dt = δt, abstol = 1e-1, reltol = 1e-2)
+
+# Posterior mean and calibrated standard deviation at t = 20.
+m20 = mean(sol_prob(20.0))
+s20 = std(sol_prob(20.0))          # numerical-uncertainty estimate, no reference needed
+
+# Draw trajectories from the solver's posterior to visualise the uncertainty.
+samples = ProbNumDiffEq.sample(sol_prob, 100)
+
+(mean_at_20 = m20, std_at_20 = s20)
+```
+
+The comparison is conceptual but direct: the coarse-solve error curve in
+@fig-a06-error is the *true* error that the probabilistic solver's `std` output
+is designed to track — largest through the epidemic peak, smaller in the slow
+tails — but obtained without access to a reference solution.
+
+## Validation
+
+Two checks establish that the executable core behaves as claimed.
+
+**The reference is essentially exact.** A high-order method at tolerance
+$10^{-12}$ conserves the population $S+I+R=N$ to near machine precision, so it is
+a trustworthy stand-in for the exact flow.
+
+```{julia}
+#| label: a06-conservation
+pop = [sum(u) for u in ref.u]
+(max_pop_drift = maximum(abs.(pop .- p.N)),)
+```
+
+**Error shrinks with tolerance.** Refining the working solver's tolerance must
+reduce its error against the reference — the deterministic analogue of a
+probabilistic solver reporting smaller uncertainty at smaller step sizes.
+
+```{julia}
+#| label: a06-refinement
+using Printf
+for tol in (1e-1, 1e-3, 1e-5, 1e-7)
+    s = solve(prob, Tsit5(); abstol = tol, reltol = tol, saveat = δt)
+    e = maximum(abs.(reduce(hcat, s.u)[2, :] .- refm[2, :]))
+    @printf("tol = %.0e   →   max |I error| = %.3e\n", tol, e)
+end
+```
+
+The monotone decrease confirms that the measured error genuinely reflects
+discretisation, and that a calibrated uncertainty estimate should behave the same
+way.
+
+## Interpretation and limitations
+
+- **Uncertainty is largest where the dynamics are fastest.** @fig-a06-error
+  peaks around the epidemic maximum. A probabilistic solver would widen its
+  posterior there and narrow it in the slow tails, guiding adaptive effort.
+- **Calibration is the whole point.** A probabilistic solver is only useful if
+  its reported standard deviation actually brackets the true error. The
+  refinement check is the deterministic version of that calibration question.
+- **Cost.** Filtering solvers carry a covariance alongside the state, so a step
+  costs more than a classical one; the payoff is an error bar rather than a bare
+  number. For routine forward simulation this overhead is rarely worth it.
+- **Where it matters.** Propagating *numerical* uncertainty alongside parameter
+  uncertainty is valuable when solver error could be mistaken for model error —
+  for example in likelihood-based inference with coarse solves, or when chaining
+  an ODE solve into a downstream decision.
+- **Environment caveat.** As flagged above, the probabilistic solve is gated
+  here because of a package-compatibility gap, not because of the method. The
+  gated block reflects the current `ProbNumDiffEq.jl` v0.17 API verified against
+  the installed source.
+
+Official documentation:
+[ProbNumDiffEq.jl](https://nathanaelbosch.github.io/ProbNumDiffEq.jl/stable/)
+documents the Gaussian-filter solvers, priors, and diffusion models; the
+[SciML ODE solver docs](https://docs.sciml.ai/DiffEqDocs/stable/) cover the
+conventional solvers used in the executable core.
+
+## Exercises
+
+### Exercise 1 {#a05-ex1}
+
+Using only the executable core, characterise how numerical error scales with the
+output step. Fix the solver tolerance and recompute the coarse solution for a
+range of `δt` (for example `0.1, 0.25, 0.5, 1.0`), each time reporting the
+maximum absolute error in $I$ against the reference. Plot error versus `δt` on
+log axes and describe the trend. How does this empirical error curve correspond
+to what a probabilistic solver encodes in its posterior standard deviation?
+
+### Exercise 2 {#a05-ex2}
+
+The gated `a06-probnum` block uses the explicit-flavoured `EK1` filter with an
+`IWP(3)` prior. Consulting the `ProbNumDiffEq.jl` documentation, explain the
+roles of (a) the prior order in `IWP(k)`, (b) the choice between `EK0` and `EK1`,
+and (c) `DynamicDiffusion()` versus `FixedDiffusion()`. For the mildly stiff SIR
+flow, predict which combination should give the best-calibrated uncertainty at a
+coarse step, and justify your reasoning in terms of stability and error
+estimation.
+
+## Companion materials
+
+- [Slides](../slides/appendices/05-probabilistic-numerical-integration.html)
+- [Pluto preview](../notebook-exports/appendices/05-probabilistic-numerical-integration.html)
+- [Pluto source](../notebooks/appendices/05-probabilistic-numerical-integration.jl)

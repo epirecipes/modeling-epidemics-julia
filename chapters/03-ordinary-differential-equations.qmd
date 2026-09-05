@@ -165,7 +165,7 @@ that is what every solver ultimately calls and it is the smaller idea. The
 symbolic form earns its place when a tool has to reason about the structure of
 the model rather than about one trajectory, as in
 [Sensitivity and identifiability](12-sensitivity-and-identifiability.html) and
-the [model-composition appendix](../appendices/08-model-composition.html).
+the [model-composition appendix](../appendices/07-model-composition.html).
 :::
 
 ### A lockdown via `PresetTimeCallback`

@@ -55,11 +55,10 @@ book:
     - appendices/02-stochastic-delay-differential-equations.qmd
     - appendices/03-discrete-event-simulation.qmd
     - appendices/04-universal-differential-equations.qmd
-    - appendices/05-finite-state-projection.qmd
-    - appendices/06-probabilistic-numerical-integration.qmd
-    - appendices/07-surrogate-models.qmd
-    - appendices/08-model-composition.qmd
-    - appendices/09-symbolic-analysis.qmd
+    - appendices/05-probabilistic-numerical-integration.qmd
+    - appendices/06-surrogate-models.qmd
+    - appendices/07-model-composition.qmd
+    - appendices/08-symbolic-analysis.qmd
     - appendices/cheat-sheet.qmd
     - appendices/solutions.qmd
     - references.qmd
