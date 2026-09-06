@@ -1,0 +1,376 @@
+---
+course-unit: ch10-non-exponential-periods
+status: complete
+---
+
+# Non-exponential infectious periods {#sec-non-exponential-periods}
+
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
+Every model so far has written recovery as a constant hazard: $-\gamma I$ in
+@sec-ordinary-differential-equations, a rate $\gamma$ in
+@sec-jump-processes, a probability $1-e^{-\gamma\Delta t}$ in
+@sec-discrete-time-models. That is not a neutral bookkeeping choice. A constant
+hazard makes the infectious period **exponentially distributed**, which is
+memoryless: someone infected three weeks ago is exactly as likely to recover
+tomorrow as someone infected yesterday.
+
+Real infections are not like that. There is a period of latency, a period of
+infectiousness, and recovery clusters around a typical duration. This chapter
+keeps the mean infectious period fixed at $1/\gamma$ and changes only its
+*shape*, and the consequences are larger than most people expect: the epidemic
+peak more than doubles.
+
+The chapter is organised by *how* each base model type is extended, because the
+technique differs while the biology does not.
+
+| Distribution | Technique | Base model |
+|---|---|---|
+| Exponential | constant hazard | the models so far |
+| Erlang($n$, $n\gamma$) | method of stages | ODE |
+| Fixed | delay equation | DDE |
+| Fixed, with noise | stochastic delay equation | SDDE |
+| Fixed, individual-level | scheduled recovery events | jump process |
+| Arbitrary | age of infection | PDE |
+
+: One assumption, six implementations. {#tbl-ch09-methods}
+
+## Learning goals
+
+You will:
+
+- explain why a constant recovery hazard forces an exponential infectious period;
+- implement Erlang-distributed periods by the method of stages and recognise the
+  linear chain trick;
+- solve fixed-delay models as delay differential equations, with and without noise;
+- schedule individual recovery times in a jump process; and
+- relate all of these to the age-of-infection PDE, which admits any distribution.
+
+## Model assumptions and classification
+
+The baseline is unchanged from @sec-ordinary-differential-equations:
+$S(0)=990$, $I(0)=10$, $N=1000$, $\beta c = 0.5$, and a **mean** infectious
+period of $1/\gamma = 4$ time units. Only the distribution of that period
+changes, so $R_0 = \beta c/\gamma = 2$ throughout: any difference in the
+epidemics below is attributable to distributional shape alone, not to
+transmissibility.
+
+Classification varies by implementation. The staged and delay models are
+deterministic and continuous; the scheduled-recovery model is stochastic,
+continuous-time and discrete-state; the age-of-infection model is deterministic
+with a continuous age structure. What they share is the biological assumption
+being varied.
+
+## Equations
+
+### Why a constant hazard means an exponential period
+
+If an individual recovers at constant hazard $\gamma$, the probability of still
+being infectious at age of infection $a$ satisfies
+$\mathrm{d}P/\mathrm{d}a = -\gamma P$, so the **survival function** is
+$P(a) = e^{-\gamma a}$ and the period is $\operatorname{Exponential}(\gamma)$,
+with mean $1/\gamma$ and standard deviation also $1/\gamma$. Its coefficient of
+variation is exactly 1, and its mode is at zero: the single most likely
+outcome is to recover almost immediately.
+
+### The method of stages
+
+Replace the single infectious compartment by $n$ in series, each left at rate
+$n\gamma$:
+
+$$
+\begin{aligned}
+\dot S &= -\beta c\,S\,\textstyle\sum_j I_j / N,\\
+\dot I_1 &= \beta c\,S\,\textstyle\sum_j I_j / N - n\gamma I_1,\\
+\dot I_j &= n\gamma\,(I_{j-1} - I_j), \quad j = 2,\dots,n,\\
+\dot R &= n\gamma I_n .
+\end{aligned}
+$$ {#eq-ch09-stages}
+
+Passing through $n$ independent exponential stages each of mean $1/(n\gamma)$
+gives a total that is $\operatorname{Erlang}(n, n\gamma)$: mean $1/\gamma$ as
+before, but standard deviation $1/(\gamma\sqrt{n})$, so the coefficient of
+variation is $1/\sqrt{n}$. This is the **linear chain trick**: an arbitrary
+Erlang shape at the cost of extra compartments, with no delay machinery. Taking
+$n\to\infty$ concentrates the distribution on its mean and recovers a fixed
+period.
+
+### Fixed delay
+
+If every infection lasts exactly $\tau = 1/\gamma$, then those recovering now are
+precisely those infected $\tau$ ago:
+
+$$
+\begin{aligned}
+\dot S(t) &= -\beta c\,S(t)I(t)/N,\\
+\dot I(t) &= \beta c\,S(t)I(t)/N - \beta c\,S(t-\tau)I(t-\tau)/N,\\
+\dot R(t) &= \beta c\,S(t-\tau)I(t-\tau)/N .
+\end{aligned}
+$$ {#eq-ch09-dde}
+
+The recovery term is the incidence evaluated at $t-\tau$, which makes this a
+**delay differential equation**: the state is no longer a point but a history
+over $[t-\tau, t]$, and an initial *function* is required rather than an initial
+value.
+
+### Arbitrary distributions
+
+Neither trick generalises to an arbitrary survival function. The age-of-infection
+formulation does, by tracking the density $I(a,t)$ of individuals at infection
+age $a$ and letting the recovery hazard depend on $a$:
+
+$$
+\frac{\partial I(a,t)}{\partial t} + \frac{\partial I(a,t)}{\partial a}
+= -\gamma(a)\,I(a,t),
+$$ {#eq-ch09-mvf}
+
+with new infections entering at $a=0$ and a force of infection
+$\lambda(t) = \int \beta(a) I(a,t)\,\mathrm{d}a/N$. Choosing $\gamma(a)$ chooses
+the survival function directly, so any distribution is available — at the cost of
+solving a PDE. The method of lines discretisation used below is developed in
+@sec-partial-differential-equations.
+
+## Julia implementation
+
+```{julia}
+#| label: code-ch09-setup
+using OrdinaryDiffEq
+using DelayDiffEq
+using CairoMakie
+using StableRNGs
+using Statistics
+using Random
+
+const βc = 0.5
+const γ = 0.25
+const N = 1000.0
+const τ = 1/γ                      # mean period, and the fixed delay
+const tspan = (0.0, 60.0)
+const times = collect(0.0:0.5:60.0)
+```
+
+### Erlang periods by the method of stages
+
+```{julia}
+#| label: code-ch09-stages
+function staged_sir!(du, u, p, t)
+    n = p.n
+    S = u[1]
+    I = @view u[2:n+1]
+    infection = p.βc * S * sum(I) / p.N
+    du[1] = -infection
+    du[2] = infection - n*p.γ*I[1]
+    @inbounds for j in 2:n
+        du[j+1] = n*p.γ*(I[j-1] - I[j])
+    end
+    du[end] = n*p.γ*I[n]
+    return nothing
+end
+
+function solve_stages(n)
+    u₀ = zeros(n + 2)
+    u₀[1] = 990.0
+    u₀[2] = 10.0
+    solution = solve(ODEProblem(staged_sir!, u₀, tspan, (; βc, γ, n, N)), Tsit5();
+                     saveat = times, abstol = 1e-10, reltol = 1e-10)
+    prevalence = [sum(u[2:n+1]) for u in solution.u]
+    return (; n, prevalence,
+            peak = maximum(prevalence),
+            peak_time = times[argmax(prevalence)],
+            cv = 1/sqrt(n))
+end
+
+staged = solve_stages.([1, 2, 5, 20])
+[(stages = s.n, cv_of_period = round(s.cv; digits = 3),
+  peak = round(s.peak; digits = 2), peak_time = s.peak_time) for s in staged]
+```
+
+`n = 1` is the standard SIR model of @sec-ordinary-differential-equations — the
+exponential case is a special case of the staged one, not a different model.
+
+### A fixed period as a delay equation
+
+`DDEProblem` needs a history function giving the state for $t<0$, and the lag
+declared through `constant_lags` so the solver can place a step at the
+discontinuity it introduces.
+
+```{julia}
+#| label: code-ch09-dde
+function delayed_sir!(du, u, h, p, t)
+    infection_now = p.βc * u[1] * u[2] / p.N
+    past = h(p, t - p.τ)
+    infection_past = t < p.τ ? 0.0 : p.βc * past[1] * past[2] / p.N
+    du[1] = -infection_now
+    du[2] = infection_now - infection_past
+    du[3] = infection_past
+    return nothing
+end
+
+history(p, t) = [990.0, 10.0, 0.0]
+
+delay_solution = solve(
+    DDEProblem(delayed_sir!, [990.0, 10.0, 0.0], history, tspan, (; βc, γ, τ, N);
+               constant_lags = [τ]),
+    MethodOfSteps(Tsit5()); saveat = times, abstol = 1e-9, reltol = 1e-9)
+
+(peak = round(maximum(delay_solution[2, :]); digits = 2),
+ peak_time = times[argmax(delay_solution[2, :])])
+```
+
+### Individual scheduled recoveries
+
+The deterministic models above describe a population. At the individual level a
+fixed period is easier still: when someone is infected, schedule their recovery.
+This is a **non-Markovian** process — the next event depends on the history, not
+only the current state — so the direct method of @sec-jump-processes needs a
+queue of recovery_queue recovery times alongside the infection hazard.
+
+```{julia}
+#| label: code-ch09-scheduled
+function scheduled_recovery(seed; delay = τ)
+    rng = StableRNG(seed)
+    S, I = 990, 10
+    t = 0.0
+    recovery_queue = fill(delay, I)                    # initial cases recover at t = delay
+    trace = zeros(length(times))
+    for (k, checkpoint) in enumerate(times)
+        while true
+            rate = βc * S * I / N
+            next_infection = rate > 0 ? t + randexp(rng)/rate : Inf
+            next_recovery = isempty(recovery_queue) ? Inf : minimum(recovery_queue)
+            min(next_infection, next_recovery) > checkpoint && break
+            if next_infection < next_recovery
+                t = next_infection; S -= 1; I += 1; push!(recovery_queue, t + delay)
+            else
+                t = next_recovery; I -= 1; deleteat!(recovery_queue, argmin(recovery_queue))
+            end
+        end
+        trace[k] = I
+    end
+    return trace
+end
+
+ensemble = Array{Float64}(undef, length(times), 200)
+for k in axes(ensemble, 2)
+    ensemble[:, k] = scheduled_recovery(9_000 + k)
+end
+ensemble_mean = vec(mean(ensemble; dims = 2))
+
+(peak_of_mean = round(maximum(ensemble_mean); digits = 2),
+ peak_time = times[argmax(ensemble_mean)])
+```
+
+## Validation
+
+The claim to check is that these are the *same* model with different period
+distributions, so they must agree where they should: the staged model at $n=1$
+must reproduce the exponential SIR, and the staged sequence must approach the
+delay equation as $n$ grows.
+
+```{julia}
+#| label: code-ch09-validation
+function reference_sir!(du, u, p, t)
+    infection = βc*u[1]*u[2]/N
+    du[1] = -infection
+    du[2] = infection - γ*u[2]
+    du[3] = γ*u[2]
+end
+reference = solve(ODEProblem(reference_sir!, [990.0, 10.0, 0.0], tspan, nothing),
+                  Tsit5(); saveat = times, abstol = 1e-10, reltol = 1e-10)
+
+converging = solve_stages.([10, 40, 100])
+gaps = [maximum(abs.(s.prevalence .- delay_solution[2, :])) for s in converging]
+
+(stages_n1_matches_sir =
+     maximum(abs.(staged[1].prevalence .- reference[2, :])) < 1e-6,
+ mean_period_is_constant = [round(1/γ; digits = 3) for _ in staged],
+ gap_to_delay_equation = round.(gaps; digits = 2),
+ gaps_shrink = issorted(gaps; rev = true))
+```
+
+The $n=1$ staged model reproduces the reference SIR to numerical tolerance, and
+the distance to the delay solution decreases monotonically with $n$, as
+@eq-ch09-stages requires. The mean period is held at 4 throughout, so nothing in
+the comparison is confounded by a change in the average duration of infection.
+
+```{julia}
+#| label: fig-ch09-shapes
+#| fig-cap: "The same SIR model with the same mean infectious period and the same basic reproduction number, differing only in the shape of the period distribution. Reducing variability concentrates transmission into a shorter generation interval, so the epidemic arrives earlier and peaks more than twice as high."
+figure = Figure(size = (900, 380))
+
+axis1 = Axis(figure[1, 1], xlabel = "Time", ylabel = "Infectious",
+             title = "Deterministic: stages to fixed delay")
+for (s, colour) in zip(staged, (:grey40, :steelblue, :seagreen, :darkorange))
+    lines!(axis1, times, s.prevalence; color = colour, linewidth = 2,
+           label = "Erlang n = $(s.n)")
+end
+lines!(axis1, times, delay_solution[2, :]; color = :firebrick, linewidth = 2.5,
+       label = "Fixed delay")
+axislegend(axis1; position = :rt, framevisible = false)
+
+axis2 = Axis(figure[1, 2], xlabel = "Time", ylabel = "Infectious",
+             title = "Individual-level scheduled recovery")
+for k in 1:40
+    lines!(axis2, times, ensemble[:, k]; color = (:grey, 0.25), linewidth = 1)
+end
+lines!(axis2, times, ensemble_mean; color = :grey25, linewidth = 2.5,
+       label = "Ensemble mean, fixed period")
+lines!(axis2, times, delay_solution[2, :]; color = :firebrick, linewidth = 2,
+       linestyle = :dash, label = "Delay equation")
+axislegend(axis2; position = :rt, framevisible = false)
+figure
+```
+
+## Interpretation and limitations
+
+The exponential assumption is not conservative. Holding $R_0$ and the mean period
+fixed, concentrating the infectious period raises the peak from roughly 158 to
+roughly 351 and brings it forward by six time units. The reason is the
+**generation interval**: with an exponential period a large share of transmission
+happens in a long tail, spreading the epidemic out, whereas a fixed period
+delivers the same transmission within a narrow window, and a shorter generation
+interval means faster growth at the same reproduction number. Any analysis that
+converts an observed growth rate into $R_0$ inherits this sensitivity.
+
+Each technique has a cost. The **method of stages** is the cheapest and stays
+within ODE tooling, but only reaches Erlang shapes with integer $n$, and $n$
+compartments means $n$ extra states. **Delay equations** give exactly fixed
+periods but introduce a history, a discontinuity at $t=\tau$ that solvers must be
+told about, and a state that is a function rather than a vector. **Scheduled
+recovery** is exact at the individual level and handles any distribution, but is
+non-Markovian, so the standard direct method no longer applies unchanged and a
+queue must be maintained. The **age-of-infection PDE** of
+@sec-partial-differential-equations is the most general, admitting any hazard
+$\gamma(a)$, at the cost of discretising an extra dimension.
+
+A practical caution on delay models: the history function introduces a
+derivative discontinuity at $t = \tau$ which propagates, and adaptive solvers can
+step over it and lose accuracy silently unless the lag is declared. When noise is
+added, in a stochastic delay equation, adaptivity around that discontinuity
+becomes unreliable altogether and a fixed step is the safer choice.
+
+## Exercises
+
+### Exercise 1 {#ch10-ex1}
+
+Using the method of stages, find the smallest $n$ for which the staged model's
+peak prevalence is within 5% of the fixed-delay solution. Report the peak and
+peak timing for that $n$, and explain why convergence is slow in terms of the
+coefficient of variation $1/\sqrt{n}$.
+
+### Exercise 2 {#ch10-ex2}
+
+The scheduled-recovery simulation above gives every individual exactly the same
+infectious period. Modify it so the period is drawn from a gamma distribution
+with the same mean $1/\gamma$ and shape $k$, and compare the ensemble mean peak
+against the corresponding Erlang staged model for $k = 2$ and $k = 10$. Explain
+why the stochastic ensemble mean sits below the deterministic curve even when
+the period distributions match.
+
+## Companion materials
+
+- [Slides](../slides/chapters/10-non-exponential-periods.html)
+- [Pluto preview](../notebook-exports/chapters/10-non-exponential-periods.html)
+- [Pluto source](../notebooks/chapters/10-non-exponential-periods.jl)

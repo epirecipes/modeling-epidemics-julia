@@ -6,12 +6,11 @@ units_by_id = Dict(unit["id"] => unit for unit in units)
 
 groups = [
     ("foundations", "Prerequisite and foundational solutions", ["p01", "p02", "p03", "ch01", "ch02", "ch03", "ch04"]),
-    ("stochastic", "Stochastic modeling solutions", ["ch05", "ch06", "ch07", "ch08"]),
-    ("inference", "Observation and inference solutions", ["ch09", "ch10", "ch11"]),
-    ("analysis-capstone", "Analysis, decisions, and capstone solutions", ["ch12", "ch13", "ch14", "ch15"]),
-    ("advanced-dynamics", "Advanced dynamics solutions", ["a01", "a02", "a03"]),
-    ("advanced-sciml", "Advanced scientific machine learning solutions", ["a04", "a05"]),
-    ("advanced-decisions", "Advanced decision and composition solutions", ["a06", "a07", "a08"]),
+    ("stochastic", "Stochastic modeling solutions", ["ch05", "ch06", "ch07", "ch08", "ch09", "ch10"]),
+    ("inference", "Observation and inference solutions", ["ch11", "ch12", "ch13"]),
+    ("analysis-capstone", "Analysis, decisions, and capstone solutions", ["ch14", "ch15", "ch16", "ch17"]),
+    ("advanced-sciml", "Advanced scientific machine learning solutions", ["a01", "a02"]),
+    ("advanced-decisions", "Advanced decision and composition solutions", ["a03", "a04", "a05"]),
 ]
 
 output_dir = joinpath(ROOT, "appendices", "solutions")

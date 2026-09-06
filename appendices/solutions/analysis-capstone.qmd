@@ -9,7 +9,7 @@ way after changing a bound or a parameter.
 
 ### Sensitivity and identifiability
 
-#### Solution to Exercise 1 {#solution-ch12-ex1}
+#### Solution to Exercise 1 {#solution-ch14-ex1}
 
 The output is changed from the transient infectious peak to the cumulative
 removed state at the final time. The model and parameter bounds stay fixed.
@@ -99,7 +99,7 @@ indices:
 @assert all(isfinite, removed_sobol.ST)
 ```
 
-#### Solution to Exercise 2 {#solution-ch12-ex2}
+#### Solution to Exercise 2 {#solution-ch14-ex2}
 
 The extra observable is the total population,
 $n(t)=S(t)+I(t)+R(t)$. As in the chapter, `assess_identifiability` is called
@@ -147,7 +147,7 @@ from reporting error or model misspecification.
 
 ### Interventions and optimization
 
-#### Solution to Exercise 1 {#solution-ch13-ex1}
+#### Solution to Exercise 1 {#solution-ch15-ex1}
 
 Make the reduction an argument to the existing scenario function, then solve
 the same bounded one-dimensional problem for each value:
@@ -238,7 +238,7 @@ three reductions by $C(45)$ held at both horizons checked — stronger was bette
 at $T=45$ and at $T=200$ — but quoting the improvement as infections averted is
 not safe unless $T$ is long enough that the number has stopped moving.
 
-#### Solution to Exercise 2 {#solution-ch13-ex2}
+#### Solution to Exercise 2 {#solution-ch15-ex2}
 
 For a rectangular policy contained in the horizon, the intervention integral is
 $\int_0^{T}v(t)\,\mathrm dt=v_{\max}d$, so no quadrature is needed: the cost
@@ -363,7 +363,7 @@ end
 
 ### Data-to-decision capstone
 
-#### Solution to Exercise 1 {#solution-ch15-ex1}
+#### Solution to Exercise 1 {#solution-ch17-ex1}
 
 Define an infectious-only loss while retaining the same fixed initial state and
 the same bounded parameter box:
@@ -434,7 +434,7 @@ states carry information about susceptible depletion and removal timing; an
 observation model could weight the three series differently instead of
 silently dropping two of them.
 
-#### Solution to Exercise 2 {#solution-ch15-ex2}
+#### Solution to Exercise 2 {#solution-ch17-ex2}
 
 Evaluate the two reductions for every accepted local parameter candidate. The
 helper below uses the capstone intervention kernel and returns cumulative
@@ -501,13 +501,13 @@ interpretation to the policy comparison.
 
 ### Advanced optimal control
 
-#### Solution to Exercise 1 {#solution-ch14-ex1}
+#### Solution to Exercise 1 {#solution-ch16-ex1}
 
 Sweeping the capacity threshold traces out the three regimes the chapter
 describes, and the shape of the curve is the answer.
 
 ```{julia}
-#| label: sol-ch14-ex1
+#| label: sol-ch16-ex1
 using InfiniteOpt
 using Ipopt
 using CairoMakie
@@ -539,8 +539,8 @@ function sweep_problem(; capacity = nothing, budget = 6.0, umax = 0.8, n_support
     optimize!(model)
     solved = has_values(model)
     return (status = termination_status(model),
-            final_cases = solved ? value(C(oc_tf)) : NaN,
-            peak = solved ? maximum(value.(I)) : NaN)
+            final_cases = solved ? InfiniteOpt.value(C(oc_tf)) : NaN,
+            peak = solved ? maximum(InfiniteOpt.value.(I)) : NaN)
 end
 
 unconstrained = sweep_problem()
@@ -553,7 +553,7 @@ sweep = [(threshold = c, sweep_problem(; capacity = c)...) for c in thresholds]
 ```
 
 ```{julia}
-#| label: fig-sol-ch14-ex1
+#| label: fig-sol-ch16-ex1
 #| fig-cap: "Final cumulative cases against the capacity threshold. The curve is flat where the constraint is slack and rises as it binds, showing that capacity is bought with infections."
 solved = [c for c in sweep if !isnan(c.final_cases)]
 figure = Figure(size = (720, 340))
@@ -585,13 +585,13 @@ is that a capacity target and a control budget are not independent choices, and
 declaring a target without the resources to meet it produces an infeasible
 problem rather than a merely expensive one.
 
-#### Solution to Exercise 2 {#solution-ch14-ex2}
+#### Solution to Exercise 2 {#solution-ch16-ex2}
 
 Halving supply while doubling the budget substitutes a permanent control for a
 temporary one, and the timing shifts accordingly.
 
 ```{julia}
-#| label: sol-ch14-ex2
+#| label: sol-ch16-ex2
 function two_control_problem(; budget = 2.0, supply = 0.4, umax = 0.5,
                                vmax = 0.05, n_supports = 41)
     model = InfiniteModel(Ipopt.Optimizer)
@@ -617,10 +617,10 @@ function two_control_problem(; budget = 2.0, supply = 0.4, umax = 0.5,
     constant_over_collocation(v, t)
     optimize!(model)
     grid = supports(t)
-    uu, vv = value.(u), value.(v)
+    uu, vv = InfiniteOpt.value.(u), InfiniteOpt.value.(v)
     weight(x) = sum(grid[i]*x[i] for i in eachindex(grid)) / max(sum(x), eps())
     return (status = termination_status(model),
-            final_cases = value(C(oc_tf)),
+            final_cases = InfiniteOpt.value(C(oc_tf)),
             mean_time_u = weight(uu), mean_time_v = weight(vv),
             times = grid, u = uu, v = vv)
 end
@@ -637,7 +637,7 @@ swapped  = two_control_problem(; budget = 4.0, supply = 0.2)
 ```
 
 ```{julia}
-#| label: fig-sol-ch14-ex2
+#| label: fig-sol-ch16-ex2
 #| fig-cap: "The two controls before and after halving vaccine supply and doubling the transmission-reduction budget. Vaccination is spent early because a removed susceptible stays removed; transmission reduction is spent near the peak, where it averts most infections per unit applied."
 figure = Figure(size = (900, 340))
 axis1 = Axis(figure[1, 1], xlabel = "Time", ylabel = "Control",

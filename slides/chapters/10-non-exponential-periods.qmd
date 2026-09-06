@@ -1,0 +1,134 @@
+---
+title: "Non-exponential infectious periods"
+course-unit: ch10-non-exponential-periods
+status: complete
+---
+
+## The assumption in $-\gamma I$
+
+- A constant recovery hazard makes the infectious period **exponential**.
+- Exponential is *memoryless*: infected three weeks ago is no more likely to
+  recover tomorrow than infected yesterday.
+- Its mode is at **zero** and its coefficient of variation is exactly **1**.
+
+Real infections have a typical duration. Fixing this changes the epidemic far
+more than most people expect.
+
+::: {.notes}
+Students accept -γI without noticing what it implies about individuals. Survival
+is exp(-γa), so the single most likely outcome is to recover almost immediately.
+Say that out loud; it usually lands.
+:::
+
+## One assumption, six implementations
+
+| Distribution | Technique | Base model |
+|---|---|---|
+| Exponential | constant hazard | everything so far |
+| Erlang | method of stages | ODE |
+| Fixed | delay equation | DDE |
+| Fixed + noise | stochastic delay equation | SDDE |
+| Fixed, individual | scheduled recovery | jump process |
+| Arbitrary | age of infection | PDE |
+
+::: {.notes}
+The biology is identical throughout: same R0, same mean period. Only the shape
+of the distribution changes. Organising by technique rather than by disease is
+what makes the comparison possible.
+:::
+
+## Method of stages
+
+$n$ infectious compartments in series, each left at rate $n\gamma$:
+
+$$
+\dot I_j = n\gamma\,(I_{j-1} - I_j)
+$$
+
+- Total period is $\operatorname{Erlang}(n, n\gamma)$.
+- Mean stays $1/\gamma$; **CV becomes $1/\sqrt{n}$**.
+- $n=1$ is the ordinary SIR model; $n\to\infty$ approaches a fixed period.
+
+::: {.notes}
+This is the linear chain trick. The appeal is that nothing leaves ODE tooling —
+no delays, no history, just more compartments. The cost is that only integer
+Erlang shapes are reachable.
+:::
+
+## Same mean, same $R_0$, different epidemic
+
+| Stages $n$ | CV | Peak $I$ | Peak time |
+|---|---|---|---|
+| 1 (exponential) | 1.00 | 158 | 17.5 |
+| 2 | 0.71 | 209 | 14.5 |
+| 5 | 0.45 | 259 | 12.5 |
+| 20 | 0.22 | 296 | 12.0 |
+| ∞ (fixed delay) | 0 | **351** | 11.0 |
+
+The peak **more than doubles**, purely from distributional shape.
+
+::: {.notes}
+This table is the chapter. Emphasise that R0 = 2 and the mean period is 4 in
+every row. Anyone who has ever converted a growth rate into R0 has implicitly
+assumed a generation-interval distribution, and this is the size of that
+assumption.
+:::
+
+## Why: the generation interval
+
+- Exponential period puts a large share of transmission in a **long tail**.
+- A fixed period delivers the same transmission in a **narrow window**.
+- Shorter generation interval ⟹ faster growth at the *same* $R_0$.
+
+So the epidemic arrives earlier and higher, without anyone becoming more
+infectious.
+
+::: {.notes}
+The key point for interpretation: R0 alone does not determine the epidemic curve.
+Growth rate and R0 are linked through the generation-interval distribution, and
+assuming exponential is not the conservative choice.
+:::
+
+## Fixed delay: a delay equation
+
+$$
+\dot I(t) = \beta c\,S(t)I(t)/N - \beta c\,S(t-\tau)I(t-\tau)/N
+$$
+
+- Those recovering now are exactly those infected $\tau$ ago.
+- The state is a **history** on $[t-\tau, t]$, not a point.
+- Needs an initial *function*, and `constant_lags` so the solver places a step at
+  the discontinuity.
+
+::: {.notes}
+Warn about the discontinuity at t = τ: it propagates, and adaptive solvers can
+step over it and silently lose accuracy. With noise added, in a stochastic delay
+equation, adaptivity around it becomes unreliable and a fixed step is safer.
+:::
+
+## Individuals: schedule the recovery
+
+- When someone is infected, put their recovery time in a queue.
+- Handles **any** distribution, exactly, at the individual level.
+- But the process is **non-Markovian**: the next event depends on history, so the
+  plain direct method no longer applies.
+
+::: {.notes}
+This is the most flexible route and the one closest to how you would simulate a
+real cohort. The cost is bookkeeping: a queue alongside the infection hazard.
+:::
+
+## Takeaways
+
+- A constant recovery rate is a **modelling choice**, not a neutral default.
+- Stages give Erlang cheaply; delays give fixed periods exactly; scheduling gives
+  anything, individually; the age-of-infection PDE gives anything, in aggregate.
+- Holding $R_0$ fixed, distributional shape moves the peak by a factor of two.
+- Check what your generation-interval assumption is doing before trusting a
+  growth-rate conversion.
+
+::: {.notes}
+Point at the age-structure chapter for the PDE machinery, and note that the same
+McKendrick equation underlies both, read with a as infection age rather than
+chronological age.
+:::

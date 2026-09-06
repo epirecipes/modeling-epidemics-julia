@@ -18,7 +18,7 @@ const LINE_WIDTH = 160
 # solver warnings. solutions.qmd includes the SciML answers, so it inherits
 # this. Only the presence of these units is checked.
 const NON_REPRODUCIBLE = [
-    "appendices/04-universal-differential-equations",
+    "appendices/01-universal-differential-equations",
     "appendices/solutions",
 ]
 
