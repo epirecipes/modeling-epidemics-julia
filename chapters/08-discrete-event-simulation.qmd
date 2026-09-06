@@ -1,0 +1,286 @@
+---
+course-unit: ch08-discrete-event-simulation
+status: complete
+---
+
+# Discrete-event simulation {#sec-discrete-event-simulation}
+
+::: {.callout-note appearance="simple"}
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
+:::
+
+@sec-jump-processes simulated the epidemic as a stream of events drawn from
+population-level rates: the model knew how many susceptibles there were, not who
+they were. This chapter keeps the event-driven view but moves it to the
+individual, by writing down what a *person* does over time and letting a
+scheduler interleave everybody's activities.
+
+This is **discrete-event simulation**: the state changes only at events, time
+jumps from one event to the next, and between events nothing happens. The style
+is *process-oriented* — you write a function describing one individual's life
+course, containing statements like "wait an exponentially distributed time, then
+try to infect someone" — and the simulator maintains the event queue for you.
+
+Two things follow that the earlier chapters cannot easily express. Waiting times
+need not be exponential, because you simply draw from whatever distribution you
+like before waiting, a theme taken up in @sec-non-exponential-periods. And
+individuals can *contend for scarce resources* — hospital beds, ventilators,
+test capacity — which is the natural language of queueing and has no counterpart
+in a compartmental model.
+
+## Learning goals
+
+You will:
+
+- distinguish process-oriented discrete-event simulation from the rate-based
+  jump process of @sec-jump-processes;
+- write an individual life course as a coroutine that waits and acts;
+- run and record a `ConcurrentSim.jl` simulation of the SIR model;
+- check it against the jump-process and ODE results; and
+- recognise where discrete-event simulation earns its extra bookkeeping.
+
+## Model assumptions and classification
+
+The model is the baseline SIR process of @sec-jump-processes, expressed
+individually: $N=1000$ people, of whom $I_0=10$ start infectious, contact rate
+$c=10$, transmission probability $\beta=0.05$, recovery rate $\gamma=0.25$.
+
+Each susceptible waits an $\operatorname{Exponential}(1/c)$ time until their next
+contact, chooses a partner uniformly at random from the population, and becomes
+infectious with probability $\beta$ if that partner is infectious. Each
+infectious individual waits an $\operatorname{Exponential}(1/\gamma)$ time and
+recovers.
+
+This is a **stochastic, continuous-time, discrete-state, individual-level**
+model, the same classification as the agent-based models of
+@sec-agent-based-models. The difference is not what is represented but how time
+advances: an agent-based model steps time forward in fixed increments and asks
+every agent what it does, whereas here time jumps directly to the next scheduled
+event and only the individual concerned acts.
+
+## Equations
+
+There are no differential equations to write. The model is defined by the two
+waiting-time distributions and the contact rule:
+
+$$
+T_{\text{contact}} \sim \operatorname{Exponential}(1/c),
+\qquad
+T_{\text{recovery}} \sim \operatorname{Exponential}(1/\gamma).
+$$ {#eq-ch08-waiting}
+
+A contact transmits when the partner is infectious and an independent Bernoulli
+draw succeeds with probability $\beta$. Because a susceptible contacts a uniformly
+chosen individual, the chance that a given contact is with an infectious person
+is $I/N$, so the population-level rate at which new infections occur is
+
+$$
+S \cdot c \cdot \beta \cdot \frac{I}{N} = \beta c\,\frac{SI}{N},
+$$ {#eq-ch08-equivalence}
+
+which is exactly the transmission propensity of @sec-jump-processes. The two
+models describe the same process; only the bookkeeping differs. That equivalence
+is what the Validation section tests.
+
+## Julia implementation
+
+`ConcurrentSim.jl` provides a `Simulation` holding the event queue, and
+`@resumable` functions that may `@yield` a `timeout`. Yielding suspends the
+process, returns control to the scheduler, and resumes it when the simulated
+clock reaches that time. Each individual is one such process.
+
+```{julia}
+#| label: code-ch08-setup
+using ConcurrentSim
+using ResumableFunctions
+using Distributions
+using Random
+using OrdinaryDiffEq
+using CairoMakie
+
+const N = 1000
+const I₀ = 10
+const β = 0.05
+const c = 10.0
+const γ = 0.25
+const tf = 40.0
+
+mutable struct Person
+    id::Int
+    status::Symbol
+end
+
+mutable struct EpidemicModel
+    sim::Simulation
+    people::Vector{Person}
+    times::Vector{Float64}
+    susceptible::Vector{Int}
+    infectious::Vector{Int}
+    recovered::Vector{Int}
+end
+
+function record!(model::EpidemicModel)
+    push!(model.times, now(model.sim))
+    push!(model.susceptible, count(p -> p.status == :S, model.people))
+    push!(model.infectious,  count(p -> p.status == :I, model.people))
+    push!(model.recovered,   count(p -> p.status == :R, model.people))
+    return nothing
+end
+```
+
+The life course reads as prose: while still susceptible, wait for a contact and
+possibly become infected; once infectious, wait once more and recover.
+
+```{julia}
+#| label: code-ch08-process
+@resumable function life_course(sim::Simulation, person::Person,
+                                model::EpidemicModel, rng)
+    while person.status == :S
+        @yield timeout(sim, rand(rng, Exponential(1/c)))     # @eq-ch08-waiting
+        partner = rand(rng, model.people)
+        if partner.status == :I && rand(rng) < β
+            person.status = :I
+            record!(model)
+        end
+    end
+    if person.status == :I
+        @yield timeout(sim, rand(rng, Exponential(1/γ)))
+        person.status = :R
+        record!(model)
+    end
+end
+
+function simulate_des(seed)
+    sim = Simulation()
+    people = [Person(i, i <= N - I₀ ? :S : :I) for i in 1:N]
+    model = EpidemicModel(sim, people, [0.0], [N - I₀], [I₀], [0])
+    rng = Xoshiro(seed)
+    for person in people
+        @process life_course(sim, person, model, rng)
+    end
+    run(sim, tf)
+    return model
+end
+
+des = simulate_des(20250711)
+(events_recorded = length(des.times),
+ final_state = (S = des.susceptible[end], I = des.infectious[end],
+                R = des.recovered[end]))
+```
+
+Note what is absent: no timestep, no loop over the population per unit time, and
+no propensity calculation. The scheduler advances the clock to whichever process
+is due next.
+
+## Validation
+
+@eq-ch08-equivalence claims this is the same process as the jump model, so an
+ensemble of discrete-event runs must agree with the ODE and with the
+jump-process results of @sec-jump-processes, up to Monte Carlo error.
+
+```{julia}
+#| label: code-ch08-validation
+grid = collect(0.0:0.5:tf)
+
+function on_grid(model)
+    values = zeros(length(grid))
+    for (k, t) in enumerate(grid)
+        idx = searchsortedlast(model.times, t)
+        values[k] = model.infectious[max(idx, 1)]
+    end
+    return values
+end
+
+ensemble = [on_grid(simulate_des(21_000 + k)) for k in 1:40]
+ensemble_mean = [sum(getindex.(ensemble, k))/length(ensemble) for k in eachindex(grid)]
+
+function sir_ode!(du, u, p, t)
+    infection = β*c*u[1]*u[2]/N
+    du[1] = -infection
+    du[2] = infection - γ*u[2]
+    du[3] = γ*u[2]
+end
+ode = solve(ODEProblem(sir_ode!, [Float64(N - I₀), Float64(I₀), 0.0], (0.0, tf), nothing),
+            Tsit5(); saveat = grid)
+
+conserved = all(s + i + r == N for (s, i, r) in
+                zip(des.susceptible, des.infectious, des.recovered))
+
+(population_conserved = conserved,
+ ensemble_peak = round(maximum(ensemble_mean); digits = 2),
+ ode_peak = round(maximum(ode[2, :]); digits = 2),
+ peak_ratio = round(maximum(ensemble_mean)/maximum(ode[2, :]); digits = 3))
+```
+
+Population is conserved exactly in every realisation, since individuals only ever
+change status. The ensemble mean tracks the ODE but peaks slightly lower, for the
+reason given in @sec-reaction-networks: the mean of nonlinear stochastic
+trajectories is not the trajectory of the mean, and individual epidemics peak at
+different times, so averaging flattens the peak.
+
+```{julia}
+#| label: fig-ch08-trajectories
+#| fig-cap: "Forty discrete-event realisations of the SIR process (grey), their mean (black), and the deterministic ODE (dashed). Each realisation is a different sequence of individual contacts and recoveries, so the epidemics differ in both height and timing."
+figure = Figure(size = (760, 380))
+axis = Axis(figure[1, 1], xlabel = "Time", ylabel = "Infectious")
+for path in ensemble
+    lines!(axis, grid, path; color = (:grey, 0.3), linewidth = 1)
+end
+lines!(axis, grid, ensemble_mean; color = :grey15, linewidth = 2.5,
+       label = "Ensemble mean")
+lines!(axis, grid, ode[2, :]; color = :steelblue, linewidth = 2,
+       linestyle = :dash, label = "ODE")
+axislegend(axis; position = :rt, framevisible = false)
+figure
+```
+
+## Interpretation and limitations
+
+Discrete-event simulation costs more bookkeeping than the jump process of
+@sec-jump-processes and buys two things in return.
+
+The first is **arbitrary waiting times**. Nothing in `life_course` requires an
+exponential distribution; replacing `Exponential(1/γ)` with any other draw gives
+a different infectious-period distribution immediately, with no change to the
+machinery. That is the cheapest route to the non-exponential models of
+@sec-non-exponential-periods, and the reason discrete-event simulation appears
+before them.
+
+The second is **contention for resources**. `ConcurrentSim` provides `Resource`
+and `Store` primitives, so a model can make infectious individuals queue for a
+finite number of hospital beds and record how long they wait. No compartmental
+model expresses that naturally, and it is often the question a health system
+actually wants answered.
+
+The costs are real. The simulation is $O(N)$ in processes and every individual is
+tracked whether or not anything is happening to them, so large populations are
+expensive relative to a jump process that only tracks counts. Recording is
+manual: the model above appends to vectors on every status change, which is why
+the output grid must be reconstructed afterwards rather than requested. And
+because each realisation is a single stochastic path, nothing can be concluded
+from one run — the ensemble is the unit of analysis.
+
+## Exercises
+
+### Exercise 1 {#ch08-ex1}
+
+Replace the exponential recovery time in `life_course` with a fixed period of
+$1/\gamma = 4$ time units, leaving everything else unchanged. Compare the
+ensemble mean epidemic against the exponential version, and relate the direction
+of the change to the generation-interval argument in
+@sec-non-exponential-periods.
+
+### Exercise 2 {#ch08-ex2}
+
+Add a finite hospital capacity using a `ConcurrentSim` `Resource`: on becoming
+infectious, an individual requests a bed, holds it for the duration of their
+infectious period, and releases it on recovery. With a capacity of 50, record the
+fraction of infectious individuals who fail to obtain a bed immediately and the
+maximum waiting time. Explain why this quantity cannot be read off the
+compartmental model of @sec-ordinary-differential-equations.
+
+## Companion materials
+
+- [Slides](../slides/chapters/08-discrete-event-simulation.html)
+- [Pluto preview](../notebook-exports/chapters/08-discrete-event-simulation.html)
+- [Pluto source](../notebooks/chapters/08-discrete-event-simulation.jl)

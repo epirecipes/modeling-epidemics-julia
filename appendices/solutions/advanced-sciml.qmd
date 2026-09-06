@@ -8,7 +8,7 @@ into the shared solutions document.
 
 ### Universal differential equations
 
-#### Solution to Exercise 1 {#solution-a04-ex1}
+#### Solution to Exercise 1 {#solution-a01-ex1}
 
 Shortening the training window to `train_time = 15.0` stops the observations
 before the epidemic has run its full course, so the training data visit a
@@ -17,7 +17,7 @@ the true force of infection ``\lambda^\star(I)=\beta c\,I`` only up to the new,
 smaller ``I_{\max}``, and diverges above it.
 
 ```{julia}
-#| label: fig-sol-a04-ex1
+#| label: fig-sol-a01-ex1
 using OrdinaryDiffEq, Distributions, StableRNGs, Random
 using Lux, DiffEqFlux, SciMLSensitivity
 using Optimization, OptimizationOptimisers, OptimizationOptimJL
@@ -82,7 +82,7 @@ a04_result.fig
 ```
 
 ```{julia}
-#| label: sol-a04-ex1-summary
+#| label: sol-a01-ex1-summary
 (training_range_Imax = a04_result.Imax, max_abs_error = a04_result.max_err)
 ```
 
@@ -95,14 +95,14 @@ sharpened: **a UDE closure is identified only over the states its training data
 actually visit.** Excluding the peak removes the very observations that pin down
 the closure at large ``I``.
 
-#### Solution to Exercise 2 {#solution-a04-ex2}
+#### Solution to Exercise 2 {#solution-a01-ex2}
 
 The deeper network `Dense(1,8,tanh) → Dense(8,8,tanh) → Dense(8,1,softplus)` has
 ``8 + 8 + 64 + 8 + 8 + 1 = 97`` parameters. Hard-coded slices become unwieldy, so
 we write a **generic** flatten/unflatten driven by the parameter shapes.
 
 ```{julia}
-#| label: fig-sol-a04-ex2
+#| label: fig-sol-a01-ex2
 a04_deep = let
     N = 1000.0; βc = 0.5; γ = 0.25
     u0 = [0.99, 0.01, 0.0]; tspan = (0.0, 40.0); δt = 1.0; train_time = 30.0
@@ -172,7 +172,7 @@ a04_deep.fig
 ```
 
 ```{julia}
-#| label: sol-a04-ex2-summary
+#| label: sol-a01-ex2-summary
 (parameters = a04_deep.nparams, max_abs_error = a04_deep.max_err)
 ```
 
@@ -190,7 +190,7 @@ to be smooth and near-linear, the parsimonious network is preferable.
 
 ### Probabilistic numerical integration
 
-#### Solution to Exercise 1 {#solution-a05-ex1}
+#### Solution to Exercise 1 {#solution-a02-ex1}
 
 Fixing the solver tolerance and varying only the output step `δt` reveals a
 subtlety: with an **adaptive** solver, `δt` (via `saveat`) sets where the dense
@@ -198,7 +198,7 @@ output is *sampled*, not the internal step size, which the tolerance controls.
 So the measured error is essentially flat in `δt`.
 
 ```{julia}
-#| label: fig-sol-a05-ex1
+#| label: fig-sol-a02-ex1
 using EpiModelingCourse, OrdinaryDiffEq, CairoMakie, Printf
 
 a06_step = let
@@ -232,7 +232,7 @@ a06_step.fig
 ```
 
 ```{julia}
-#| label: sol-a05-ex1-table
+#| label: sol-a02-ex1-table
 for (dt, ea, ef) in zip(a06_step.dts, a06_step.adaptive_err, a06_step.fixed_err)
     @printf("δt = %.2f   adaptive |I err| = %.3e   fixed-step |I err| = %.3e\n", dt, ea, ef)
 end
@@ -249,7 +249,7 @@ step it reports smaller numerical uncertainty. The exercise's pedagogical twist
 is that *output spacing is not step size* — to make ``\delta t`` control accuracy
 you must control the actual integration step.
 
-#### Solution to Exercise 2 {#solution-a05-ex2}
+#### Solution to Exercise 2 {#solution-a02-ex2}
 
 This is a conceptual exercise about the current `ProbNumDiffEq.jl` Gaussian-filter
 API; the package is not executable in the resolved stack (see the appendix's

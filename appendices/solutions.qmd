@@ -10,8 +10,6 @@ The solutions follow the same unit and exercise identifiers as the course.
 
 {{< include solutions/analysis-capstone.qmd >}}
 
-{{< include solutions/advanced-dynamics.qmd >}}
-
 {{< include solutions/advanced-sciml.qmd >}}
 
 {{< include solutions/advanced-decisions.qmd >}}

@@ -14,7 +14,7 @@ The ten sessions move in the following order: deterministic foundations and a fi
 - **Day 2: stochasticity, model structure, and sensitivity.** Continuous-time jump processes, stochastic differential equations, reaction networks and moment closure, and sensitivity and identifiability.
 - **Day 3: decisions and individual-based models.** Interventions and optimisation, then agent-based models.
 
-The workshop deliberately stops before parameter estimation and Bayesian inference ([ch08](chapters/10-parameter-estimation.html), [ch09](chapters/11-bayesian-inference.html)). For those interested in fitting models to data and inference, we recommend having a look at the modelling course ["Model Fitting and Inference for Infectious Disease Dynamics"](https://www.lshtm.ac.uk/study/courses/short-courses/infectious-diseases-dynamics).
+The workshop deliberately stops before parameter estimation and Bayesian inference ([ch08](chapters/12-parameter-estimation.html), [ch09](chapters/13-bayesian-inference.html)). For those interested in fitting models to data and inference, we recommend having a look at the modelling course ["Model Fitting and Inference for Infectious Disease Dynamics"](https://www.lshtm.ac.uk/study/courses/short-courses/infectious-diseases-dynamics).
 
 ## Before the workshop
 
@@ -63,16 +63,16 @@ Days 1 and 2 run 09:30–17:00; Day 3 runs 09:30–16:00 with sessions finishing
 | 12:45–13:45 | Lunch | - |
 | 13:45–15:15 | Session 3 | [Reaction networks and moment closure](chapters/07-reaction-networks.html) |
 | 15:15–15:30 | Break | - |
-| 15:30–17:00 | Session 4 | [Sensitivity and identifiability](chapters/12-sensitivity-and-identifiability.html) |
+| 15:30–17:00 | Session 4 | [Sensitivity and identifiability](chapters/14-sensitivity-and-identifiability.html) |
 
 ### Day 3: Decisions and individual-based models
 
 | Time | Session | Unit |
 |---|---|---|
 | 09:30–10:00 | Recap | - |
-| 10:00–11:15 | Session 1 | [Interventions and optimization](chapters/13-interventions-and-optimization.html) |
+| 10:00–11:15 | Session 1 | [Interventions and optimization](chapters/15-interventions-and-optimization.html) |
 | 11:15–11:30 | Break | - |
-| 11:30–13:00 | Session 2 | [Agent-based models](chapters/08-agent-based-models.html) |
+| 11:30–13:00 | Session 2 | [Agent-based models](chapters/09-agent-based-models.html) |
 | 13:00–14:30 | Lunch | - |
 | 14:30–16:00 | Closing and extended Q&A | - |
 

@@ -484,9 +484,201 @@ solution to follow and the integration fails.
 This is the practical lesson of the chapter's limitations section in concrete
 form: always check the return code before reading the numbers.
 
-### Agent-based models
+### Discrete-event simulation
 
 #### Solution to Exercise 1 {#solution-ch08-ex1}
+
+The exercise asks for an `EventQueueABM` recovery event whose `timing`
+returns the fixed value $\tau = 1/\gamma = 4$ instead of an exponential
+draw, compared against the deterministic DDE at the same parameters.
+
+```{julia}
+#| label: code-sol-ch08-ex1
+using Agents
+using Random
+using DelayDiffEq
+using OrdinaryDiffEq
+
+β = 0.05
+c = 10.0
+γ = 0.25
+N = 1000
+I0 = 10
+tf = 40.0
+τ = 1 / γ
+
+@agent struct QueuePerson(NoSpaceAgent)
+    status::Symbol
+end
+
+function transmit!(agent, model)
+    alter = random_agent(model)
+    if alter.status == :I && (rand(abmrng(model)) ≤ model.β)
+        agent.status = :I
+    end
+    return nothing
+end
+recover!(agent, model) = (agent.status = :R)
+
+transmit_propensity(agent, model) = agent.status == :S ? model.c : 0.0
+recovery_propensity(agent, model) = agent.status == :I ? model.γ : 0.0
+fixed_delay_timing(agent, model, propensity) = agent.status == :I ? model.τ : Inf
+
+infected(x) = count(==(:I), x)
+
+properties = Dict(:β => β, :c => c, :γ => γ, :τ => τ)
+transmit_event = AgentEvent(action! = transmit!, propensity = transmit_propensity)
+recovery_event = AgentEvent(action! = recover!, propensity = recovery_propensity, timing = fixed_delay_timing)
+model = EventQueueABM(QueuePerson, (transmit_event, recovery_event); properties, rng = Xoshiro(20250711))
+for i in 1:N
+    add_agent!(QueuePerson(; id = i, status = i <= I0 ? :I : :S), model)
+end
+data, _ = run!(model, tf; adata = [(:status, infected)])
+
+peak_idx = argmax(data.infected_status)
+eq_peak = data.infected_status[peak_idx]
+eq_peak_t = data.time[peak_idx]
+
+function sir_dde!(du, u, h, p, t)
+    S, I, R = u
+    βp, cp, τp = p
+    Ntot = S + I + R
+    λ = βp * cp * I / Ntot
+    Sd, Id, Rd = h(p, t - τp)
+    Ntotd = Sd + Id + Rd
+    λd = βp * cp * Id / Ntotd
+    du[1] = -λ * S
+    du[2] = λ * S - λd * Sd
+    du[3] = λd * Sd
+    return nothing
+end
+sir_history(p, t) = [1000.0, 0.0, 0.0]
+sol_dde = solve(DDEProblem(sir_dde!, [990.0, 10.0, 0.0], sir_history, (0.0, tf), (β, c, τ);
+                            constant_lags = [τ]),
+                 MethodOfSteps(Tsit5()); reltol = 1e-8, abstol = 1e-8)
+dde_peak, dde_idx = findmax(sol_dde[2, :])
+
+(eq_peak = eq_peak, eq_peak_t = round(eq_peak_t; digits = 2),
+ dde_peak = round(dde_peak; digits = 1), dde_peak_t = round(sol_dde.t[dde_idx]; digits = 2))
+```
+
+The single stochastic `EventQueueABM` realisation peaks close to — a bit
+below, as expected for one finite-population sample — the deterministic
+DDE's peak, and at a comparable time. This individual-level construction
+reaches the same fixed-delay assumption **without a history function**: no
+population-level state needs to "remember" what happened $\tau$ time units
+ago, because each infectious agent's own scheduled recovery event already
+carries that information. The DDE's method of steps is a workaround for the
+fact that a population-level ODE has *forgotten* who was infected when; an
+individual-level model like this one never has that problem in the first
+place.
+
+#### Solution to Exercise 2 {#solution-ch08-ex2}
+
+The exercise asks to extend the `ConcurrentSim` model with a `Resource`
+representing a limited number of hospital beds, comparing the infectious
+curve and wait times against the unconstrained model.
+
+```{julia}
+#| label: code-sol-ch08-ex2
+using ConcurrentSim
+using ResumableFunctions
+using Distributions
+
+mutable struct BedPerson
+    id::Int
+    status::Symbol
+end
+mutable struct BedModel
+    sim::Simulation
+    β::Float64
+    c::Float64
+    γ::Float64
+    beds::Resource
+    Ia::Vector{Int}
+    wait_times::Vector{Float64}
+    people::Vector{BedPerson}
+end
+
+@resumable function live(sim::Simulation, person::BedPerson, m::BedModel, rng)
+    while person.status == :S
+        @yield timeout(sim, rand(rng, Exponential(1 / m.c)))
+        alter = rand(rng, m.people)
+        if alter.status == :I && rand(rng) < m.β
+            person.status = :I
+            push!(m.Ia, count(pp -> pp.status == :I, m.people))
+        end
+    end
+    if person.status == :I
+        request_time = now(sim)
+        @yield request(m.beds)
+        push!(m.wait_times, now(sim) - request_time)
+        @yield timeout(sim, rand(rng, Exponential(1 / m.γ)))
+        person.status = :R
+        @yield release(m.beds)
+        push!(m.Ia, count(pp -> pp.status == :I, m.people))
+    end
+end
+
+function init_model(S, I, R, β, c, γ, nbeds)
+    sim = Simulation()
+    beds = Resource(sim, nbeds)
+    people = BedPerson[]
+    for i in 1:S
+        push!(people, BedPerson(i, :S))
+    end
+    for i in 1:I
+        push!(people, BedPerson(S + i, :I))
+    end
+    for i in 1:R
+        push!(people, BedPerson(S + I + i, :R))
+    end
+    BedModel(sim, β, c, γ, beds, [I], Float64[], people)
+end
+
+function run_bed_model(nbeds; seed = 20250711)
+    rng = Xoshiro(seed)
+    m = init_model(N - I0, I0, 0, β, c, γ, nbeds)
+    for person in m.people
+        @process live(m.sim, person, m, rng)
+    end
+    run(m.sim, tf)
+    return m
+end
+
+unconstrained = run_bed_model(N)     # beds = N: capacity never binds
+constrained = run_bed_model(50)
+
+(
+    unconstrained_peak_I = maximum(unconstrained.Ia),
+    unconstrained_mean_wait = isempty(unconstrained.wait_times) ? 0.0 :
+        round(sum(unconstrained.wait_times) / length(unconstrained.wait_times); digits = 2),
+    constrained_peak_I = maximum(constrained.Ia),
+    constrained_mean_wait = round(sum(constrained.wait_times) / length(constrained.wait_times); digits = 2),
+    constrained_max_wait = round(maximum(constrained.wait_times); digits = 2),
+    constrained_frac_waited = round(count(>(1e-9), constrained.wait_times) / length(constrained.wait_times); digits = 2),
+)
+```
+
+With only 50 beds, most infectious individuals wait nearly ten time units on
+average (and up to about 26) before a bed frees up — and the epidemic's peak
+infectious count is **substantially larger** than in the unconstrained
+model, even though $\beta$, $c$, and $\gamma$ are unchanged. The mechanism is
+that an individual's `status` is still `:I` (and so can still transmit)
+throughout both the *waiting* period and the treatment `timeout`; a scarce
+bed supply lengthens the effective time each individual spends counted as
+infectious, which is exactly the kind of resource-contention effect a
+`Resource` makes easy to express. `EventQueueABM`, as used in this appendix,
+has propensities and actions attached to individual agents but no concept
+of a shared, capacity-limited object that multiple agents must queue for —
+modeling beds there would require encoding the queue and occupancy
+bookkeeping by hand inside the agent's own state, which is precisely the
+kind of general process/resource abstraction `ConcurrentSim` provides
+natively.
+
+### Agent-based models
+
+#### Solution to Exercise 1 {#solution-ch09-ex1}
 
 The grid model changes the contact assumption: a susceptible samples only
 agents in its Moore neighborhood.  `GridSpaceSingle` holds at most one agent
@@ -711,7 +903,7 @@ recovered in the limit of a large neighborhood, which is exactly the limit in
 which "uniform over the population" becomes a fair description of local
 mixing.
 
-#### Solution to Exercise 2 {#solution-ch08-ex2}
+#### Solution to Exercise 2 {#solution-ch09-ex2}
 
 The physical horizon is held at 30 time units, so each run uses
 `round(Int, 30 / Δt)` updates.  Each timestep gets its own seeded ensemble,
@@ -901,3 +1093,146 @@ but at fixed finite $N$ it is not expected to equal the ODE peak.  Agreement
 should only be expected in the joint limit of small $\Delta t$ and large $N$,
 where finite-population stochastic effects, including peak-time scatter,
 become negligible.
+
+### Non-exponential infectious periods
+
+#### Solution to Exercise 1 {#solution-ch10-ex1}
+
+Sweeping the number of stages until the peak is within 5% of the fixed-delay
+solution shows how slowly the Erlang family converges.
+
+```{julia}
+#| label: sol-ch10-ex1
+using OrdinaryDiffEq
+using DelayDiffEq
+using CairoMakie
+
+const βc_ne = 0.5
+const γ_ne = 0.25
+const N_ne = 1000.0
+const τ_ne = 1/γ_ne
+const span_ne = (0.0, 60.0)
+const times_ne = collect(0.0:0.5:60.0)
+
+function staged_ne!(du, u, p, t)
+    n = p.n
+    S = u[1]; I = @view u[2:n+1]
+    infection = βc_ne*S*sum(I)/N_ne
+    du[1] = -infection
+    du[2] = infection - n*γ_ne*I[1]
+    @inbounds for j in 2:n
+        du[j+1] = n*γ_ne*(I[j-1] - I[j])
+    end
+    du[end] = n*γ_ne*I[n]
+    return nothing
+end
+
+function staged_peak(n)
+    u₀ = zeros(n + 2); u₀[1] = 990.0; u₀[2] = 10.0
+    sol = solve(ODEProblem(staged_ne!, u₀, span_ne, (; n)), Tsit5();
+                saveat = times_ne, abstol = 1e-10, reltol = 1e-10)
+    prevalence = [sum(x[2:n+1]) for x in sol.u]
+    return (peak = maximum(prevalence), peak_time = times_ne[argmax(prevalence)])
+end
+
+function delayed_ne!(du, u, h, p, t)
+    now = βc_ne*u[1]*u[2]/N_ne
+    past = h(p, t - τ_ne)
+    old = t < τ_ne ? 0.0 : βc_ne*past[1]*past[2]/N_ne
+    du[1] = -now; du[2] = now - old; du[3] = old
+end
+history_ne(p, t) = [990.0, 10.0, 0.0]
+delay_ne = solve(DDEProblem(delayed_ne!, [990.0, 10.0, 0.0], history_ne, span_ne, nothing;
+                            constant_lags = [τ_ne]),
+                 MethodOfSteps(Tsit5()); saveat = times_ne, abstol = 1e-9, reltol = 1e-9)
+delay_peak = maximum(delay_ne[2, :])
+
+candidates = [1, 2, 5, 10, 20, 40, 80, 160, 320]
+sweep = [(n = n, staged_peak(n)...,
+          relative_gap = round(abs(staged_peak(n).peak - delay_peak)/delay_peak; digits = 4))
+         for n in candidates]
+smallest = findfirst(s -> s.relative_gap < 0.05, sweep)
+
+(delay_peak = round(delay_peak; digits = 2),
+ sweep = [(s.n, round(s.peak; digits = 2), s.relative_gap) for s in sweep],
+ smallest_n_within_5pct = isnothing(smallest) ? missing : sweep[smallest].n,
+ its_peak = isnothing(smallest) ? missing : round(sweep[smallest].peak; digits = 2),
+ its_peak_time = isnothing(smallest) ? missing : sweep[smallest].peak_time)
+```
+
+**Why convergence is slow.** The Erlang distribution with $n$ stages has
+coefficient of variation $1/\sqrt{n}$, so the *square root* is what governs how
+close the period is to fixed. Halving the remaining variability costs a
+quadrupling of $n$: going from CV 0.2 to CV 0.1 means going from 25 stages to
+100. Since the epidemic peak responds to the spread of the generation interval,
+the peak inherits that slow $n^{-1/2}$ approach rather than converging
+geometrically. In practice this is the argument for using a delay equation when
+the period really is near-fixed, rather than adding stages until it looks close.
+
+#### Solution to Exercise 2 {#solution-ch10-ex2}
+
+Drawing each individual's period from a gamma distribution lets the stochastic
+simulation match the staged model's distribution exactly, which isolates the
+effect of stochasticity itself.
+
+```{julia}
+#| label: sol-ch10-ex2
+using StableRNGs
+using Statistics
+using Random
+using Distributions
+
+function scheduled_gamma(seed; shape = 2, mean_period = τ_ne)
+    rng = StableRNG(seed)
+    period = Gamma(shape, mean_period/shape)     # mean = shape * scale = mean_period
+    S, I = 990, 10
+    t = 0.0
+    recovery_queue = [rand(rng, period) for _ in 1:I]
+    trace = zeros(length(times_ne))
+    for (k, checkpoint) in enumerate(times_ne)
+        while true
+            rate = βc_ne * S * I / N_ne
+            next_infection = rate > 0 ? t + randexp(rng)/rate : Inf
+            next_recovery = isempty(recovery_queue) ? Inf : minimum(recovery_queue)
+            min(next_infection, next_recovery) > checkpoint && break
+            if next_infection < next_recovery
+                t = next_infection; S -= 1; I += 1
+                push!(recovery_queue, t + rand(rng, period))
+            else
+                t = next_recovery; I -= 1; deleteat!(recovery_queue, argmin(recovery_queue))
+            end
+        end
+        trace[k] = I
+    end
+    return trace
+end
+
+function compare(shape; runs = 120)
+    ens = Array{Float64}(undef, length(times_ne), runs)
+    for k in 1:runs
+        ens[:, k] = scheduled_gamma(30_000 + 1000*shape + k; shape)
+    end
+    stochastic_mean = vec(mean(ens; dims = 2))
+    deterministic = staged_peak(shape)
+    return (shape = shape,
+            stochastic_peak_of_mean = round(maximum(stochastic_mean); digits = 2),
+            deterministic_peak = round(deterministic.peak; digits = 2),
+            ratio = round(maximum(stochastic_mean)/deterministic.peak; digits = 3))
+end
+
+[compare(2), compare(10)]
+```
+
+**Why the ensemble mean sits below the deterministic curve.** The two models now
+share a period distribution, so the gap is not a modelling difference — it is a
+consequence of averaging nonlinear dynamics. Transmission is bilinear in $S$ and
+$I$, so by Jensen's inequality the mean of the trajectories is not the trajectory
+of the means; the same argument made after @eq-ch07-unclosed for moment closure
+applies here.
+
+There is a second, more visible effect: individual epidemics peak at *different
+times*. Averaging curves whose peaks are offset produces a mean curve that is
+lower and broader than any individual realisation, even if every realisation
+reaches a similar height. The deterministic model has no timing variability to
+smear, so it peaks higher. Comparing peak heights of individual trajectories,
+rather than the peak of the mean, removes that part of the discrepancy.
