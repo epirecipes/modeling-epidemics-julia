@@ -4,83 +4,276 @@ course-unit: ch06-agent-based-models
 status: complete
 ---
 
-## Why model individuals?
+## What an agent-based model is
 
-- An ABM stores each individual's status, so the population counts are
-  something we compute rather than the model's only state.
-- Contact rules can be changed without deriving a new aggregate equation.
-- Who contacts whom *can* be made explicit, but only if you record it.
+A model whose state is a **list of individuals**:
 
-This unit uses a stochastic, discrete-time, discrete-state, individual-level
-model with $\Delta t=0.1$, $c=10$, $\beta=0.05$, and $\gamma=0.25$.
+- Every person carries their own status, susceptible, infectious or recovered,
+  and their own position if the model has a space.
+  - To compute *how many* individuals are in each status at a specific time step,
+    we would need to count them from the list.
+- The rules are written for *one individual over one step*.
 
-::: {.notes}
-The model is well mixed rather than spatial.  That keeps the connection to the
-SIR equations visible before adding networks or households.
-
-Be careful with the third bullet: this implementation does *not* log contacts or
-transmission sources.  They exist during an update and are discarded.  Recording
-who infected whom needs an event history or extra agent fields.  Worth saying
-aloud, because "ABMs track who infected whom" is a common overstatement.
-:::
-
-## Individual transition probabilities
-
-For $K_i\sim\operatorname{Poisson}(c\Delta t)$ contacts,
-$$
-\Pr(S\to I\mid I_t)=1-\exp\left[-c\Delta t\,\beta I_t/N\right].
-$$
-Recovery uses
-$$
-\Pr(I\to R)=1-\exp(-\gamma\Delta t).
-$$
-In the large-population limit, with $\Delta t$ small, the aggregate behaviour is
-$$
-\dot S=-\beta cSI/N,\quad
-\dot I=\beta cSI/N-\gamma I,\quad
-\dot R=\gamma I.
-$$
 
 ::: {.notes}
-The Poisson contact calculation explains why the ABM's well-mixed rule
-approximates mass action while retaining individual randomness.
+In every session so far the state
+*was* the compartment counts, $S(t)$, $I(t)$ and $R(t)$.  Here they are a summary
+the modeller chooses to compute, and the model would run perfectly well if nobody
+ever computed them.
 
-Both limits are needed, and it is worth naming them separately.  Letting
-$\Delta t\to0$ on its own removes the frozen-step error and leaves the
-continuous-time stochastic process for this same finite population, whose
-ensemble mean is not the ODE.  The ODE arrives only when $N$ is large as well.
-
-The last part of the worksheet depends on exactly the finite-population
-behaviour that the large-$N$ limit throws away, so promising the ODE here would
-set up an agreement the room will not find.
+A warning that saves an argument later: this model does not record who infected
+whom.  That information exists for an instant during an update and is thrown
+away.  "ABMs track transmission chains" is a common overstatement.  They can, but
+only if you add fields or an event log to make them.
 :::
 
-## Agents.jl 7 model logic
+## How it differs from compartmental models {.smaller}
+
+
+| Feature | Compartmental model | Agent-based model |
+|---|---|---|
+| Representation | the population totals | the state and position of every person |
+| Contact assumption | homogeneous mixing within a compartment | each contact sampled from the person's neighbourhood |
+| Individuals | interchangeable within a compartment | each one distinct |
+
+
+::: {.notes}
+Whole people rather than fractions came in the jump-process session, which counts
+integers.  Randomness came there too, and again with the stochastic differential
+equations.  Discrete time came in the discrete-time session.  None of those is new
+here, and none of them needs agents: an ABM that changed only those would be a
+slower way to draw a curve the room has already drawn.
+
+What is new: The state is one record per person
+rather than a set of totals, and a contact is drawn from a fixed neighbourhood
+rather than from the whole population.  The second is the one that moves the
+numbers, and the worksheet measures how far.
+
+So do not promise that the ABM will scatter around the ODE.  It will not.  The
+stochastic models earlier in the week were built on the same homogeneous mixing as
+the ODE, so they did scatter around it.  This one is a different model, not a
+noisy version of the same one, and averaging many runs will not close the gap.
+:::
+
+## When an individual model is worth its cost
+
+There may be questions to which the answer depends on something a population total may not show. Examples:
+
+- **Contact structure**, who is reachable from whom;
+- **Individual histories**, what this person has already been through;
+- **Local heterogeneity**, where the rule depends on a person's own surroundings;
+
+::: {.notes}
+An ABM is not automatically more realistic.  Every mechanism you
+add brings parameters that may be impossible to observe or to identify from data,
+and the extra detail is only useful if it changes the quantity you were asked
+about.
+
+The equations could be cheaper, faster and easier to fit.
+
+Separate two things that get run together.  *Stochastic* models earn their cost
+when counts are small and you want a probability rather than a curve; the
+jump-process session already gave the room one of those, and it needs no agents.
+*Individual and spatial* models earn their **additional** cost when contact
+structure or local heterogeneity moves the answer.  Part D measures exactly that:
+same $\beta$, $c$ and $\gamma$, and changing only the neighbourhood size moves the
+fraction of introductions that die out from 0.555 to 0.96.
+:::
+
+## Three components
+
+Every agent-based model is built from the same three pieces:
+
+1. **Agents**, the individuals that act.
+2. **Environment**, the space they live in, which decides who is next to whom.
+3. **Changes**, the rules for the agents and for the world.
+
+::: {.notes}
+This is the frame for the whole session, so put it on the board and come back to
+it.  Participants arriving from R or Python usually expect the agents to be the
+hard part.  They are the easy part.  The environment is what makes the model say
+something an equation cannot, and the rules are where the modelling assumptions
+hide.
+
+Agents.jl is the package we use, but the three components are not Julia-specific.
+The same three appear in NetLogo, Mesa and any other framework.
+:::
+
+## Defining an agent {.center .smaller}
+
+The `@agent` macro defines agent types, and defines what fields they should have.
+
+Here we are creating a type called `Person` that has two fields: `status` and `next_status`.
 
 ```{julia}
 #| echo: true
-using Agents, CairoMakie, Distributions, StableRNGs
+using Agents, CairoMakie, Distributions, Random, StableRNGs, Base64
 
-@agent struct Person(NoSpaceAgent)
+@agent struct Person(GridAgent{2})
     status::Symbol
     next_status::Symbol
 end
+```
 
-function model_step!(model)
-    for p in allagents(model)
-        p.status = p.next_status
-    end
+This struct also inherits the named fields of the `GridAgent{2}` predefined type. These fields are `(id::Int, pos::Tuple{Int, Int})` and are used to identify and locate the agent in a two-dimensional grid space.
+
+```{julia}
+#| echo: true
+for (name, type) in zip(fieldnames(Person), fieldtypes(Person))
+    println(name, "::", type)
 end
+```
 
-susceptible_count(model) = count(p.status == :S for p in allagents(model))
-infected_count(model) = count(p.status == :I for p in allagents(model))
-recovered_count(model) = count(p.status == :R for p in allagents(model))
+::: {.notes}
+`Person` inherits no behaviour from `GridAgent{2}`, because there is none to
+inherit.  The rules arrive separately, as ordinary functions, once the grid is
+set up.  If somebody asks what `GridAgent{2}` is: a type carrying the fields a
+two-dimensional grid agent needs, `id` and `pos`, which the macro copies in so
+you do not write them yourself.
 
+This is the first component of the three and the shortest.  The agents are a
+struct and nothing more; the space comes next.
+
+Two status fields rather than one.  Do not explain why yet; the committing slide
+does it.
+:::
+
+## The environment {.smaller}
+
+The space decides which agents are near which others.
+
+| Kind | Agents.jl type | Used for |
+|---|---|---|
+| Grid or lattice, 2D or $n$D | `GridSpace`, `GridSpaceSingle` | space as cells |
+| Graph or network | `GraphSpace` | contacts, social networks |
+| Continuous | `ContinuousSpace` | flocking model |
+| Street map | `OpenStreetMapSpace` | routes in a real city |
+
+You can also write your own by creating a `struct` that represents your custom space and extending the required methods.
+
+::: {.notes}
+`GridSpace` allows many agents per cell, `GridSpaceSingle` at most one.  We use
+`GridSpaceSingle`, so the grid *is* the population: one cell, one person, one
+address each.
+:::
+
+## The neighbourhood {.center .smaller}
+
+The neighbourhood defines which agents are reachable from a given agent.
+On a grid, we can define it by: the **radius**, how far you look, and the **metric**, how distance is
+counted.
+
+| Metric | Shape | $r=1$ | $r=3$ |
+|---|---|---|---|
+| `:chebyshev` | square | 8 | 48 |
+| `:euclidean` | disc | 4 | 28 |
+| `:manhattan` | diamond | 4 | 24 |
+
+```{julia}
+#| echo: false
+#| label: fig-slide-ch06-neighbourhood
+#| fig-cap: "Radius 1 (dark red), radius 2 (orange), radius 3 (gold), under each metric."
+fig = Figure(size=(880, 265))
+for (j, metric) in enumerate((:chebyshev, :euclidean, :manhattan))
+    g = StandardABM(Person,
+        GridSpaceSingle((9, 9); periodic=false, metric=metric);
+        model_step! = (m -> nothing), rng=StableRNG(1))
+    for p in positions(g)
+        add_agent!(p, g; status=:S, next_status=:S)
+    end
+
+    focal = g[id_in_position((5, 5), g)]
+    ring(r) = Set(a.id for a in nearby_agents(focal, g, r))
+    r1, r2, r3 = ring(1), ring(2), ring(3)
+
+    colour(p) = p.id == focal.id ? :black :
+                p.id in r1 ? :firebrick :
+                p.id in r2 ? :orange :
+                p.id in r3 ? :gold : :lightgrey
+
+    ax = Axis(fig[1, j]; aspect=DataAspect(),
+        title="$metric: $(length(r1)), $(length(r2)), $(length(r3))")
+    abmplot!(ax, g; agent_color=colour, agent_marker=:rect, agent_size=13)
+    hidedecorations!(ax)
+end
+fig
+```
+
+::: {.notes}
+Spend time here rather than on the API.  "Neighbourhood" is not a vague word: it
+is the result of explicit modelling choices, and every one of them changes the
+answer.
+
+The shapes are the names: a Chebyshev ball is a
+square, a Euclidean one is as close to a disc as a lattice allows, and a Manhattan
+one is a diamond.
+
+Chebyshev is the only one with a count
+you can do in your head, $(2r+1)^2-1$.
+:::
+
+## Edges: periodic or bounded {.center .smaller}
+
+A **periodic** grid wraps, so everybody has the same number of neighbours and nobody lives on a boundary.
+
+A **bounded** grid has edges, so a corner person would have fewer neighbours than somebody in the middle of the grid.
+
+```{julia}
+#| echo: false
+#| label: fig-slide-ch06-edges
+#| fig-cap: "Periodic (left) and bounded (right) grids, under Chebyshev metric with radius 1 (dark red), 2 (orange), and 3 (gold)."
+fig = Figure(size=(880, 265))
+for (j, periodic) in enumerate((true, false))
+    g = StandardABM(Person,
+        GridSpaceSingle((9, 9); periodic=periodic, metric=:chebyshev);
+        model_step! = (m -> nothing), rng=StableRNG(1))
+    for p in positions(g)
+        add_agent!(p, g; status=:S, next_status=:S)
+    end
+
+    focal = g[id_in_position((1, 1), g)]
+    ring(r) = Set(a.id for a in nearby_agents(focal, g, r))
+    r1, r2, r3 = ring(1), ring(2), ring(3)
+
+    colour(p) = p.id == focal.id ? :black :
+                p.id in r1 ? :firebrick :
+                p.id in r2 ? :orange :
+                p.id in r3 ? :gold : :lightgrey
+
+    ax = Axis(fig[1, j]; aspect=DataAspect(),
+        title="$(periodic ? "Periodic" : "Bounded")")
+    abmplot!(ax, g; agent_color=colour, agent_marker=:rect, agent_size=13)
+    hidedecorations!(ax)
+end
+fig
+```
+
+::: {.notes}
+A corner agent having fewer neighbours than somebody in the middle of the grid is
+*not* automatically a lower risk: the contact rule draws its contacts from the
+same $\operatorname{Poisson}(c\Delta t)$ distribution however many neighbours
+there are, and what matters per contact is the *proportion* infectious nearby,
+not the size of the pool.  A corner person with one infectious neighbour out of
+three faces a higher per-contact risk than a middle person with one out of eight.
+
+What edges do change is the number of *distinct* people reachable, and the
+uniformity of the population.  On a bounded grid, where you live becomes part of
+the model.  Wrapping removes that.  On this small grid it
+also stops the front from running out of room, which otherwise may cut the final
+size.
+:::
+
+
+## Changes: what one agent does {.center .smaller}
+
+```{julia}
+#| echo: true
 function agent_step!(p, model)
     p.next_status = p.status
     if p.status == :S
+        neighbours = collect(nearby_agents(p, model, model.radius))
         for _ in 1:rand(abmrng(model), Poisson(model.c*model.Δt))
-            q = random_agent(model)
+            q = rand(abmrng(model), neighbours)
             if q.status == :I && rand(abmrng(model)) < model.β
                 p.next_status = :I; break
             end
@@ -92,147 +285,375 @@ function agent_step!(p, model)
 end
 ```
 
-The second field makes the update synchronous.
+1. **Stage** (`p.next_status = p.status`). Nothing changes yet.
+2. **If susceptible** (`:S`). Draw `Poisson(cΔt)` contacts from the neighbourhood.
+   Each infectious contact infects with probability `β`.
+3. **If infectious** (`:I`). Recover with probability `1-exp(-γΔt)`.
 
 ::: {.notes}
-Without `next_status`, activation order could let an agent infected early in a
-step transmit during that same step.  That would be an unintended scheduling
-assumption.
+Why not change `p.status` directly? If Person #1 becomes infected first, and immediately changes `p.status = :I`, they could turn around and infect Person #2 during the exact same turn. That makes the simulation dependent on the order in which agents are processed.
+
+Using `p.next_status` acts like everyone making their decisions simultaneously at the end of the turn.
+
+Detail to give only if asked.  Contacts are drawn with replacement, so the same
+neighbour can be met twice, and the loop stops at the first successful
+transmission.  Note the asymmetry: $\beta$ is used directly as a per-contact
+probability, while $\gamma$ is a rate that has to be converted.  That is because
+$\Delta t$ enters transmission through the *number* of contacts, not through
+$\beta$.  The conversion gets its own slide shortly, so do not derive it here.
+
+If somebody asks how to meet distinct people instead, the code is two lines:
+draw `K = min(rand(abmrng(model), Poisson(model.c*model.Δt)), length(neighbours))`
+and loop over `view(shuffle(abmrng(model), neighbours), 1:K)`.  `shuffle` comes
+from `Random`, already loaded, so nothing new is needed.
+
+But if we restrict it, the number of contacts would depend on how many neighbours a person has.  In this case it would fix very little: at $c=10$ and $\Delta t=0.1$ the mean is one contact drawn from twenty-four
+neighbours, so a repeat happens in about 2% of steps, and the final sizes are
+indistinguishable.  Meeting the same neighbour twice is not double counting
+either, because $c$ is a rate of contact *events*, not of distinct people.
 :::
 
-## Current-code result
+## Changes: committing the step
+
+While `agent_step!` is where each individual agent assesses their environment and decides their future state, `model_step!` is where everyone's decisions take effect simultaneously at the end of the step.
+
 
 ```{julia}
 #| echo: true
-model = StandardABM(Person; agent_step!, model_step!,
-    properties=(β=0.05, c=10.0, γ=0.25, Δt=0.1),
-    rng=StableRNG(20250711))
-for id in 1:200
-    status = id <= 5 ? :I : :S
-    add_agent!(Person(; id, status, next_status=status), model)
+model_step!(model) = for p in allagents(model)
+    p.status = p.next_status
 end
-_, data = run!(model, 200; mdata=[susceptible_count,
-    infected_count, recovered_count], showprogress=false)
-counts = Matrix(data[:, [:susceptible_count, :infected_count,
-    :recovered_count]])'
-(peak_I=maximum(counts[2,:]),
-    population_error=maximum(abs.(sum(counts; dims=1) .- 200)))
 ```
 
-The result is generated from the current `run!` API.  Conservation should be
-exact even though the infectious curve is random.
+This step is what makes the update *synchronous*, and guarantees that everyone moves into the future at the same time.
 
 ::: {.notes}
-The small population keeps a slide render quick.  The Pluto notebook exposes
-population, initial infections, contact rate, and horizon as controls.
+Why we don't just update p.status directly?
+If we update p.status directly, an agent infected early in a sweep would already be infectious when a later agent in the same sweep drew them as a contact. Whether you can be infected by somebody infected moments ago, inside the same Δt, would then depend on your position in an ordering that has no meaning in the model. It is worse than arbitrary: run! visits agents in whatever order the scheduler supplies, so the answer would depend on an implementation detail.
 :::
 
-## Space, and what a neighbourhood is
-
-A space decides which agents are near which others. Grids, graphs, continuous
-space, street maps, or your own. What the rules consult is the
-**neighbourhood**, fixed by two choices:
-
-- the **radius**, how far a person looks;
-- the **metric**, how distance is counted. On a grid `:chebyshev` counts a
-  diagonal as one step, so radius 1 is the eight surrounding cells.
-
-A periodic grid wraps, so everyone has the same number of neighbours; a bounded
-one gives people near an edge fewer.
-
-::: {.notes}
-This is the slide the worksheet is built on, so spend time here rather than on
-the API.  The point to land is that "neighbourhood" is not a vague word: it is
-exactly two numbers, and both are modelling choices that change the answer.
-
-The bounded-versus-periodic point is worth a sentence aloud.  With edges, a
-corner agent has three neighbours instead of eight, so the epidemic is damped
-near the boundary for a reason that has nothing to do with the disease.
-:::
-
-## The neighbourhood, drawn {.smaller}
+## One step, traced by hand
 
 ```{julia}
-#| echo: true
-#| output-location: column
-#| label: fig-slide-ch06-neighbourhood
-#| fig-cap: "Chebyshev radius 1 (dark red), radius 2 adds the orange cells."
-@agent struct GridPerson(GridAgent{2})
-    status::Symbol
+#| echo: false
+#| label: fig-slide-ch06-walkthrough
+#| fig-cap: "One susceptible person's step. Gold: the person we are following. Red outline: their neighbourhood. Green outline: the contacts drawn this step."
+walk = StandardABM(Person,
+    GridSpaceSingle((5, 5); periodic=false, metric=:chebyshev);
+    agent_step!, model_step!,
+    properties=(β=0.5, c=10.0, γ=0.25, Δt=0.3, radius=1),
+    rng=StableRNG(95))
+for p in positions(walk)
+    add_agent!(p, walk; status=:S, next_status=:S)
+end
+src = walk[id_in_position((3, 2), walk)]
+src.status = :I; src.next_status = :I
+
+paint(s) = s === :I ? :firebrick :
+           s === :R ? :seagreen : :steelblue
+
+# The same draw agent_step! makes, done in the open so the numbers can be shown.
+function trace(model, focal)
+    nb = collect(nearby_agents(focal, model, model.radius))
+    K = rand(abmrng(model), Poisson(model.c * model.Δt))
+    contacts, u, caught = eltype(nb)[], NaN, false
+    for _ in 1:K
+        q = rand(abmrng(model), nb)
+        push!(contacts, q)
+        if q.status === :I
+            u = rand(abmrng(model))
+            if u < model.β
+                caught = true
+                break
+            end
+        end
+    end
+    return (; nb, K, contacts, u, caught)
 end
 
-grid = StandardABM(GridPerson,
-    GridSpaceSingle((9, 9);
-        periodic=false,
-        metric=:chebyshev);
-    model_step! = (m -> nothing),
-    rng=StableRNG(1))
+focal = walk[id_in_position((3, 3), walk)]
+(; nb, K, contacts, u, caught) = trace(walk, focal)
 
-for p in positions(grid)
-    add_agent!(p, grid; status=:S)
+people = collect(allagents(walk))
+xs = [p.pos[1] for p in people]
+ys = [p.pos[2] for p in people]
+reachable = Set(p.id for p in nb)
+push!(reachable, focal.id)
+fill_of(f; dim=true) = [(!dim || p.id in reachable) ?
+                        paint(getfield(p, f)) : :grey70 for p in people]
+ring(ps) = (first.(ps), last.(ps))
+
+fig = Figure(size=(1000, 500))
+function panel(j, title, note, fills; hood=(), drawn=())
+    ax = Axis(fig[1, j]; title=title, aspect=DataAspect(), titlesize=26)
+    Label(fig[2, j], note; fontsize=20, justification=:center)
+    scatter!(ax, xs, ys; marker=:rect, markersize=46, color=fills)
+    isempty(hood) || scatter!(ax, ring(hood)...; marker=:rect, markersize=46,
+        color=:transparent, strokecolor=:firebrick, strokewidth=2.5)
+    isempty(drawn) || scatter!(ax, ring(drawn)...; marker=:rect, markersize=46,
+        color=:transparent, strokecolor=:seagreen, strokewidth=3.5)
+    scatter!(ax, [focal.pos[1]], [focal.pos[2]]; marker=:rect, markersize=56,
+        color=:transparent, strokecolor=:goldenrod3, strokewidth=3)
+    hidedecorations!(ax)
+    limits!(ax, 0.3, 5.7, 0.3, 5.7)
 end
 
-focal = grid[id_in_position((5, 5), grid)]
-r1 = Set(a.id for a in nearby_agents(focal, grid, 1))
-r2 = Set(a.id for a in nearby_agents(focal, grid, 2))
+hood = [p.pos for p in nb]
+drawn = unique(q.pos for q in contacts)
+hit = findfirst(q -> q.status === :I, contacts)
 
-colour(p) = p.id == focal.id ? :black :
-            p.id in r1 ? :firebrick :
-            p.id in r2 ? :orange : :lightgrey
-
-fig, ax, _ = abmplot(grid; agent_color=colour,
-    agent_marker=:rect, agent_size=11,
-    figure=(; size=(300, 300)))
-hidedecorations!(ax)
+panel(1, "Start", "One infectious neighbour,\nat $(src.pos)",
+    fill_of(:status; dim=false))
+panel(2, "Neighbourhood", "Chebyshev radius 1:\n$(length(nb)) people reachable",
+    fill_of(:status); hood)
+panel(3, "$K contacts drawn",
+    "K ~ Poisson(cΔt = $(walk.c * walk.Δt))\nK = $K",
+    fill_of(:status); hood, drawn)
+focal.next_status = caught ? :I : focal.status
+walk[focal.id].status = focal.next_status
+panel(4, caught ? "Next_status :I" : "Nothing changed, next_status = :S",
+    isnan(u) ? "no infectious contact drawn,\nnothing to compare" :
+    "Contact $(contacts[hit].pos) is :I\nu = $(round(u, digits=3)) " *
+    (caught ? "<" : "≥") * " β = $(walk.β)",
+    fill_of(:status))
+foreach(j -> colsize!(fig.layout, j, Relative(0.25)), 1:4)
+rowsize!(fig.layout, 2, Fixed(36))
 fig
 ```
 
 ::: {.notes}
-Eight at radius 1, twenty-four at radius 2.  Ask the room which of the two they
-would call "the people you meet" before saying that the worksheet uses radius 2,
-and that the choice between them decides whether a single introduction can
-establish at all.
+This is the slide to slow down on: it is the only place the contact rule is
+visible one draw at a time.
+
+Walk the four panels.  One infectious neighbour, and the person we are following
+in gold.  Then their neighbourhood, the eight people radius 1 reaches.  Then the
+contacts: $K$ comes from $\operatorname{Poisson}(c\Delta t)$, and the people drawn
+are ringed in green.  Then the outcome: one of those contacts was infectious, so a
+uniform draw $u$ is compared with $\beta$, and it lands below, so this person
+catches it.
+
+Only the gold person acts here, and nothing reaches `status` until `model_step!`
+runs, which the previous slide covered.
+
+Two deliberate deviations, worth naming so nobody copies them into a real model.
+The radius is 1 rather than the 2 the epidemic model uses, and $\beta$ is 0.5 with
+$\Delta t=0.3$, so few enough contacts are drawn to point at and the comparison
+with $\beta$ is not a foregone conclusion.  The epidemic model uses the course
+rates.
+
+The two draws do different jobs, which is worth saying out loud: $K$ is how many
+people you meet, and the only place $\Delta t$ enters transmission; $u$ is whether
+one meeting passes the infection on.  That is why $\beta$ needs no rate conversion
+and $\gamma$ does.
 :::
 
-## Extensions and checks
+## Building the model
 
-- With contacts drawn from a fixed neighbourhood, $\beta c/\gamma$ is the
-  mass-action reproduction number and no longer the model's $R_0$.
-- Run seeded replicates, but say *which* summary you compare with the ODE.
-- Measure timestep error with a deterministic map, not a small ensemble.
+```{julia}
+#| echo: true
+function build(seed; dims=(30, 20), radius=2, Δt=0.1)
+    # Construct the environment: the grid, the rules, the parameters and the seed.
+    model = StandardABM(Person,
+        GridSpaceSingle(dims; periodic=true, metric=:chebyshev);
+        agent_step!, model_step!,
+        properties=(β=0.05, c=10.0, γ=0.25, Δt=Δt, radius=radius),
+        rng=StableRNG(seed))
 
-ABMs can represent clustering, households, behavior, and networks, but those
-mechanisms introduce parameters that may be difficult to observe or identify.
+    # Populate the grid: one susceptible person in every square.
+    for p in positions(model)
+        add_agent!(p, model; status=:S, next_status=:S)
+    end
+
+    # Seed patient zero: infect the person standing in the centre.
+    centre = model[id_in_position((dims[1] ÷ 2, dims[2] ÷ 2), model)]
+    centre.status = :I; centre.next_status = :I
+    return model
+end
+```
 
 ::: {.notes}
-An ABM is not automatically more realistic.  The contact mechanism and
-calibration target determine whether its extra detail is useful.
+Constructing the Model World (StandardABM)
+	•	Person: Tells the model that the population consists of our @agent struct Person objects.
+	•	GridSpaceSingle(dims; ...):
+	◦	GridSpaceSingle: Creates a 2D spatial grid where at most one agent can occupy each grid square.
+	◦	periodic=true: Wraps the edges into a torus (donut topology) so agents at the edge don't suffer from "boundary effects."
+	◦	metric=:chebyshev: Uses the Chebyshev distance metric (the Moore neighborhood—all 8 surrounding squares including diagonals).
+	•	agent_step!, model_step!: Plugs in our two rule functions that we defined earlier.
+	•	properties=(...): Stores global parameters ($\beta, c, \gamma, \Delta t, \text{radius}$) so any function can look them up via model.β.
+	•	rng=StableRNG(seed): Uses a cross-platform, reproducible pseudo-random number generator.
 
-On the second bullet: in the well-mixed model the peak of the ensemble mean and
-the mean of the per-replicate peaks straddle the ODE peak, 144.9 and 168.6
-against 158.5, and neither converges to it at finite $N$: averaging and
-maximizing do not commute.  That straddling does not carry over to the grid model
-the worksheet builds.  With contacts drawn locally every summary falls well below
-the ODE peak: single runs there peak between 76 and 87 against the same 158.5.
+Populating the Grid
+	•	positions(model): Returns every $(x, y)$ coordinate on the $30 \times 20$ grid (600 positions).
+	•	add_agent!(p, model; ...): Places a brand-new Person at grid coordinate p with both status and next_status initialized to :S (Susceptible).
 
-On the third: a 16-path ensemble has a standard error of several people, so it
-cannot resolve a timestep error of that size, and failing to resolve one is not
-evidence of its absence.
+Seeding Patient Zero
+	•	(dims[1] ÷ 2, dims[2] ÷ 2): Finds the middle coordinates using integer division (÷), e.g., coordinate $(15, 10)$.
+	•	id_in_position(...) & model[...]: Looks up the agent living at that central square.
+	•	Infection: Flips both status and next_status to :I (Infected), launching the outbreak from the middle of the population.
 :::
 
-## Takeaways and links
+## Watch it evolve 
 
-- Agent state makes contact and scheduling assumptions explicit.
-- Synchronous updates protect the intended discrete-time semantics.
-- Aggregate validation must be paired with checks of the individual rule.
+```{julia}
+#| echo: false
+struct Animation
+    bytes::Vector{UInt8}
+    width::Int
+end
+Base.show(io::IO, ::MIME"text/html", a::Animation) =
+    print(io, "<video controls autoplay loop ",
+        "muted playsinline width=\"$(a.width)\" ",
+        "src=\"data:video/mp4;base64,",
+        base64encode(a.bytes), "\"></video>")
+```
 
-Further reading:
-
-- [Agents.jl v7 agent definitions](https://juliadynamics.github.io/Agents.jl/v7.0.3/agents/)
-- [Agents.jl v7 data collection](https://juliadynamics.github.io/Agents.jl/v7.0.3/data/)
-- [Book chapter](../../chapters/06-agent-based-models.html) · [Pluto notebook](../../notebook-exports/chapters/06-agent-based-models.html)
+```{julia}
+#| echo: false
+seed_video = 144
+n_steps_video = 575
+big_path = tempname() * ".mp4"
+abmvideo(big_path, build(seed_video);
+    agent_color=(p -> paint(p.status)),
+    agent_marker=:rect, agent_size=30,
+    dt=5, frames=n_steps_video ÷ 5, framerate=15,
+    figure=(; size=(1000, 500)))
+Animation(read(big_path), 1000)
+```
 
 ::: {.notes}
-The book develops the equations and exercises.  Use the companion notebook to
-experiment with controls while keeping the random seed fixed.
+What we should see: infection does not appear everywhere at once in proportion
+to $I/N$.  It starts from one person, spreads to the neighbourhood, and then to the rest of the grid.
+The blue that survives at the end was never reached.
+
+Each frame is five steps, so the clip is 575 steps, $t=57.5$, by which point this
+run has finished: 510 of the 600 people infected.
+:::
+
+## Reading the results {.smaller}
+
+`run!` calls the functions in `mdata` once
+before the first step and once after every step.
+
+```{julia}
+#| echo: true
+susceptible_count(m) = count(p.status == :S for p in allagents(m))
+infected_count(m) = count(p.status == :I for p in allagents(m))
+recovered_count(m) = count(p.status == :R for p in allagents(m))
+
+_, model_data = run!(build(seed_video), n_steps_video;
+    mdata=[susceptible_count, infected_count, recovered_count],
+    showprogress=false)
+first(model_data, 3)
+```
+
+One row per step: `time` counts steps, so days are `time * Δt = 0.1`.
+
+::: {.notes}
+`run!` returns two data frames: agent-level first, model-level second.
+We asked for `mdata` only, so `agent_data` is thrown using the underscore `_`. Ask for `adata` as well and the first one fills with per-agent rows.
+
+Where the two numbers come from, because somebody will ask.  Both are borrowed
+from the video on the previous slide, so this table describes the run they have
+just watched rather than a new one.  The seed 144 is the `build(144)` in the
+`abmvideo` call.  The 575 steps are that clip's length: 115 frames at 5 steps a
+frame.  At $\Delta t=0.1$ that is $t=57.5$ days, by which point this run has
+finished, 510 of the 600 people infected and none still infectious.
+
+Neither number is special to the model.  Any seed and any step count would do;
+they match the video so the two slides describe one run.
+:::
+
+## Summarising the results of multiple runs {.smaller}
+
+```{julia}
+#| echo: false
+#| label: fig-slide-ch06-peaks
+#| fig-cap: "Three runs of the same model. Each run's own peak is marked; the thick line is their average."
+seeds = (37, 42, 46)
+nsteps = 1000
+curves = map(seeds) do s
+    _, d = run!(build(s), nsteps; mdata=[infected_count], showprogress=false)
+    d.infected_count
+end
+t = (0:nsteps) .* build(first(seeds)).Δt
+meancurve = [mean(getindex.(curves, i)) for i in eachindex(t)]
+peak_of_mean = maximum(meancurve)
+mean_of_peaks = mean(maximum.(curves))
+
+fig = Figure(size=(1000, 500))
+ax = Axis(fig[1, 1]; xlabel="Days (time * Δt)", ylabel="Infectious", titlesize=26)
+hlines!(ax, [mean_of_peaks]; color=:firebrick, linestyle=:dash, linewidth=2)
+hlines!(ax, [peak_of_mean]; color=:black, linestyle=:dot, linewidth=2)
+for (s, I, col) in zip(seeds, curves, (:steelblue, :seagreen, :darkorange))
+    lines!(ax, t, I; color=col, linewidth=2, label="seed $s")
+    pk, i = findmax(I)
+    scatter!(ax, [t[i]], [pk]; color=col, markersize=15)
+end
+lines!(ax, t, meancurve; color=:black, linewidth=4, label="mean of the three")
+text!(ax, 66, mean_of_peaks + 1.5; color=:firebrick, fontsize=19,
+    text="mean of the per-run peaks = $(round(mean_of_peaks, digits=1))")
+text!(ax, 66, peak_of_mean - 5.5; color=:black, fontsize=19,
+    text="peak of the mean curve = $(round(peak_of_mean, digits=1))")
+axislegend(ax; position=:rb, labelsize=20)
+fig
+```
+
+::: {.notes}
+On the second: averaging and maximising do not commute.  Individual epidemics
+take off at different times, so averaging at a fixed clock time flattens the
+peak.  Measured over 200 seeds of `build`: the mean curve peaks at 13.3
+infectious, while the per-run peaks average 24.2, nearly twice as high.  Neither
+number is wrong; quoting one without saying which is.
+
+On the third, the Part D numbers on the full grid: at contact radius 2, 111 of
+200 introductions finished at or below 76 people and 79 finished above 400, with
+only 10 anywhere in between.  The overall mean is 285, which is close to nothing
+the model typically does.  That is why the two-part report is the fix rather than
+a caveat: the fraction that take off is a probability, the size given take-off is
+a size, and each one describes something that actually happens.
+
+The heavier statistics, paired standard errors and convergence in $\Delta t$, are
+chapter and self-study material.  Do not open them here.
+:::
+
+## Over to the worksheet
+
+Build the three components in order, then run and read the model:
+
+- **A** the space, the agent, the population
+- **B** the neighbourhood: radius and metric
+- **C** the rules, and a check against the ODE
+- **D** single introductions at two contact radii
+
+::: {.notes}
+Two blanks in the core parts, the recovery probability and the commit line, and
+one classification blank in Part D.  Everything else is given.  Hints hand over
+the answer, so nobody should lose the session to a missing line.
+
+The worksheet runs on the course baseline, 1000 people on a $40\times25$ grid
+with ten initial cases, rather than the demonstration grid used in these slides.
+
+Solutions go up at the end of the day.  Nothing here is homework.
+:::
+
+## Next
+
+We included an extended session for this topic.
+The next worksheet will add a second layer and define
+how far a person can *see*, as opposed to how far they can *infect*. The idea is to explore whether acting on local information beats acting on national information, and what that awareness costs.
+
+[Agents.jl agents](https://juliadynamics.github.io/Agents.jl/v7.0.3/agents/) ·
+[Book chapter](../../chapters/06-agent-based-models.html) ·
+[Notebook](../../notebook-exports/chapters/06-agent-based-models.html)
+
+::: {.notes}
+Flag the two radii deliberately, because they are what people conflate across the
+two sessions.  In this session there is one radius, the contact radius, and it
+decides who can infect you.  Next session keeps it and adds an information
+radius, which decides who you can see.  They are separate numbers and nothing
+forces them to match.
+
+The book chapter develops the same model without a space and carries the
+references.  The notebook exposes the contact and recovery parameters as sliders
+with the seed held fixed.
 :::

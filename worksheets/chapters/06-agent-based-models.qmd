@@ -2,53 +2,38 @@
 title: "Worksheet — Agent-based models"
 course-unit: ch06-agent-based-models
 artifact: worksheet
-status: draft
+status: complete
 ---
 
 # Worksheet: a thousand people, one at a time
 
-**~50 minutes**
+**\~55 minutes**
 
-Every other session this week has been a population model. The state was a few
-numbers, and an equation said how those numbers change. This session is different
-in kind: the state is a thousand people, each one an object you can look at and
-ask questions of, and the population curves are something you compute
-*afterwards*.
+Every other session this week has been a population model. The state was a few numbers, and an equation said how those numbers change. This session is different in kind: the state is a thousand people, each one an object you can look at and ask questions of, and the population curves are something you compute *afterwards*.
 
 An agent-based model has three parts:
 
 - the **agents**, the individuals that act;
 - the **environment**, the space they live in, which decides who is next to whom;
-- the **rules**, what happens to an agent in one step, and what happens to the
-  world once per step.
+- the **rules**, what happens to an agent in one step, and what happens to the world once per step.
 
-This worksheet builds them in that order, runs the model, and looks at it. The
-[chapter](../../chapters/06-agent-based-models.qmd) develops the same model
-without a space; here every person has a place on a grid and a set of neighbours.
+This worksheet builds them in that order, runs the model, and looks at it. The [chapter](../../chapters/06-agent-based-models.qmd) develops the same model without a space; here every person has a place on a grid and a set of neighbours.
 
-**How to use this file.** Run cells one at a time with `Ctrl+Shift+Enter`. Cells
-marked `# TODO` have a line or two for you to complete; everything else runs as
-given. Each part ends with `✓` / `✗` lines that check your answer; a `✗` is
-information, not failure, and the collapsed hint below it will get you moving.
-An instructor is circulating; ask early rather than staying stuck.
+**How to use this file.** Run cells one at a time with `Ctrl+Shift+Enter`. Cells marked `# TODO` have a line or two for you to complete; everything else runs as given. Each part ends with `✓` / `✗` lines that check your answer; a `✗` is information, not failure, and the collapsed hint below it will get you moving. An instructor is circulating; ask early rather than staying stuck.
 
-Worked solutions are posted at the end of each day. Run `git pull` to collect
-them.
+Worked solutions are posted at the end of each day. Run `git pull` to collect them.
 
-::: {.callout-note}
+::: callout-note
 ## Greek letters you can copy
 
-`\gamma` followed by `Tab` gives `γ` at a Julia prompt, but that completion
-often does not fire inside a Quarto file like this one. Copy what you need
-from here, or insert it from the command palette with the Unicode Latex
-extension described in [Setting up](../../setup.qmd#optional-extras).
+`\gamma` followed by `Tab` gives `γ` at a Julia prompt, but that completion often does not fire inside a Quarto file like this one. Copy what you need from here, or insert it from the command palette with the Unicode Latex extension described in [Setting up](../../setup.qmd#optional-extras).
 
-| Symbol | Reads as | At a Julia prompt |
-|---|---|---|
-| `Δ` | capital delta | `\Delta` then `Tab` |
-| `β` | beta | `\beta` then `Tab` |
-| `γ` | gamma | `\gamma` then `Tab` |
-| `₀` | subscript zero | `\_0` then `Tab` |
+| Symbol | Reads as       | At a Julia prompt   |
+|--------|----------------|---------------------|
+| `Δ`    | capital delta  | `\Delta` then `Tab` |
+| `β`    | beta           | `\beta` then `Tab`  |
+| `γ`    | gamma          | `\gamma` then `Tab` |
+| `₀`    | subscript zero | `\_0` then `Tab`    |
 
 `Δt` is two characters: `Δ` followed by `t`.
 
@@ -57,7 +42,7 @@ A subscript is its own character too: `R₀` is `R` followed by `₀`.
 Plain ASCII names work exactly as well if you prefer them.
 :::
 
----
+------------------------------------------------------------------------
 
 ## Setup
 
@@ -67,6 +52,7 @@ using Agents
 using CairoMakie
 using Distributions
 using OrdinaryDiffEq
+using Pkg
 using Random
 using StableRNGs
 using Statistics
@@ -83,37 +69,17 @@ const γ = 0.25
 const horizon = 120.0
 
 println("R₀ under mass action = ", β * c / γ)
+Pkg.status(["Agents", "CairoMakie", "Distributions", "OrdinaryDiffEq", "StableRNGs"])
+println("Julia ", VERSION)
 ```
 
-The parameters are the same as every other session: a thousand people, ten
-contacts per unit time, transmission probability $\beta = 0.05$ per contact with
-an infectious person, and recovery at rate $\gamma = 0.25$.
+`StableRNG` fixes the random *stream*, and that is less than full reproducibility. It does not fix what the code draws from that stream: `shuffle`, `Poisson` sampling and `rand(rng, collection)` are implementations in Julia's standard library and in `Distributions.jl`, and any of them may consume a different number of values, or combine them differently, in another version. So exact digits need the Julia version and the resolved package set, not the seed alone. Both are recorded: the setup cell prints the Julia version and the package versions, and the exact resolution is committed in this repository's `Project.toml` and `Manifest.toml`. On any other combination expect the conclusions to hold and the digits not to.
 
----
+The parameters are the same as every other session: a thousand people, ten contacts per unit time, transmission probability $\beta = 0.05$ per contact with an infectious person, and recovery at rate $\gamma = 0.25$.
 
-## Part A — the three components (~8 min)
+------------------------------------------------------------------------
 
-### The environment
-
-The space decides who is next to whom, and it is the first thing to build.
-Agents.jl offers grids, graphs, continuous space, and street maps. This model
-uses a grid.
-
-```{julia}
-#| label: ws-ch06-a1
-space = GridSpaceSingle((40, 25); periodic = true, metric = :chebyshev)
-```
-
-Three choices are worth reading slowly.
-
-`GridSpaceSingle` holds **at most one agent per cell**. A $40\times25$ grid is
-1000 cells, so the grid *is* the population: the same thousand people as every
-other session, now with an address each.
-
-`periodic = true` wraps the edges, so the left column is next to the right one
-and nobody lives on a boundary with fewer neighbours than everyone else.
-
-`metric = :chebyshev` is how distance is counted, which Part B is about.
+## Part A — the three components (\~8 min)
 
 ### The agents
 
@@ -125,22 +91,32 @@ and nobody lives on a boundary with fewer neighbours than everyone else.
 end
 ```
 
-::: {.callout-note}
+::: callout-note
 ## `@agent` is not a class
 
-If you are arriving from R or Python you may read `Person(GridAgent{2})` as a
-class inheriting from a base class. Julia does not work that way. Data live in
-`struct` types and behaviour lives in functions, which are chosen by the types
-of their arguments. A struct has no methods of its own.
+If you are arriving from R or Python you may read `Person(GridAgent{2})` as a class inheriting from a base class. Julia does not work that way. Data live in `struct` types and behaviour lives in functions, which are chosen by the types of their arguments. A struct has no methods of its own.
 
-What the `@agent` macro does is copy in the fields that a two-dimensional grid
-agent needs, `id` and `pos`, and add the fields you asked for. `Person` inherits
-no behaviour from `GridAgent{2}`, because there is none to inherit. The rules
-arrive separately, as ordinary functions, in Part C.
+What the `@agent` macro does is copy in the fields that a two-dimensional grid agent needs, `id` and `pos`, and add the fields you asked for. `Person` inherits no behaviour from `GridAgent{2}`, because there is none to inherit. The grid those fields refer to is built next, and the rules arrive separately, as ordinary functions, in Part C.
 :::
 
-Each `Person` carries two statuses rather than one. That is deliberate, and
-Part C says why.
+Each `Person` carries two statuses rather than one. Part C is where the second one is used.
+
+### The environment
+
+The space decides who is next to whom. Agents.jl offers grids, graphs, continuous space, and street maps. This model uses a grid, which is what `GridAgent{2}` above refers to.
+
+```{julia}
+#| label: ws-ch06-a1
+space = GridSpaceSingle((40, 25); periodic = true, metric = :chebyshev)
+```
+
+Three choices are worth reading slowly.
+
+`GridSpaceSingle` holds **at most one agent per cell**. A $40\times25$ grid is 1000 cells, so the grid *is* the population: the same thousand people as every other session, now with an address each.
+
+`periodic = true` wraps the edges, so the left column is next to the right one and nobody lives on a boundary with fewer neighbours than everyone else.
+
+`metric = :chebyshev` is how distance is counted, which Part B is about.
 
 ### Putting people in the space
 
@@ -165,28 +141,21 @@ function initialize_model(seed; I0 = 10, radius = 2, Δt = 0.1)
 end
 ```
 
-`properties` is where model-wide numbers live, reachable inside the rules as
-`model.β` and so on. `rng = StableRNG(seed)` gives the model its own random
-stream, which is what makes a run reproducible.
+`properties` is where model-wide numbers live, reachable inside the rules as `model.β` and so on. `rng = StableRNG(seed)` gives the model its own random stream, which is what makes a run reproducible.
 
-The rules `agent_step!` and `model_step!` are named here before they exist. Julia
-resolves them when the model runs, so Part C can still define them.
+The rules `agent_step!` and `model_step!` are named here before they exist. Julia resolves them when the model runs, so Part C can still define them.
 
----
+------------------------------------------------------------------------
 
-## Part B — the neighbourhood (~12 min)
+## Part B — the neighbourhood (\~12 min)
 
-The neighbourhood is the property that makes this a spatial model, so it is worth
-being exact about. Two things decide it: how far you look (the **radius**) and
-how distance is counted (the **metric**).
+The neighbourhood is what makes this a spatial model. Two things decide it: how far you look (the **radius**) and how distance is counted (the **metric**).
 
-- `:chebyshev` counts a diagonal step as one step, so a radius of 1 is the eight
-  cells surrounding a person, the square ring.
+- `:chebyshev` counts a diagonal step as one step, so a radius of 1 is the eight cells surrounding a person, the square ring.
 - `:euclidean` measures straight-line distance, giving a disc.
 - `:manhattan` adds the horizontal and vertical steps, giving a diamond.
 
-Set the radius and the metric that pick out the eight cells touching a person,
-the neighbourhood usually called the Moore neighbourhood.
+Set the radius and the metric that pick out the eight cells touching a person, the neighbourhood usually called the Moore neighbourhood.
 
 ```{julia}
 #| label: ws-ch06-b1
@@ -222,17 +191,15 @@ check("every one of them touches the centre cell",
 ::: {.callout-tip collapse="true"}
 ## Hint — Part B, the Moore neighbourhood
 
-```julia
+``` julia
 neighbourhood_radius = 1
 neighbourhood_metric = :chebyshev
 ```
 
-A diagonal neighbour is one Chebyshev step away, the same as a neighbour directly
-above, so radius 1 under that metric is the full ring of eight.
+A diagonal neighbour is one Chebyshev step away, the same as a neighbour directly above, so radius 1 under that metric is the full ring of eight.
 :::
 
-The picture below shows why the metric matters. It is drawn with `abmplot`, the
-plotting function Agents.jl provides for looking at a model.
+The picture below shows why the metric matters. It is drawn with `abmplot`, the plotting function Agents.jl provides for looking at a model.
 
 ```{julia}
 #| label: fig-ws-ch06-neighbourhood
@@ -253,13 +220,11 @@ ax.title = "Radius 1 and radius 2 under the Chebyshev metric"
 fig
 ```
 
-The model in Part C uses **radius 2**, so a contact is drawn from the
-twenty-four people within two cells. Part D asks what that choice costs.
+The model in Part C uses **radius 2**, so a contact is drawn from the twenty-four people within two cells. Part D asks what that choice costs.
 
 ### Experiment: the edge of the world
 
-`periodic = true` in `initialize_model` wraps the grid. Run the cell below to see
-what a person in the corner would otherwise have.
+`periodic = true` in `initialize_model` wraps the grid. Run the cell below to see what a person in the corner would otherwise have.
 
 ```{julia}
 #| label: ws-ch06-b2
@@ -281,30 +246,19 @@ end
 
 ### B1. Interpret
 
-- With `periodic = false`, a person in the corner has fewer neighbours than a
-  person in the middle. Nothing in the epidemic rules mentions corners, so where
-  would that difference show up in the results, and why is wrapping the grid the
-  simpler choice for this model?
+- With `periodic = false`, a person in the corner has fewer neighbours than a person in the middle. Nothing in the epidemic rules mentions corners, so where would that difference show up in the results, and why is wrapping the grid the simpler choice for this model?
 
 > *Your answer here.*
 
----
+------------------------------------------------------------------------
 
-## Part C — the rules (~18 min)
+## Part C — the rules (\~23 min)
 
-An agent-based model is defined by what one individual does in one step. Two
-things happen to a person: a susceptible makes some contacts and may be infected
-by one of them, and an infectious person may recover.
+An agent-based model is defined by what one individual does in one step. Two things happen to a person: a susceptible makes some contacts and may be infected by one of them, and an infectious person may recover.
 
-Both need a *rate* turned into a *probability over a step of length $\Delta t$*.
-The contact side is given to you: a susceptible draws
-$K\sim\operatorname{Poisson}(c\,\Delta t)$ contacts from its neighbourhood, each
-of which transmits with probability $\beta$ if the person contacted happens to be
-infectious.
+Both need a *rate* turned into a *probability over a step of length* $\Delta t$. The contact side is given to you: a susceptible draws $K\sim\operatorname{Poisson}(c\,\Delta t)$ contacts from its neighbourhood, each of which transmits with probability $\beta$ if the person contacted happens to be infectious.
 
-For recovery, the waiting time is exponential with rate $\gamma$, exactly as in
-the jump-process session, so the probability of having recovered by the end of one
-step is $1-e^{-\gamma\Delta t}$.
+For recovery, the waiting time is exponential with rate $\gamma$, exactly as in the jump-process session, so the probability of having recovered by the end of one step is $1-e^{-\gamma\Delta t}$.
 
 Your two `# TODO`s are the recovery probability and the commit step.
 
@@ -345,24 +299,20 @@ recovered_count(model) = count(p.status == :R for p in allagents(model))
 ::: {.callout-tip collapse="true"}
 ## Hint — Part C, the two rules
 
-```julia
+``` julia
 if rand(abmrng(model)) < 1 - exp(-model.γ * model.Δt)
 ```
 
 and, inside the `model_step!` loop:
 
-```julia
+``` julia
 person.status = person.next_status
 ```
 
-`abmrng(model)` is the model's own random stream. Using it rather than a global
-`rand()` is what makes a seeded run reproducible. If the epidemic never gets
-going, check the commit line: without it, nobody's status ever changes.
+`abmrng(model)` is the model's own random stream. Using it rather than a global `rand()` is what makes a seeded run reproducible. If the epidemic never gets going, check the commit line: without it, nobody's status ever changes.
 :::
 
-`agent_step!` runs once for each person, `model_step!` once for the whole model
-at the end of the step. Writing to `next_status` and copying it across afterwards
-is what makes the update synchronous, and question C1 asks why that matters.
+`agent_step!` runs once for each person, `model_step!` once for the whole model at the end of the step. Writing to `next_status` and copying it across afterwards is what makes the update synchronous, and question C1 asks why that matters.
 
 ```{julia}
 #| label: ws-ch06-c2
@@ -414,8 +364,28 @@ end
 fig
 ```
 
-The deterministic SIR model is the reference to compare against. It assumes a
-contact can be anybody in the population.
+The deterministic SIR model is the reference to compare against. Before running it, be clear about what kind of comparison this is.
+
+::: callout-important
+## Two different models, not two ways of solving one model
+
+The stochastic models earlier in the week were built on the same mass-action assumption as the ODE, so their trajectories scattered around it. This one is not, and it will not scatter around it.
+
+|   | Deterministic SIR | This grid model |
+|------------------------|------------------------|------------------------|
+| State | three numbers, $S$, $I$, $R$ | a thousand people, each with a status and an address |
+| Who can infect you | anybody, in proportion $I/N$ | one of your 24 neighbours, in whatever proportion *they* are infectious |
+| Population | continuous quantities | 1000 whole people |
+| Time | continuous | steps of $\Delta t$ |
+
+The transmission rule you wrote is the ODE's rule applied one person at a time. A susceptible drawing $K\sim\operatorname{Poisson}(c\Delta t)$ contacts, each infecting with probability $\beta$, escapes infection over one step with probability
+
+$$\mathbb{E}\left[(1-\beta p)^{K}\right] = e^{-\beta c \Delta t\, p},$$
+
+where $p$ is the proportion infectious among the people it can reach. The exponent is a rate $\beta c\, p$ acting for a time $\Delta t$, and that rate is the ODE's force of infection $\beta c I/N$ exactly, **provided** $p = I/N$.
+
+The proviso is the whole difference. Drawing from the whole population makes $p$ equal to $I/N$. Drawing from 24 fixed neighbours does not, and the next cells show how far apart the two end up.
+:::
 
 ```{julia}
 #| label: ws-ch06-c3
@@ -459,50 +429,238 @@ axislegend(ax; position = :rt)
 fig
 ```
 
+### Validation: is the model wrong, or is the grid?
+
+Every run falls well short of the ODE. That is either a discovery about space or a bug in your `agent_step!`, and the figure above cannot tell you which. This is the ordinary difficulty with an individual-level model: the reference you would normally check against is the very thing you are trying to move away from.
+
+The way out is to build a version of the model whose answer you already know. Keep every line of the rules, keep the same grid, the same people and the same parameters, and change **one** thing: draw each contact from the whole population instead of from a neighbourhood. That model has no spatial structure left, so its $p$ is $I/N$ and it should reproduce the ODE. If it does, the code the two models share is behaving, and the search for an explanation of the gap narrows to the one thing that differs.
+
+`random_agent(model)` draws one agent uniformly from the whole model.
+
+```{julia}
+#| label: ws-ch06-c3a
+function well_mixed_step!(person, model)
+    person.next_status = person.status
+    if person.status == :S
+        for _ in 1:rand(abmrng(model), Poisson(model.c * model.Δt))
+            # TODO: draw this contact from the whole population, not a neighbourhood
+            contact = rand(abmrng(model), collect(nearby_agents(person, model, model.radius)))
+            if contact.status == :I && rand(abmrng(model)) < model.β
+                person.next_status = :I
+                break
+            end
+        end
+    elseif person.status == :I
+        if rand(abmrng(model)) < 1 - exp(-model.γ * model.Δt)
+            person.next_status = :R
+        end
+    end
+    return nothing
+end
+
+function initialize_well_mixed(seed; I0 = 10, Δt = 0.1)
+    space = GridSpaceSingle((40, 25); periodic = true, metric = :chebyshev)
+    model = StandardABM(
+        Person, space;
+        agent_step! = well_mixed_step!, model_step!,
+        properties = (β = β, c = c, γ = γ, Δt = Δt, radius = 2),
+        rng = StableRNG(seed),
+    )
+    for position in positions(model)
+        add_agent!(position, model; status = :S, next_status = :S)
+    end
+    for id in shuffle(abmrng(model), collect(allids(model)))[1:I0]
+        model[id].status = :I
+        model[id].next_status = :I
+    end
+    return model
+end
+
+function simulate_well_mixed(seed; I0 = 10, Δt = 0.1)
+    steps = round(Int, horizon / Δt)
+    _, data = run!(
+        initialize_well_mixed(seed; I0, Δt), steps;
+        mdata = [susceptible_count, infected_count, recovered_count],
+        showprogress = false,
+    )
+    return Matrix(data[:, [
+        :susceptible_count, :infected_count, :recovered_count,
+    ]])'
+end
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part C, the well-mixed control
+
+``` julia
+contact = random_agent(model)
+```
+
+That one line is the entire difference between the two models. The grid is still there and every person still has an address; nothing reads it any more.
+:::
+
+The ODE is a *deterministic* model, so compare it against an average rather than against one run. Eight seeds is enough to see whether the two agree.
+
+```{julia}
+#| label: ws-ch06-c3b
+control_seeds = 20250711 .+ (0:7)
+well_mixed_runs = [simulate_well_mixed(seed) for seed in control_seeds]
+grid_runs = [simulate(seed) for seed in control_seeds]
+
+mean_curve(runs) = mean(r[2, :] for r in runs)
+mean_final(runs) = mean(r[3, end] for r in runs)
+
+ode_peak = maximum(ode_states[2, :])
+ode_final = ode_states[3, end]
+
+check("the well-mixed ABM reproduces the ODE peak within 5%",
+      abs(maximum(mean_curve(well_mixed_runs)) - ode_peak) / ode_peak < 0.05)
+check("the well-mixed ABM reproduces the ODE final size within 5%",
+      abs(mean_final(well_mixed_runs) - ode_final) / ode_final < 0.05)
+check("the grid model misses the ODE peak by more than 20%",
+      abs(maximum(mean_curve(grid_runs)) - ode_peak) / ode_peak > 0.2)
+check("every run reached zero infectious before the horizon",
+      all(r[2, end] == 0 for r in vcat(well_mixed_runs, grid_runs)))
+
+control_comparison = [(; contacts = name,
+    peak_of_mean_curve = round(maximum(mean_curve(runs)); digits = 1),
+    mean_final_size = round(mean_final(runs); digits = 1),
+    rmse_vs_ode = round(sqrt(mean((mean_curve(runs) .- ode_states[2, :]).^2)); digits = 1))
+    for (name, runs) in (("whole population", well_mixed_runs),
+                         ("24 neighbours", grid_runs))]
+```
+
+### What the control does not cover
+
+A control that passes provides less evidence than it seems to. It holds the shared code fixed and changes the contact draw, so it exercises the transmission rule, the recovery rule, the two-phase update, the Poisson contact count and the number of steps. It does not exercise the spatial machinery at all, because the spatial machinery is exactly what it removes. A wrong radius, a metric that is not the one you think, a grid that fails to wrap, a neighbour set that includes the focal person: every one of those would pass this control and still be present in the grid model.
+
+So check that machinery directly, on the grid the model actually runs on.
+
+```{julia}
+#| label: ws-ch06-c3c
+probe = initialize_model(20250711)
+probe_neighbours = Dict(id => Set(a.id for a in nearby_agents(probe[id], probe, 2))
+                        for id in allids(probe))
+
+check("everybody has 24 distinct neighbours at radius 2",
+      all(length(s) == 24 for s in values(probe_neighbours)))
+check("everybody has 8 distinct neighbours at radius 1",
+      all(length(Set(a.id for a in nearby_agents(probe[id], probe, 1))) == 8
+          for id in allids(probe)))
+check("nobody is their own neighbour",
+      all(!(id in s) for (id, s) in probe_neighbours))
+check("if you are my neighbour then I am yours",
+      all(id in probe_neighbours[other] for (id, s) in probe_neighbours for other in s))
+
+(; people = nagents(probe),
+   cells = length(collect(positions(probe))),
+   degree_at_radius_2 = length(first(values(probe_neighbours))))
+```
+
+A degree of 24 for everybody is the effect of wrapping the grid: on a bounded grid the first check would fail on every edge cell. Together the control and these four checks cover more than either does alone, and they still do not amount to a proof that the model is correct.
+
+```{julia}
+#| label: fig-ws-ch06-control
+#| fig-cap: "Eight seeded runs (faint) and their mean (solid) against the deterministic SIR trajectory (dashed), for the two contact rules. Drawing contacts from the whole population puts the ABM mean on top of the ODE; drawing them from twenty-four neighbours does not. Only the contact draw differs between the panels."
+fig = Figure(size = (900, 380))
+for (j, (name, runs)) in enumerate((("contacts from the whole population", well_mixed_runs),
+                                    ("contacts from 24 neighbours", grid_runs)))
+    ax = Axis(fig[1, j]; xlabel = "time", ylabel = "infectious people", title = name)
+    ylims!(ax, 0, 230)
+    for run in runs
+        lines!(ax, step_times, run[2, :]; color = (:firebrick, 0.25), linewidth = 1)
+    end
+    lines!(ax, step_times, mean_curve(runs); color = :firebrick, linewidth = 2.5,
+           label = "ABM mean")
+    lines!(ax, step_times, ode_states[2, :]; color = :black, linestyle = :dash,
+           linewidth = 2, label = "ODE")
+    axislegend(ax; position = :rt)
+end
+fig
+```
+
 ### Experiment: the timestep is part of the model
 
-`Δt` here is not a solver tolerance. In the ODE sessions the timestep was a
-numerical detail the solver chose and refined until it stopped mattering. In this
-model it sets how many contacts a person makes per step and how often anyone can
-recover, so it belongs to the model definition. Change it and re-run.
+`Δt` here is not a solver tolerance. In the ODE sessions the timestep was a numerical detail the solver chose and refined until it stopped mattering. In this model it sets how many contacts a person makes per step and how often anyone can recover, so it belongs to the model definition. Change it and re-run.
+
+One run at each timestep would not settle anything. The settings consume random numbers differently, so a pair of runs sharing a seed are not the same realization computed two ways, and any difference between them mixes the effect of $\Delta t$ with the difference between two draws. Use several seeds at each setting and compare the summaries.
+
+Sweep downwards as well as upwards. Comparing $\Delta t = 0.1$ against $1$ shows that the timestep matters; it says nothing about whether $0.1$ is small enough, which is what the smaller settings are for. Every run stops at the fixed horizon of 120 time units, so `finished` records whether it had actually run out of infectious people by then: a "final size" read off a run that is still going is not a final size.
 
 ```{julia}
 #| label: ws-ch06-c4
-coarse_run = simulate(20250711; Δt = 1.0)
+timestep_seeds = 20250711 .+ (0:5)
 
-(; Δt_01 = (; peak = maximum(single_run[2, :]), final = single_run[3, end]),
-   Δt_1 = (; peak = maximum(coarse_run[2, :]), final = coarse_run[3, end]))
+function timestep_summary(Δt)
+    runs = [simulate(seed; Δt = Δt) for seed in timestep_seeds]
+    peaks = [maximum(r[2, :]) for r in runs]
+    finals = [r[3, end] for r in runs]
+    return (; Δt,
+              finished = all(r[2, end] == 0 for r in runs),
+              mean_peak = round(mean(peaks); digits = 1),
+              mean_final = round(mean(finals); digits = 1),
+              final_range = extrema(finals),
+              final_sd = round(std(finals); digits = 1),
+              finals = Float64.(finals))
+end
+
+timestep_comparison = [timestep_summary(Δt) for Δt in (0.025, 0.05, 0.1, 1.0)]
+
+check("every timestep run reached zero infectious before the horizon",
+      all(row.finished for row in timestep_comparison))
+
+[(; row.Δt, row.finished, row.mean_peak, row.mean_final, row.final_range, row.final_sd)
+ for row in timestep_comparison]
 ```
+The six seeds are shared across the settings, and sharing a seed here means
+sharing an initial condition: the ten starting infectives are placed before any
+stepping happens, from the same `StableRNG` state, so a $\Delta t = 1$ run and a
+$\Delta t = 0.1$ run with the same seed begin from the identical grid. They
+diverge immediately afterwards, but the pairing on initial conditions is real. The
+point estimate is unaffected, since the mean of the seed-wise differences is just
+the difference of the two means; what has to be computed from the seed-wise
+differences is the *uncertainty*.
+
+```{julia}
+#| label: ws-ch06-c4b
+finals_at = Dict(row.Δt => row.finals for row in timestep_comparison)
+
+function paired_contrast(coarse, fine)
+    differences = finals_at[coarse] .- finals_at[fine]
+    n = length(differences)
+    return (; contrast = "Δt = $coarse minus Δt = $fine",
+              mean_difference = round(mean(differences); digits = 1),
+              paired_se = round(std(differences) / sqrt(n); digits = 1),
+              independent_se = round(sqrt(var(finals_at[coarse]) / n +
+                                          var(finals_at[fine]) / n); digits = 1),
+              correlation = round(cor(finals_at[coarse], finals_at[fine]); digits = 3))
+end
+
+timestep_contrasts = [paired_contrast(1.0, 0.1), paired_contrast(0.025, 0.1)]
+```
+
 
 ### C1. Interpret
 
-- `agent_step!` writes to `next_status` and `model_step!` copies it across
-  afterwards. Suppose it wrote to `person.status` directly instead. What could
-  then happen within a single step that should not, and what would the answer
-  start to depend on?
-- The three runs in the figure differ from each other, and all of them fall well
-  short of the ODE. Those are two different kinds of disagreement. Which one
-  would more replicates fix, and which one would survive any number of them?
-- At $\Delta t = 1$ a person makes ten contacts before anybody can recover.
-  Using the numbers from the last cell, say whether the coarse step is a
-  numerical error, a changed assumption about how people meet, or both.
+- `agent_step!` writes to `next_status` and `model_step!` copies it across afterwards. Suppose it wrote to `person.status` directly instead. What could then happen within a single step that should not, and what would the answer start to depend on?
+- The three runs in the figure differ from each other, and all of them fall well short of the ODE. Those are two different kinds of disagreement. Which one would more replicates fix, and which one would survive any number of them?
+- The well-mixed control matches the ODE and the grid model does not, and the two share every line of code except the contact draw. What does that let you say about the grid model that comparing it with the ODE on its own could not? Name one kind of mistake it would *not* catch, and say which of the four checks in `ws-ch06-c3c` would catch that one. If the control had *also* missed the ODE, what would you have suspected instead?
+- At $\Delta t = 1$ each person draws $\operatorname{Poisson}(10)$ contact attempts while statuses stay frozen. The freezing cuts both ways: an infectious person who recovers at the end of the step was treated as infectious during every attempt made in that interval, and a person infected during the step cannot pass anything on until the step after. One of those raises transmission and the other lowers it. Using the numbers from the last cell, say which way the net runs, and whether the coarse step is a numerical error, a changed assumption about how people meet, or both.
+- Now read the sweep downwards, from $\Delta t = 0.1$ to $0.05$ and $0.025$. Does `mean_final` look like it is settling on a value? Compare the gaps between neighbouring settings with `final_sd`, and say what six seeds each can and cannot establish about convergence.
+- Look at `final_range` at each timestep as well as `mean_final`. Which pairs of ranges overlap? Say what that means for how firmly six seeds each can pin down the size of an effect, as opposed to its direction.
+- `ws-ch06-c4b` reports both a paired and an independent standard error for the same contrast, and the paired one is larger. Look at `correlation` and explain why. Then say which of the two you should quote, and why that is not the same question as which is smaller.
 
 > *Your answer here.*
 
----
+------------------------------------------------------------------------
 
-## Part D — how much the neighbourhood matters (~12 min)
+## Part D — how much the neighbourhood matters (\~12 min)
 
-Everything so far started with ten infectious people spread over the grid. Real
-outbreaks start with one, and then whether anything happens at all is a matter of
-chance.
+Everything so far started with ten infectious people spread over the grid. Real outbreaks start with one, and then whether anything happens at all is a matter of chance.
 
-Two hundred introductions of a single case, each with its own seed, at two
-contact radii: radius 1, the eight people touching you, and radius 2, the
-twenty-four within two cells. Your `# TODO` is to classify the outcomes.
+Two hundred introductions of a single case, each with its own seed, at two contact radii: radius 1, the eight people touching you, and radius 2, the twenty-four within two cells. Your `# TODO` is to classify the outcomes.
 
-A *final* size means the epidemic has finished, so each model runs until nobody
-is infectious rather than stopping at a fixed time.
+A *final* size means the epidemic has finished, so each model runs until nobody is infectious rather than stopping at a fixed time.
 
 ```{julia}
 #| label: ws-ch06-d1
@@ -515,6 +673,7 @@ function final_size(seed; radius = 2, I0 = 1, Δt = 0.1, max_steps = 6000)
         infected_count(model) == 0 && return recovered_count(model)
         step!(model, 1)
     end
+    infected_count(model) == 0 && return recovered_count(model)
     error("epidemic still infectious after $max_steps steps; increase max_steps " *
           "(if Part C's model_step! is still unfinished, complete that first)")
 end
@@ -541,13 +700,11 @@ check("at radius 1 it is nowhere near it",
 ::: {.callout-tip collapse="true"}
 ## Hint — Part D, classifying outcomes
 
-```julia
+``` julia
 fizzled = Dict(radius => final_sizes[radius] .< 100 for radius in (1, 2))
 ```
 
-The dot makes the comparison element by element, giving a vector of
-`true`/`false`. `.!fizzled[radius]` then negates it, which is how the next cell
-picks out the runs that took off.
+The dot makes the comparison element by element, giving a vector of `true`/`false`. `.!fizzled[radius]` then negates it, which is how the next cell picks out the runs that took off.
 :::
 
 ```{julia}
@@ -567,7 +724,7 @@ summary_by_radius = [(; radius,
 ```{julia}
 #| label: fig-ws-ch06-introductions
 #| error: true
-#| fig-cap: "Final epidemic size across 200 introductions of a single infectious person, at contact radius 1 and radius 2. Widening the neighbourhood by one cell changes the outcome from an outbreak that almost never establishes to one that establishes about half the time."
+#| fig-cap: "Final epidemic size across 200 introductions of a single infectious person, at contact radius 1 and radius 2. At radius 1 the outcomes form a single continuous spread of small outbreaks, none of them reaching a fifth of the population. At radius 2 they fall into two separated groups, and just under half of the runs land in the large one."
 fig = Figure(size = (900, 380))
 for (j, radius) in enumerate((1, 2))
     ax = Axis(fig[1, j]; xlabel = "final number recovered", ylabel = "runs",
@@ -579,45 +736,32 @@ fig
 
 ### D1. Interpret
 
-- At radius 2 the fizzle fraction lands close to $1/R_0 = 0.5$, the value the
-  branching-process argument from the jump-process session predicts. At radius 1
-  it does not. The parameters $\beta$, $c$ and $\gamma$ are identical in both, so
-  $\beta c/\gamma$ is 2 in both. What has changed, and what does that tell you
-  about calling $\beta c/\gamma$ this model's $R_0$?
-- Compare `mean_if_it_takes_off` with `mean_over_all_runs` at radius 2. One of
-  those two numbers describes no run that happened. Which, and why?
-- Parts A to C started from ten cases spread over the grid and showed none of
-  this. Why did the effect disappear there, and what does that tell you about
-  when an individual-level model is worth its cost?
+- At radius 2 the fizzle fraction lands close to $1/R_0 = 0.5$, the value the branching-process argument from the jump-process session predicts. At radius 1 it does not. The parameters $\beta$, $c$ and $\gamma$ are identical in both, so $\beta c/\gamma$ is 2 in both. What has changed, and what does that tell you about calling $\beta c/\gamma$ this model's $R_0$?
+- Compare `mean_if_it_takes_off` with `mean_over_all_runs` at radius 2, then look at where each one falls on the histogram. One of them lands where almost no runs are. Which, and what does that say about reporting a mean for this model?
+- Parts A to C started from ten cases spread over the grid, and every run took off. Predict what fraction would stay below the cutoff with ten initial cases instead of one, at each radius. Then say what would have to be true of the ten introductions for your prediction to hold. Check it against the solutions, which run the experiment: the independence calculation most people try gets both radii wrong.
+- Given that, what does Part D tell you about when an individual-level model is worth its cost?
 
 > *Your answer here.*
 
----
+------------------------------------------------------------------------
 
 ## Finish: render your own report
 
 In a terminal:
 
-```bash
+``` bash
 quarto render worksheets/chapters/06-agent-based-models.qmd
 ```
 
 A clean render means every cell ran top to bottom in a fresh session.
 
----
+------------------------------------------------------------------------
 
 ## Where to look next
 
 Nothing here is assigned. The whole project stays available to you afterwards.
 
-- The next session takes this model and gives the agents something to do about
-  what they can see around them.
-- [The chapter](../../chapters/06-agent-based-models.qmd): the same rules without
-  a space, the ensemble comparison, and the Agents.jl v7 API spelled out.
-  Exercise 1 is the grid model with the reproduction number worked out properly,
-  and Exercise 2 is the timestep question with the statistics done carefully.
-- [The Pluto notebook](../../notebooks/chapters/06-agent-based-models.jl):
-  sliders over the contact and recovery parameters.
-- [Jump processes](../../chapters/04-jump-processes.qmd): the continuous-time
-  version of this model, where extinction and the $1/R_0$ argument first appear
-  and no timestep has to be chosen.
+- The next session takes this model and gives the agents something to do about what they can see around them.
+- [The chapter](../../chapters/06-agent-based-models.qmd): the same rules without a space, the ensemble comparison, and the Agents.jl v7 API in full. Exercise 1 derives a reproduction number for the grid model, and Exercise 2 revisits the timestep using a deterministic map in place of replicate runs.
+- [The Pluto notebook](../../notebooks/chapters/06-agent-based-models.jl): sliders over the contact and recovery parameters.
+- [Jump processes](../../chapters/04-jump-processes.qmd): the continuous-time version of this model, where extinction and the $1/R_0$ argument first appear and no timestep has to be chosen.

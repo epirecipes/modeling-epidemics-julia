@@ -19,3 +19,7 @@ $font-family-monospace: "JuliaMono", "SFMono-Regular", Consolas, monospace;
 .reveal .cell-output-display {
   margin-top: 0.6rem;
 }
+
+.reveal .quarto-figure-center figure > figcaption {
+  text-align: center;
+}
