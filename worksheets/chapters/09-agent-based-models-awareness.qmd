@@ -1,0 +1,729 @@
+---
+title: "Worksheet — Agent-based models: awareness and behaviour"
+course-unit: ch09-agent-based-models
+artifact: worksheet
+status: complete
+---
+
+# Worksheet: people who know something
+
+**~50 minutes**
+
+In every model this week, people have behaved the same way from the first day of
+the epidemic to the last. Real populations do not. When infection turns up nearby,
+people change what they do, and they change it on the basis of whatever they
+happen to know.
+
+This session takes the grid model from the previous session and gives each person
+one rule of that kind: *if I can see infection around me, I take precautions*.
+Then it asks a question that only an individual-level model can answer. The same
+precautions, taken by the same number of people, protect a population by
+different amounts depending on **what those people can see**.
+
+The model, the parameters and the grid are the ones you built in the previous
+session. What is new is a rule about behaviour and a way of counting how much
+precaution the population takes.
+
+**How to use this file.** Run cells one at a time with `Ctrl+Shift+Enter`. Cells
+marked `# TODO` have a line or two for you to complete; everything else runs as
+given. Each part ends with `✓` / `✗` lines that check your answer; a `✗` is
+information, not failure, and the collapsed hint below it will get you moving.
+An instructor is circulating; ask early rather than staying stuck.
+
+::: {.callout-note}
+## Greek letters you can copy
+
+| Symbol | Reads as | At a Julia prompt |
+|---|---|---|
+| `Δ` | capital delta | `\Delta` then `Tab` |
+| `β` | beta | `\beta` then `Tab` |
+| `γ` | gamma | `\gamma` then `Tab` |
+| `α` | alpha | `\alpha` then `Tab` |
+| `θ` | theta | `\theta` then `Tab` |
+
+Plain ASCII names work exactly as well if you prefer them.
+:::
+
+---
+
+## Setup
+
+```{julia}
+#| label: ws-ch06b-setup
+using Agents
+using CairoMakie
+using Distributions
+using Pkg
+using Random
+using StableRNGs
+using Statistics
+
+Pkg.status(["Agents", "CairoMakie", "Distributions", "StableRNGs"])
+println("Julia ", VERSION)
+
+check(name, condition) =
+    println(condition ? "✓ $name" : "✗ $name — not right yet, see the hint")
+
+const N = 1000
+const β = 0.05
+const c = 10.0
+const γ = 0.25
+
+@agent struct Person(GridAgent{2})
+    status::Symbol
+    next_status::Symbol
+end
+
+susceptible_count(model) = count(p.status == :S for p in allagents(model))
+infected_count(model) = count(p.status == :I for p in allagents(model))
+recovered_count(model) = count(p.status == :R for p in allagents(model))
+```
+
+`StableRNG` fixes the random *stream*, and that is less than full
+reproducibility. It does not fix what the code draws from that stream:
+`shuffle`, `Poisson` sampling and `rand(rng, collection)` are implementations in
+Julia's standard library and in `Distributions.jl`, and any of them may consume a
+different number of values, or combine them differently, in another version. So
+exact digits need the Julia version and the resolved package set, not the seed
+alone. Both are recorded: the setup cell prints the Julia version and the package
+versions, and the exact resolution is committed in this repository's
+`Project.toml` and `Manifest.toml`. On any other combination expect the
+conclusions to hold and the digits not to.
+
+---
+
+## Part A — agents who react (~15 min)
+
+The behaviour rule is one sentence: **a susceptible person who can see at least
+`m` infectious people within `info_radius` cells takes precautions for that step,
+and the chance of catching the infection from any one contact falls from
+$\beta$ to $\beta(1-\alpha)$.**
+
+Three numbers describe it, and each one is a modelling assumption:
+
+- `info_radius`, how far the person's information reaches;
+- `m`, how many cases it takes before they change their behaviour;
+- `α`, how much good the precautions do. $\alpha = 0.5$ halves the chance of
+  transmission per contact.
+
+The same rule is written three ways here, because Part C needs to compare them.
+`:none` is the model from the previous session. `:local` is the rule above.
+`:national` reacts instead to the prevalence $I/N$ in the whole population, the
+way a person watching the news would. Note what the model grants that rule: the
+true prevalence, seen at once and without under-reporting or delay. A real
+national figure is none of those things, which is the subject of the observation
+models session.
+
+Name all three branches explicitly and reject anything else. A rule the function
+does not recognise is a mistake, most likely a typo in a keyword argument, and it
+should stop the run rather than quietly select one of the three for you.
+
+```{julia}
+#| label: ws-ch06b-a1
+function is_aware(person, model)
+    if model.information == :none
+        return false
+    elseif model.information == :national
+        return model.prevalence >= model.θ
+    elseif model.information == :local
+        # TODO: aware when at least m of the people within info_radius are infectious
+        return false
+    else
+        throw(ArgumentError(
+            "unknown information rule $(model.information); " *
+            "expected :none, :local or :national"))
+    end
+end
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part A, the awareness rule
+
+```julia
+return count(a -> a.status == :I,
+             nearby_agents(person, model, model.info_radius)) >= model.m
+```
+
+`nearby_agents` is the same function you used to find contacts in the previous
+session, with a different radius: the people you *hear about* need not be the
+people you *meet*.
+:::
+
+The rules themselves change in one place only, where $\beta$ is used.
+
+```{julia}
+#| label: ws-ch06b-a2
+function agent_step!(person, model)
+    person.next_status = person.status
+    if person.status == :S
+        transmission = is_aware(person, model) ? model.β * (1 - model.α) : model.β
+        neighbours = collect(nearby_agents(person, model, model.radius))
+        for _ in 1:rand(abmrng(model), Poisson(model.c * model.Δt))
+            contact = rand(abmrng(model), neighbours)
+            if contact.status == :I && rand(abmrng(model)) < transmission
+                person.next_status = :I
+                break
+            end
+        end
+    elseif person.status == :I
+        if rand(abmrng(model)) < 1 - exp(-model.γ * model.Δt)
+            person.next_status = :R
+        end
+    end
+    return nothing
+end
+
+function model_step!(model)
+    model.aware_days += model.Δt *
+        count(p -> p.status == :S && is_aware(p, model), allagents(model))
+    for person in allagents(model)
+        person.status = person.next_status
+    end
+    model.prevalence = infected_count(model) / N
+    return nothing
+end
+```
+
+`model_step!` now does two things besides committing the statuses. It adds up
+**aware person-days**, the number of susceptible people taking precautions times
+the length of the step, and it records the current prevalence, which the
+`:national` rule reads on the next step.
+
+The order of those three operations matters. `agent_step!` decided this step's
+transmission using the statuses and the prevalence as they stood at the *start*
+of the step, so the count of aware people has to be taken before either is
+updated. Count after the commit and you would be reporting the precautions of a
+population that has already moved on. That running total is how much precaution
+the population took, and Part C uses it to compare the rules on equal terms.
+
+Model-wide values that change during a run have to live in a dictionary rather
+than the named tuple of the previous session, because a named tuple cannot be
+written to.
+
+```{julia}
+#| label: ws-ch06b-a3
+function initialize_model(seed; information = :none, α = 0.5, m = 1,
+                          info_radius = 3, θ = 0.05,
+                          I0 = 10, radius = 2, Δt = 0.1)
+    space = GridSpaceSingle((40, 25); periodic = true, metric = :chebyshev)
+    model = StandardABM(
+        Person, space;
+        agent_step!, model_step!,
+        properties = Dict(
+            :β => β, :c => c, :γ => γ, :Δt => Δt, :radius => radius,
+            :information => information, :α => α, :m => m,
+            :info_radius => info_radius, :θ => θ,
+            :prevalence => I0 / N, :aware_days => 0.0,
+        ),
+        rng = StableRNG(seed),
+    )
+    for position in positions(model)
+        add_agent!(position, model; status = :S, next_status = :S)
+    end
+    for id in shuffle(abmrng(model), collect(allids(model)))[1:I0]
+        model[id].status = :I
+        model[id].next_status = :I
+    end
+    return model
+end
+
+function run_epidemic(seed; max_steps = 10_000, kwargs...)
+    model = initialize_model(seed; kwargs...)
+    infectious = Int[infected_count(model)]
+    while infectious[end] > 0
+        length(infectious) > max_steps && error(
+            "still infectious after $max_steps steps ($(max_steps * model.Δt) time " *
+            "units); raise max_steps. A response too weak to interrupt transmission " *
+            "can run far longer than the settings used here.")
+        step!(model, 1)
+        push!(infectious, infected_count(model))
+    end
+    return (; peak = maximum(infectious),
+              final = recovered_count(model),
+              aware_days = model.aware_days,
+              duration = (length(infectious) - 1) * model.Δt,
+              infectious)
+end
+
+replicate_seeds = 7000 .+ (1:8)
+
+function summarise(; kwargs...)
+    runs = [run_epidemic(seed; kwargs...) for seed in replicate_seeds]
+    return (; peak = round(mean(r.peak for r in runs); digits = 1),
+              final = round(mean(r.final for r in runs); digits = 1),
+              final_sd = round(std([r.final for r in runs]); digits = 1),
+              aware_days = round(Int, mean(r.aware_days for r in runs)),
+              finals = [Float64(r.final) for r in runs],
+              aware_each = [r.aware_days for r in runs])
+end
+```
+
+`summarise` keeps the eight per-seed values as well as their means. Part B needs
+them, because a mean on its own says nothing about how well eight runs pin it
+down.
+
+`run_epidemic` runs until nobody is infectious, so every number it reports is a
+*final* one. The step cap is a safety net rather than a horizon: if it is ever
+reached the function raises an error instead of returning a half-finished
+epidemic, which matters because a weak response can stretch an epidemic well past
+the durations seen at the default settings. A run that fails to finish should be
+reported, not silently cut short.
+
+```{julia}
+#| label: ws-ch06b-a4
+baseline = summarise(information = :none)
+local_rule = summarise(information = :local, m = 1, α = 0.5)
+
+check("awareness lowers the peak", local_rule.peak < 0.6 * baseline.peak)
+check("awareness lowers the final size", local_rule.final < 0.5 * baseline.final)
+check("the baseline population never takes precautions",
+      baseline.aware_days == 0.0)
+
+(; baseline, local_rule)
+```
+
+Look at the population rather than the totals. Aware people are drawn in orange.
+
+```{julia}
+#| label: fig-ws-ch06b-snapshot
+#| fig-cap: "One run with the local rule, at three times. Blue is susceptible, orange is a susceptible person taking precautions, red infectious, green recovered. Precautions are concentrated around the infected patches rather than spread across the grid, which is what Part C then measures."
+snapshot_model = initialize_model(7001; information = :local, m = 1, α = 0.5)
+awareness_colour(p) =
+    p.status === :I ? :firebrick :
+    p.status === :R ? :seagreen :
+    is_aware(p, snapshot_model) ? :orange : :steelblue
+
+fig = Figure(size = (1000, 250))
+previous = 0.0
+for (j, t) in enumerate((3.0, 8.0, 20.0))
+    step!(snapshot_model, round(Int, (t - previous) / 0.1))
+    previous = t
+    ax = Axis(fig[1, j]; title = "t = $t", aspect = DataAspect())
+    abmplot!(ax, snapshot_model; agent_color = awareness_colour,
+             agent_marker = :rect, agent_size = 7)
+    hidedecorations!(ax)
+end
+fig
+```
+
+### Does the extra information ring do anything?
+
+The default `info_radius` is 3 while contacts come from radius 2, so a person
+hears about a ring of people they can never meet. It is natural to read that as
+advance warning. Before believing it, measure it: run the same rule at
+`info_radius = 3` and at `info_radius = 2`, changing nothing else.
+
+```{julia}
+#| label: ws-ch06b-a5
+# Run the two radii in lockstep and compare every agent's status at every step.
+# Equal S, I and R totals would not be enough: two runs could put the same
+# numbers of people in each compartment and disagree about which people.
+function compare_radii(seed; m, α = 0.5, radii = (3, 2), max_steps = 10_000)
+    models = [initialize_model(seed; information = :local, m = m, α = α, info_radius = r)
+              for r in radii]
+    statuses(model) = [model[id].status for id in 1:nagents(model)]
+    agree = statuses(models[1]) == statuses(models[2])
+    steps = 0
+    while any(infected_count(model) > 0 for model in models)
+        steps += 1
+        steps > max_steps && error("still infectious after $max_steps steps; raise max_steps")
+        foreach(model -> step!(model, 1), models)
+        agree &= statuses(models[1]) == statuses(models[2])
+    end
+    return (; agree,
+              final = map(recovered_count, models),
+              aware_days = map(model -> model.aware_days, models))
+end
+
+comparisons = Dict(m => [compare_radii(seed; m = m) for seed in replicate_seeds]
+                   for m in (1, 2))
+
+check("at m = 1 every agent holds the same status at every step under both radii",
+      all(c.agree for c in comparisons[1]))
+check("the two radii still record different amounts of precaution",
+      all(c.aware_days[1] > c.aware_days[2] for c in comparisons[1]))
+check("at m = 2 the two populations diverge, in every seed",
+      all(!c.agree for c in comparisons[2]))
+
+[(; m,
+    final_info_radius_3 = round(mean(c.final[1] for c in cs); digits = 1),
+    final_info_radius_2 = round(mean(c.final[2] for c in cs); digits = 1),
+    aware_days_3 = round(Int, mean(c.aware_days[1] for c in cs)),
+    aware_days_2 = round(Int, mean(c.aware_days[2] for c in cs)))
+ for (m, cs) in ((1, comparisons[1]), (2, comparisons[2]))]
+```
+
+The `m = 2` check says only that the two populations *differ*. It says nothing
+about which is better, so ask that separately, and ask it as a paired contrast:
+the two radii share a seed, so subtract seed by seed rather than comparing two
+column means.
+
+```{julia}
+#| label: ws-ch06b-a6
+function paired_final_contrast(cs; reps = 4000, seed = 11)
+    differences = [Float64(c.final[1] - c.final[2]) for c in cs]
+    rng = StableRNG(seed)
+    n = length(differences)
+    resampled = map(1:reps) do _
+        mean(differences[rand(rng, 1:n, n)])
+    end
+    return (; per_seed_difference = Int.(differences),
+              mean_difference = round(mean(differences); digits = 1),
+              seeds_favouring_radius_3 = count(<(0), differences),
+              interval = (round(quantile(resampled, 0.025); digits = 1),
+                          round(quantile(resampled, 0.975); digits = 1)))
+end
+
+paired_final_contrast(comparisons[2])
+```
+
+At `m = 1` the two runs are not merely similar. Every one of the thousand people
+holds the same status at every step under both radii. The aware person-days do not
+match, and at `m = 2` the populations come apart.
+
+### A1. Interpret
+
+- Explain the cell above. When `m = 1`, which people does the outer ring of the
+  information radius make aware, what can happen to those people during this
+  step, and why does that make the two runs agree exactly rather than
+  approximately?
+- Then explain why `m = 2` breaks the agreement, using the same two cases.
+- So at `m = 1`, `info_radius = 3` changes the denominator of Part B's cost
+  measure without changing the epidemic. Does that flatter the local rule or
+  handicap it?
+- Say what else would have to change in the rule for a larger information radius
+  to buy genuine advance warning at `m = 1`. There is more than one answer, and
+  none of them is a one-line edit.
+- Nothing in this model makes people *stay* careful. A person who sees no
+  infection this step behaves normally again. Where would you expect that to show
+  up in the epidemic curve?
+
+> *Your answer here.*
+
+---
+
+## Part B — how soon, and how hard (~15 min)
+
+Two of the three numbers are about the behaviour rather than the disease. `m`
+says how much evidence someone needs before acting, and `α` says how much good
+acting does. Sweep them one at a time.
+
+```{julia}
+#| label: ws-ch06b-b1
+trigger_sweep = [(; m, summarise(information = :local, m = m, α = 0.5)...)
+                 for m in (1, 2, 3)]
+```
+
+```{julia}
+#| label: ws-ch06b-b2
+strength_sweep = [(; α, summarise(information = :local, m = 1, α = α)...)
+                  for α in (0.25, 0.5, 0.75)]
+```
+
+A mechanism that halves the epidemic is worth more if fewer people had to change
+their behaviour to get there. Define that ratio: infections averted for each
+person-day of precautions, measured against the population that does nothing.
+
+```{julia}
+#| label: ws-ch06b-b3
+# TODO: infections averted per aware person-day, against the no-awareness baseline
+#       Use the per-seed vectors `finals` and `aware_each`, not `final` and
+#       `aware_days`: those two are rounded for display.
+averted_per_aware_day(result) = 0.0
+
+check("a rule that changes nothing averts nothing",
+      averted_per_aware_day((; finals = baseline.finals,
+                               aware_each = ones(length(baseline.finals)))) == 0.0)
+check("of the three triggers, acting on the first case has the highest point estimate",
+      averted_per_aware_day(trigger_sweep[1]) >
+      maximum(averted_per_aware_day(r) for r in trigger_sweep[2:end]))
+
+[(; description = "m = $(r.m)", averted = round(averted_per_aware_day(r); digits = 3))
+ for r in trigger_sweep]
+```
+
+```{julia}
+#| label: ws-ch06b-b4
+[(; description = "α = $(r.α)", averted = round(averted_per_aware_day(r); digits = 3))
+ for r in strength_sweep]
+```
+
+Those are eight-run point estimates and nothing more. Both the numerator and the
+denominator are averages over the same eight noisy runs, and the uncertainty of a
+ratio of estimated averages is not captured by the uncertainty of either component
+alone, so the whole ratio has to be recomputed in every bootstrap sample. Reading
+an order off three such numbers is not a comparison. Quantify each estimate's
+uncertainty first, then compare the settings using the paired contrast intervals
+below.
+
+Every setting uses the same `replicate_seeds`, so the runs pair up across
+settings and across the baseline. Resample the eight seeds with replacement,
+recompute the whole ratio from whichever seeds were drawn, and read the interval
+off the spread of those recomputations. Resampling seeds, rather than resampling
+each setting on its own, is what keeps that pairing intact. Note what the pairing
+does and does not achieve: it makes the interval account for whatever dependence there
+is, which is the correct procedure, but it does not automatically make the
+interval narrower. Resampling independently can come out either too wide or too
+narrow, depending on the sign of the covariance between the paired outcomes.
+
+```{julia}
+#| label: ws-ch06b-b5
+function averted_interval(result; reps = 4000, seed = 11)
+    rng = StableRNG(seed)
+    n = length(result.finals)
+    samples = map(1:reps) do _
+        drawn = rand(rng, 1:n, n)
+        taken = mean(result.aware_each[drawn])
+        taken == 0 ? NaN :
+            (mean(baseline.finals[drawn]) - mean(result.finals[drawn])) / taken
+    end
+    usable = filter(isfinite, samples)
+    isempty(usable) && return nothing   # a rule nobody ever acts on has no ratio
+    return (round(quantile(usable, 0.025); digits = 3),
+            round(quantile(usable, 0.975); digits = 3))
+end
+
+[(; description = "m = $(r.m)",
+    averted = round(averted_per_aware_day(r); digits = 3),
+    interval = averted_interval(r)) for r in trigger_sweep]
+```
+
+```{julia}
+#| label: ws-ch06b-b6
+[(; description = "α = $(r.α)",
+    averted = round(averted_per_aware_day(r); digits = 3),
+    interval = averted_interval(r)) for r in strength_sweep]
+```
+
+An interval around a single setting answers "does this rule avert anything at
+all?", by asking whether it excludes zero. It does **not** answer "do two
+settings differ?". Two overlapping intervals are perfectly compatible with a
+difference that is itself well away from zero, because the difference has its own
+sampling distribution and the two settings share their seeds. So bootstrap the
+*contrast* directly: resample the seeds once, recompute both settings' ratios from
+the same drawn seeds, and take the difference.
+
+```{julia}
+#| label: ws-ch06b-b7
+function contrast_interval(first_rule, second_rule; reps = 4000, seed = 11)
+    rng = StableRNG(seed)
+    n = length(first_rule.finals)
+    value(drawn, rule) = (mean(baseline.finals[drawn]) - mean(rule.finals[drawn])) /
+                         mean(rule.aware_each[drawn])
+    samples = map(1:reps) do _
+        drawn = rand(rng, 1:n, n)
+        value(drawn, first_rule) - value(drawn, second_rule)
+    end
+    usable = filter(isfinite, samples)
+    isempty(usable) && return nothing
+    return (round(quantile(usable, 0.025); digits = 3),
+            round(quantile(usable, 0.975); digits = 3))
+end
+
+[(; contrast = "m = $(a.m) minus m = $(b.m)",
+    difference = round(averted_per_aware_day(a) - averted_per_aware_day(b); digits = 3),
+    interval = contrast_interval(a, b))
+ for (a, b) in ((trigger_sweep[1], trigger_sweep[2]),
+                (trigger_sweep[1], trigger_sweep[3]),
+                (trigger_sweep[2], trigger_sweep[3]))]
+```
+
+```{julia}
+#| label: ws-ch06b-b8
+[(; contrast = "α = $(a.α) minus α = $(b.α)",
+    difference = round(averted_per_aware_day(a) - averted_per_aware_day(b); digits = 3),
+    interval = contrast_interval(a, b))
+ for (a, b) in ((strength_sweep[3], strength_sweep[2]),
+                (strength_sweep[2], strength_sweep[1]),
+                (strength_sweep[3], strength_sweep[1]))]
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part B, value for money
+
+```julia
+averted_per_aware_day(result) =
+    (mean(baseline.finals) - mean(result.finals)) / mean(result.aware_each)
+```
+
+`baseline.finals` holds the eight per-seed numbers infected when nobody reacts, so
+the numerator is how many infections this rule prevented. Take the means here
+rather than reusing `result.final` and `result.aware_days`, which `summarise`
+already rounded for display: round at the end, not in the middle.
+:::
+
+### B1. Interpret
+
+- In the strength sweep, look at `aware_days` as well as `final`. The weakest
+  response is not the one that asks least of the population. Explain how a
+  population can end up taking *more* person-days of precaution and still get a
+  larger epidemic.
+- At $\alpha = 0.25$ the spread across the eight seeds is much wider than at
+  $\alpha = 0.75$; look at `final_sd`. What is happening to the model between
+  those two values that would make the outcome so much less predictable in
+  between?
+- The `m` intervals in `ws-ch06b-b5` overlap, and the `m = 1` against `m = 2`
+  contrast in `ws-ch06b-b7` excludes zero. Both are correct. Explain how that is
+  possible, and say which of the two tables answers "do these settings differ?".
+- Using the contrast tables rather than the overlap of the marginal intervals,
+  say which orderings eight seeds support and which they do not, and rewrite the
+  `m` result as a sentence you would be willing to defend.
+- The `m = 2` row of `ws-ch06b-a6` has a mean difference favouring the wider
+  information radius and an interval that includes zero. Say what you may and may
+  not conclude from that, and why `seeds_favouring_radius_3` matters here.
+- Using the two `averted` tables, say which of the two numbers you would argue
+  about first if you were advising on a real response, and what you would need to
+  know that this model does not tell you.
+
+> *Your answer here.*
+
+---
+
+## Part C — the same behaviour, different information (~20 min)
+
+Here is the comparison the session has been building towards.
+
+The `:national` rule is the same behaviour as the `:local` one. The same
+precautions, the same $\alpha$, the same on-or-off decision. The only difference
+is what a person is looking at: the prevalence $I/N$ in the whole population,
+which this model hands them perfectly and without delay, rather than the people
+around them.
+
+Comparing them needs a fair basis, because either rule can be made stronger by
+having more people take precautions for longer. Aware person-days is that basis:
+it measures how much precaution was taken, not what that precaution cost.
+Choose the national threshold $\theta$ so that the national rule has the
+population take about the same amount of precaution as the local rule does. Try a
+few values.
+
+```{julia}
+#| label: ws-ch06b-c1
+# TODO: choose θ so the national rule produces about the same aware person-days
+#       as the local rule. Try 0.10, then 0.05, then 0.02.
+θ_matched = 0.10
+
+national_rule = summarise(information = :national, θ = θ_matched, α = 0.5)
+
+precaution_ratio = national_rule.aware_days / local_rule.aware_days
+check("the two rules now take about the same amount of precaution",
+      0.75 < precaution_ratio < 1.35)
+
+(; local_rule, national_rule, precaution_ratio = round(precaution_ratio; digits = 2))
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part C, matching the precaution taken
+
+A threshold of 0.05 means people react once 5% of the population is infectious.
+Lowering it makes them react sooner and stay careful for longer, so the aware
+person-days go up as $\theta$ goes down.
+:::
+
+```{julia}
+#| label: ws-ch06b-c2
+matched = [(; rule = "local, m = 1", local_rule.final, local_rule.aware_days),
+           (; rule = "national, θ = $θ_matched",
+              national_rule.final, national_rule.aware_days)]
+
+check("the local rule ends with a far smaller epidemic",
+      local_rule.final < 0.4 * national_rule.final)
+
+matched
+```
+
+Part B built a tool for exactly this comparison, so use it rather than reading two
+separate intervals against each other: contrast the two rules directly, on the same
+resampled seeds.
+
+```{julia}
+#| label: ws-ch06b-c2b
+(; contrast = "local m = 1 minus national θ = $θ_matched",
+   difference = round(averted_per_aware_day(local_rule) -
+                      averted_per_aware_day(national_rule); digits = 3),
+   interval = contrast_interval(local_rule, national_rule))
+```
+
+Neither rule has to be used at one setting. Sweeping both gives a curve of what
+each rule achieves for the precaution it asks of people.
+
+```{julia}
+#| label: fig-ws-ch06b-cost
+#| fig-cap: "Final epidemic size against the precaution taken to achieve it, for the local rule at three trigger levels and the national rule at four thresholds. Both rules use the same precautions. Across these tested settings, the local-rule points achieve smaller final sizes at similar or lower aware person-days."
+national_sweep = [(; θ, summarise(information = :national, θ = θ, α = 0.5)...)
+                  for θ in (0.10, 0.05, 0.02, 0.01)]
+
+local_points = vcat(
+    [(; label = "m=$(r.m)", r.aware_days, r.final) for r in trigger_sweep],
+    [(; label = "α=$(r.α)", r.aware_days, r.final)
+     for r in strength_sweep if r.α != 0.5],
+)
+national_points = [(; label = "θ=$(r.θ)", r.aware_days, r.final)
+                   for r in national_sweep]
+
+fig = Figure(size = (880, 440))
+ax = Axis(fig[1, 1]; xlabel = "aware person-days taken",
+          ylabel = "final epidemic size",
+          title = "What each rule achieves for the precaution taken")
+for (points, colour, marker, name) in
+        ((local_points, :firebrick, :circle, "local information"),
+         (national_points, :steelblue, :diamond, "national information"))
+    scatter!(ax, [p.aware_days for p in points], [p.final for p in points];
+             color = colour, marker = marker, markersize = 13, label = name)
+    text!(ax, [p.aware_days for p in points], [p.final for p in points];
+          text = [p.label for p in points], color = colour, fontsize = 11,
+          offset = (8, 4))
+end
+hlines!(ax, [baseline.final]; color = :grey, linestyle = :dash)
+text!(ax, 12000, baseline.final + 15; text = "nobody reacts", color = :grey,
+      fontsize = 12)
+xlims!(ax, -1500, 33000)
+axislegend(ax; position = :rc)
+fig
+```
+
+### C1. Interpret
+
+- Both rules apply identical precautions, and in the matched pair about the same
+  number of people spend about the same time taking them. Explain, in terms of
+  *who* is protected, why the local rule ends with a much smaller epidemic.
+- A compartmental SIR model can be given a transmission rate that falls as
+  prevalence rises, which is the national rule. Say what it would take to write
+  the local rule as a system of differential equations in $S$, $I$ and $R$, and
+  why that is the point of this session.
+- The local rule assumes people know, at once and for free, how many infectious
+  people are within three cells of them. Name two ways that assumption fails in a
+  real outbreak, and say for each one whether it would make the local rule look
+  better or worse than it does here.
+- The national rule at $\theta = 0.01$ does reduce the epidemic substantially.
+  Using the figure, say what it is asking of the population to get there and
+  whether you would call it a success.
+
+> *Your answer here.*
+
+---
+
+## Finish: render your own report
+
+In a terminal:
+
+```bash
+quarto render worksheets/chapters/09-agent-based-models-awareness.qmd
+```
+
+---
+
+## Where to look next
+
+Nothing here is assigned. The whole project stays available to you afterwards.
+
+- [The previous session's worksheet](09-agent-based-models.qmd): the grid model
+  this one extends.
+- [The chapter](../../chapters/09-agent-based-models.qmd): the same rules without
+  a space, and the Agents.jl v7 API spelled out.
+- [Interventions and optimization](../../chapters/15-interventions-and-optimization.qmd):
+  the same question of what a control buys for what it costs, asked of a
+  population model where the control is chosen centrally rather than by each
+  person.
+- [Observation models](../../chapters/11-observation-models.qmd): what a
+  reported prevalence figure is, and why the national rule is reacting
+  to something noisier and later than this model assumes.

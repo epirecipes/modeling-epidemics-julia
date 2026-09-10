@@ -21,7 +21,9 @@ You will:
 
 - classify an individual-level SIR model and distinguish it from a count model;
 - implement a synchronous contact-and-recovery rule with Agents.jl 7;
-- collect model-level data with the current `StandardABM` and `run!` APIs; and
+- collect model-level data with the current `StandardABM` and `run!` APIs;
+- name the pieces that define a neighbourhood in a spatial ABM, and say what
+  changes when contacts are drawn from one; and
 - compare an ensemble of individual simulations with the deterministic SIR
   ODE while identifying effects that aggregation hides.
 
@@ -227,6 +229,79 @@ end
 axislegend(ax, position = :rt, nbanks = 2)
 fig
 ```
+
+### Space and neighbourhoods
+
+The model above has no space: `NoSpaceAgent` gives each person an `id` and
+nothing else, and `random_agent(model)` draws a contact uniformly from the
+whole population. Replacing that choice is the main way an ABM is extended, so
+it is worth naming the pieces.
+
+A **space** in Agents.jl is the structure that decides which agents are near
+which others. The library provides grids and lattices, graphs, continuous
+space, and street maps, and a model can define its own. Whichever is used, the
+property the rules actually consult is the **neighbourhood**: the set of agents
+within a given distance of a focal agent.
+
+Two model choices define it. The **radius** says how far to look, and the
+**metric** says how distance is counted. On a grid, `:chebyshev` counts a
+diagonal step as one step, so radius 1 gives the eight surrounding cells, the
+Moore neighbourhood; `:euclidean` measures straight-line distance and gives a
+disc; `:manhattan` sums the horizontal and vertical steps and gives a diamond.
+A grid is also either periodic, wrapping at the edges so that every agent has
+the same number of neighbours, or bounded, in which case agents near an edge
+have fewer.
+
+```{julia}
+#| label: code-ch06-space
+@agent struct GridPerson(GridAgent{2})
+    status::Symbol
+    next_status::Symbol
+end
+
+demonstration = StandardABM(
+    GridPerson,
+    GridSpaceSingle((9, 9); periodic = false, metric = :chebyshev);
+    model_step! = (model -> nothing),
+    properties = (β = β, c = c, γ = γ, Δt = Δt),
+    rng = StableRNG(20250714),
+)
+for position in positions(demonstration)
+    add_agent!(position, demonstration; status = :S, next_status = :S)
+end
+
+centre_neighbours = length(collect(nearby_positions((5, 5), demonstration, 1)))
+corner_neighbours = length(collect(nearby_positions((1, 1), demonstration, 1)))
+(; centre_neighbours, corner_neighbours,
+   at_radius_2 = length(collect(nearby_positions((5, 5), demonstration, 2))))
+```
+
+`GridSpaceSingle` holds at most one agent per cell, so filling every cell makes
+the grid and the population the same object. `GridAgent{2}` supplies `pos`
+alongside `id`, so a position field must not be added by hand.
+
+```{julia}
+#| label: fig-ch06-neighbourhood
+#| fig-cap: "A focal agent (black) with the cells within Chebyshev radius 1 (dark red) and the further cells added at radius 2 (orange), on a bounded nine-by-nine grid."
+focal = demonstration[id_in_position((5, 5), demonstration)]
+ring1 = Set(a.id for a in nearby_agents(focal, demonstration, 1))
+ring2 = Set(a.id for a in nearby_agents(focal, demonstration, 2))
+ring_color(p) = p.id == focal.id ? :black :
+                p.id in ring1 ? :firebrick :
+                p.id in ring2 ? :orange : :lightgrey
+
+fig, ax, _ = abmplot(demonstration; agent_color = ring_color,
+    agent_marker = :rect, agent_size = 26, figure = (; size = (460, 460)))
+hidedecorations!(ax)
+fig
+```
+
+Swapping `random_agent(model)` for `rand(abmrng(model), collect(nearby_agents(person, model, radius)))`
+turns the well-mixed model into a spatial one without changing anything else
+about the rules. It does change the epidemic, and it changes it in a way that
+the parameters alone do not reveal: the combination $\beta c/\gamma$ is the
+mass-action reproduction number, and on a lattice with a fixed neighbourhood it
+is not the model's $R_0$. Exercise 1 builds that model and works out why.
 
 ## Validation
 
