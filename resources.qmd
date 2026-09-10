@@ -55,39 +55,40 @@ The **Pluto preview** is a saved copy of the notebook: it shows the model at its
 - [Worksheet](worksheets/chapters/05-jump-processes.qmd)
 - Optional: [Pluto preview](notebook-exports/chapters/05-jump-processes.html) · [Pluto source](notebooks/chapters/05-jump-processes.jl)
 
-### Stochastic differential equations — Day 2, Session 2
-
-- [Book](chapters/06-stochastic-differential-equations.html)
-- [Slides](slides/chapters/06-stochastic-differential-equations.html)
-- [Worksheet](worksheets/chapters/06-stochastic-differential-equations.qmd)
-- Optional: [Pluto preview](notebook-exports/chapters/06-stochastic-differential-equations.html) · [Pluto source](notebooks/chapters/06-stochastic-differential-equations.jl)
-
-### Reaction networks and moment closure — Day 2, Session 3
+### Reaction networks and moment closure — Day 2, Session 2
 
 - [Book](chapters/07-reaction-networks.html)
 - [Slides](slides/chapters/07-reaction-networks.html)
 - [Worksheet](worksheets/chapters/07-reaction-networks.qmd)
 - Optional: [Pluto preview](notebook-exports/chapters/07-reaction-networks.html) · [Pluto source](notebooks/chapters/07-reaction-networks.jl)
 
-### Sensitivity and identifiability — Day 2, Session 4
+### Sensitivity and identifiability — Day 2, Session 3
 
 - [Book](chapters/14-sensitivity-and-identifiability.html)
 - [Slides](slides/chapters/14-sensitivity-and-identifiability.html)
 - [Worksheet](worksheets/chapters/14-sensitivity-and-identifiability.qmd)
 - Optional: [Pluto preview](notebook-exports/chapters/14-sensitivity-and-identifiability.html) · [Pluto source](notebooks/chapters/14-sensitivity-and-identifiability.jl)
 
-## Day 3
-
-### Interventions and optimization — Day 3, Session 1
+### Interventions and optimization — Day 2, Session 4
 
 - [Book](chapters/15-interventions-and-optimization.html)
 - [Slides](slides/chapters/15-interventions-and-optimization.html)
 - [Worksheet](worksheets/chapters/15-interventions-and-optimization.qmd)
 - Optional: [Pluto preview](notebook-exports/chapters/15-interventions-and-optimization.html) · [Pluto source](notebooks/chapters/15-interventions-and-optimization.jl)
 
-### Agent-based models — Day 3, Session 2
+## Day 3
+
+### Agent-based models — Day 3, Session 1
 
 - [Book](chapters/09-agent-based-models.html)
 - [Slides](slides/chapters/09-agent-based-models.html)
 - [Worksheet](worksheets/chapters/09-agent-based-models.qmd)
 - Optional: [Pluto preview](notebook-exports/chapters/09-agent-based-models.html) · [Pluto source](notebooks/chapters/09-agent-based-models.jl)
+
+### Agent-based models extended session — Day 3, Session 2
+
+The second half of the same unit, so the book chapter and notebook are the ones above.
+
+- [Book](chapters/09-agent-based-models.html)
+- [Slides](slides/chapters/09-agent-based-models-awareness.html)
+- [Worksheet](worksheets/chapters/09-agent-based-models-awareness.qmd)

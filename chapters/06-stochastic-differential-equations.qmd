@@ -6,7 +6,7 @@ status: complete
 # Stochastic differential equations {#sec-stochastic-differential-equations}
 
 ::: {.callout-note appearance="simple"}
-**Workshop programme**: taught live on Day 2, Session 2. See the [full schedule](../workshop.qmd).
+**Self-study**: not taught at the workshop, but complete and ready to use on your own.
 :::
 
 A jump process resolves every infection and recovery. A stochastic differential

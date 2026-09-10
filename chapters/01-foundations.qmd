@@ -55,7 +55,7 @@ infectious $I$, and recovered $R$ individuals. Its assumptions are:
 
 These choices place the model in the top-left of the modelling landscape:
 deterministic and continuous. Subsequent chapters move along each axis —
-stochastic in @sec-discrete-time-models, discrete-event and individual-based
+stochastic in @sec-discrete-time-models, discrete-event and agent-based
 later — so it is worth understanding this baseline thoroughly.
 
 ## Equations

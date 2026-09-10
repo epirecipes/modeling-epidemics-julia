@@ -36,9 +36,9 @@ Each unit comes as four things:
   figures move;
 - **two exercises** with full solutions.
 
-Ten of the twenty-four units are taught live over three days, and each of those
-also has a **worksheet**: a partly written Quarto file you fill in during the
-session.
+Nine of the twenty-five units are taught live over three days, across ten
+sessions, and each of those also has a **worksheet**: a partly written Quarto
+file you fill in during the session.
 
 ## Getting the materials
 

@@ -1,20 +1,20 @@
 # Workshop programme {.unnumbered}
 
-This book is a comprehensive, self-paced course consisting of 24 teaching units. A selection of 10 units is covered during a 3-day workshop. This page outlines the programme, detailing which units are taught in person and the order in which they are presented.
+This book is a comprehensive, self-paced course consisting of 25 teaching units. A selection of 9 units is covered across ten sessions during a 3-day workshop. This page outlines the programme, detailing which units are taught in person and the order in which they are presented.
 
-Each unit in the book, whether taught in the workshop or not, includes a complete chapter, a slide deck, an interactive Pluto notebook, and exercises with solutions. Attending the workshop offers in-person instruction, discussion, and debugging assistance for the 10 units. The remaining 14 units are fully developed and available for self-study, allowing you to work through them at your own pace, whether before, during, or after the workshop.
+Each unit in the book, whether taught in the workshop or not, includes a complete chapter, a slide deck, an interactive Pluto notebook, and exercises with solutions. Attending the workshop offers in-person instruction, discussion, and debugging assistance for those 9 units. The remaining 16 units are fully developed and available for self-study, allowing you to work through them at your own pace, whether before, during, or after the workshop.
 
 Each taught session also has a worksheet: a short set of exercises that build on what the session showed, with hints and answer checks. Worksheets live in the `worksheets/` folder of the repository, and worked solutions are added there at the end of each day.
 
 ## What the workshop covers
 
-The ten sessions move in the following order: deterministic foundations and a first stochastic model; then stochastic dynamics in continuous time, the data a model produces, and what those data can identify; then decisions and individual-based models.
+The ten sessions move in the following order: deterministic foundations and discrete time; then stochastic dynamics, model structure, what the data can identify, and how interventions are chosen; then a change of perspective to agent-based models.
 
-- **Day 1: foundations and discrete time.** A Julia primer, the SIR model derived from first principles, the `OrdinaryDiffEq` workflow, and discrete-time models, deterministic and stochastic.
-- **Day 2: stochasticity, model structure, and sensitivity.** Continuous-time jump processes, stochastic differential equations, reaction networks and moment closure, and sensitivity and identifiability.
-- **Day 3: decisions and individual-based models.** Interventions and optimisation, then agent-based models.
+- **Day 1: foundations.** A Julia primer, the SIR model derived from first principles, solving ODEs with events, and discrete-time models, deterministic and stochastic.
+- **Day 2: beyond the basics.** Continuous-time jump processes, reaction networks and moment closure, sensitivity and identifiability, and interventions and optimisation.
+- **Day 3: a new perspective.** Agent-based models across two sessions, building the model and then extending it.
 
-The workshop deliberately stops before parameter estimation and Bayesian inference ([ch08](chapters/12-parameter-estimation.html), [ch09](chapters/13-bayesian-inference.html)). For those interested in fitting models to data and inference, we recommend having a look at the modelling course ["Model Fitting and Inference for Infectious Disease Dynamics"](https://www.lshtm.ac.uk/study/courses/short-courses/infectious-diseases-dynamics).
+The workshop deliberately stops before parameter estimation and Bayesian inference ([ch12](chapters/12-parameter-estimation.html), [ch13](chapters/13-bayesian-inference.html)). For those interested in fitting models to data and inference, we recommend having a look at the modelling course ["Model Fitting and Inference for Infectious Disease Dynamics"](https://www.lshtm.ac.uk/study/courses/short-courses/infectious-diseases-dynamics).
 
 ## Before the workshop
 
@@ -40,7 +40,7 @@ recapped in the session that uses it.
 Days 1 and 2 run 09:30–17:00; Day 3 runs 09:30–16:00 with sessions finishing at 13:00 but with lunch and an extended Q&A session until 16:00. Each day has a mid-morning or mid-afternoon break and lunch.
 :::
 
-### Day 1: Foundations and discrete time
+### Day 1: Foundations
 
 | Time | Session | Unit |
 |---|---|---|
@@ -49,31 +49,32 @@ Days 1 and 2 run 09:30–17:00; Day 3 runs 09:30–16:00 with sessions finishing
 | 11:15–11:30 | Break | - |
 | 11:30–13:00 | Session 2 | [Foundations: SIR theory and the Julia workflow](chapters/01-foundations.html) |
 | 13:00–14:00 | Lunch | - |
-| 14:00–15:30 | Session 3 | [Ordinary differential equations](chapters/03-ordinary-differential-equations.html) |
+| 14:00–15:30 | Session 3 | [Solving ODEs with events](chapters/03-ordinary-differential-equations.html) |
 | 15:30–15:45 | Break | - |
 | 15:45–17:00 | Session 4 | [Discrete-time models](chapters/02-discrete-time-models.html) |
 
-### Day 2: Stochasticity, model structure, and sensitivity
+### Day 2: Beyond the basics
 
 | Time | Session | Unit |
 |---|---|---|
 | 09:30–11:00 | Session 1 | [Continuous-time Markov chains and jump processes](chapters/05-jump-processes.html) |
 | 11:00–11:15 | Break | - |
-| 11:15–12:45 | Session 2 | [Stochastic differential equations](chapters/06-stochastic-differential-equations.html) |
+| 11:15–12:45 | Session 2 | [Reaction networks and moment closure](chapters/07-reaction-networks.html) |
 | 12:45–13:45 | Lunch | - |
-| 13:45–15:15 | Session 3 | [Reaction networks and moment closure](chapters/07-reaction-networks.html) |
+| 13:45–15:15 | Session 3 | [Sensitivity and identifiability](chapters/14-sensitivity-and-identifiability.html) |
 | 15:15–15:30 | Break | - |
-| 15:30–17:00 | Session 4 | [Sensitivity and identifiability](chapters/14-sensitivity-and-identifiability.html) |
+| 15:30–17:00 | Session 4 | [Interventions and optimization](chapters/15-interventions-and-optimization.html) |
 
-### Day 3: Decisions and individual-based models
+### Day 3: A new perspective
 
 | Time | Session | Unit |
 |---|---|---|
 | 09:30–10:00 | Recap | - |
-| 10:00–11:15 | Session 1 | [Interventions and optimization](chapters/15-interventions-and-optimization.html) |
+| 10:00–11:15 | Session 1 | [Agent-based models](chapters/09-agent-based-models.html) |
 | 11:15–11:30 | Break | - |
-| 11:30–13:00 | Session 2 | [Agent-based models](chapters/09-agent-based-models.html) |
-| 13:00–14:30 | Lunch | - |
-| 14:30–16:00 | Closing and extended Q&A | - |
+| 11:30–13:00 | Session 2 | [Agent-based models extended session](chapters/09-agent-based-models.html) |
+| 13:00–14:00 | Lunch | - |
+| 14:00–15:30 | Extended Q&A | - |
+| 15:30–16:00 | Closing | - |
 
 See the [workshop resources page](resources.qmd) for the book, slide, worksheet, and notebook links of each taught session, grouped by day.
