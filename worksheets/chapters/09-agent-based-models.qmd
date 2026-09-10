@@ -1,6 +1,6 @@
 ---
 title: "Worksheet — Agent-based models"
-course-unit: ch06-agent-based-models
+course-unit: ch09-agent-based-models
 artifact: worksheet
 status: complete
 ---
@@ -17,7 +17,7 @@ An agent-based model has three parts:
 - the **environment**, the space they live in, which decides who is next to whom;
 - the **rules**, what happens to an agent in one step, and what happens to the world once per step.
 
-This worksheet builds them in that order, runs the model, and looks at it. The [chapter](../../chapters/06-agent-based-models.qmd) develops the same model without a space; here every person has a place on a grid and a set of neighbours.
+This worksheet builds them in that order, runs the model, and looks at it. The [chapter](../../chapters/09-agent-based-models.qmd) develops the same model without a space; here every person has a place on a grid and a set of neighbours.
 
 **How to use this file.** Run cells one at a time with `Ctrl+Shift+Enter`. Cells marked `# TODO` have a line or two for you to complete; everything else runs as given. Each part ends with `✓` / `✗` lines that check your answer; a `✗` is information, not failure, and the collapsed hint below it will get you moving. An instructor is circulating; ask early rather than staying stuck.
 
@@ -750,7 +750,7 @@ fig
 In a terminal:
 
 ``` bash
-quarto render worksheets/chapters/06-agent-based-models.qmd
+quarto render worksheets/chapters/09-agent-based-models.qmd
 ```
 
 A clean render means every cell ran top to bottom in a fresh session.
@@ -762,6 +762,6 @@ A clean render means every cell ran top to bottom in a fresh session.
 Nothing here is assigned. The whole project stays available to you afterwards.
 
 - The next session takes this model and gives the agents something to do about what they can see around them.
-- [The chapter](../../chapters/06-agent-based-models.qmd): the same rules without a space, the ensemble comparison, and the Agents.jl v7 API in full. Exercise 1 derives a reproduction number for the grid model, and Exercise 2 revisits the timestep using a deterministic map in place of replicate runs.
-- [The Pluto notebook](../../notebooks/chapters/06-agent-based-models.jl): sliders over the contact and recovery parameters.
-- [Jump processes](../../chapters/04-jump-processes.qmd): the continuous-time version of this model, where extinction and the $1/R_0$ argument first appear and no timestep has to be chosen.
+- [The chapter](../../chapters/09-agent-based-models.qmd): the same rules without a space, the ensemble comparison, and the Agents.jl v7 API in full. Exercise 1 derives a reproduction number for the grid model, and Exercise 2 revisits the timestep using a deterministic map in place of replicate runs.
+- [The Pluto notebook](../../notebooks/chapters/09-agent-based-models.jl): sliders over the contact and recovery parameters.
+- [Jump processes](../../chapters/05-jump-processes.qmd): the continuous-time version of this model, where extinction and the $1/R_0$ argument first appear and no timestep has to be chosen.

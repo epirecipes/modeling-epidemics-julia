@@ -1,6 +1,6 @@
 ---
 title: "Agent-based models"
-course-unit: ch06-agent-based-models
+course-unit: ch09-agent-based-models
 status: complete
 ---
 
@@ -643,8 +643,8 @@ The next worksheet will add a second layer and define
 how far a person can *see*, as opposed to how far they can *infect*. The idea is to explore whether acting on local information beats acting on national information, and what that awareness costs.
 
 [Agents.jl agents](https://juliadynamics.github.io/Agents.jl/v7.0.3/agents/) ·
-[Book chapter](../../chapters/06-agent-based-models.html) ·
-[Notebook](../../notebook-exports/chapters/06-agent-based-models.html)
+[Book chapter](../../chapters/09-agent-based-models.html) ·
+[Notebook](../../notebook-exports/chapters/09-agent-based-models.html)
 
 ::: {.notes}
 Flag the two radii deliberately, because they are what people conflate across the

@@ -1,6 +1,6 @@
 ---
 title: "Worksheet — Agent-based models: awareness and behaviour"
-course-unit: ch06-agent-based-models
+course-unit: ch09-agent-based-models
 artifact: worksheet
 status: complete
 ---
@@ -707,7 +707,7 @@ fig
 In a terminal:
 
 ```bash
-quarto render worksheets/chapters/06-agent-based-models-awareness.qmd
+quarto render worksheets/chapters/09-agent-based-models-awareness.qmd
 ```
 
 ---
@@ -716,14 +716,14 @@ quarto render worksheets/chapters/06-agent-based-models-awareness.qmd
 
 Nothing here is assigned. The whole project stays available to you afterwards.
 
-- [The previous session's worksheet](06-agent-based-models.qmd): the grid model
+- [The previous session's worksheet](09-agent-based-models.qmd): the grid model
   this one extends.
-- [The chapter](../../chapters/06-agent-based-models.qmd): the same rules without
+- [The chapter](../../chapters/09-agent-based-models.qmd): the same rules without
   a space, and the Agents.jl v7 API spelled out.
-- [Interventions and optimization](../../chapters/11-interventions-and-optimization.qmd):
+- [Interventions and optimization](../../chapters/15-interventions-and-optimization.qmd):
   the same question of what a control buys for what it costs, asked of a
   population model where the control is chosen centrally rather than by each
   person.
-- [Observation models](../../chapters/07-observation-models.qmd): what a
+- [Observation models](../../chapters/11-observation-models.qmd): what a
   reported prevalence figure is, and why the national rule is reacting
   to something noisier and later than this model assumes.

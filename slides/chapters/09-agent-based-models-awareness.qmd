@@ -1,6 +1,6 @@
 ---
 title: "Agent-based models: awareness and behaviour"
-course-unit: ch06-agent-based-models
+course-unit: ch09-agent-based-models
 status: complete
 ---
 
