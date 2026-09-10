@@ -1,0 +1,413 @@
+---
+course-unit: ch05-jump-processes
+status: complete
+---
+
+# Continuous-time Markov chains and jump processes {#sec-jump-processes}
+
+::: {.callout-note appearance="simple"}
+**Workshop programme**: taught live on Day 2, Session 1. See the [full schedule](../workshop.qmd).
+:::
+
+Jump models are useful when the event itself is the object of interest. Instead
+of moving the SIR state a small distance at every numerical time step, we wait
+for the next infection or recovery and move the integer state by one. This is
+the continuous-time Markov-chain (CTMC) view of the epidemic.
+
+## Learning goals
+
+By the end of this chapter, you should be able to:
+
+- translate SIR transitions into propensities and stoichiometric change vectors;
+- explain the Gillespie direct stochastic simulation algorithm (SSA) and
+  implement it from the exponential waiting times of
+  @sec-probability-and-stochastic-processes;
+- construct a current Catalyst reaction network and simulate it with
+  JumpProcesses; and
+- use population conservation, an ODE ensemble comparison, and agreement between
+  a hand-written SSA and the library as checks on a stochastic implementation.
+
+## Model assumptions and classification
+
+We use the same closed, homogeneously mixing population as in the ODE chapter.
+There are $N=1000$ people, with $S(0)=990$, $I(0)=10$, and $R(0)=0$.
+Each infectious person makes $c=10$ potentially infectious contacts per unit
+time, a contact transmits with probability $\beta=0.05$, and an infectious
+person recovers at rate $\gamma=0.25$. Recovered people do not return to the
+susceptible class; births, deaths, age structure, and imported infections are
+omitted.
+
+This is a **stochastic, continuous-time, discrete-state, population-level**
+model. It is population-level because the state records counts, not identities.
+It is a CTMC because, conditional on the current counts, the future does not
+depend on the earlier path. The two event types are
+
+| event | state change $\boldsymbol{\nu}_j$ | propensity $a_j(S,I,R)$ |
+|---|---|---|
+| infection $S+I\to 2I$ | $(-1,+1,0)$ | $a_1=\kappa SI$ |
+| recovery $I\to R$ | $(0,-1,+1)$ | $a_2=\gamma I$ |
+
+Here $\kappa=\beta c/N$. The division by $N$ makes the total infection
+rate comparable across population sizes: every susceptible has force of
+infection $\beta cI/N$.
+
+## Equations
+
+Let $X(t)=(S(t),I(t),R(t))^\mathsf{T}$ and let $Y_1,Y_2$ be independent
+unit-rate Poisson processes. The random time-change representation is
+
+$$
+ X(t)=X(0)+\boldsymbol{\nu}_1Y_1\!\left(\int_0^t a_1(X(s^-))\,ds\right)
+                 +\boldsymbol{\nu}_2Y_2\!\left(\int_0^t a_2(X(s^-))\,ds\right).
+$$
+
+The left limit $X(s^-)$ matters: the propensity is evaluated immediately
+before an event. Equivalently, if the current state is $x$, the total event
+rate is $a_0(x)=a_1(x)+a_2(x)$. The next waiting time is
+
+$$
+ \tau\sim\operatorname{Exponential}(a_0(x)),
+ \qquad
+ \Pr(J=j\mid x)=\frac{a_j(x)}{a_0(x)}.
+$$
+
+This is the direct Gillespie algorithm [@gillespie1977]. Applying
+$x\leftarrow x+\boldsymbol{\nu}_J$ and repeating gives an exact simulation
+of this CTMC (up to floating-point arithmetic).
+
+The conditional infinitesimal drift of the CTMC, the expected instantaneous
+rate of change given the current state $x$, is
+$\boldsymbol{\nu}_1a_1(x)+\boldsymbol{\nu}_2a_2(x)$. Treating the compartments
+as deterministic variables and following this drift gives the familiar
+mean-field equations,
+
+$$
+ \frac{d}{dt}\begin{pmatrix}S\\I\\R\end{pmatrix}
+ =
+ \begin{pmatrix}-\kappa SI\\ \kappa SI-\gamma I\\ \gamma I\end{pmatrix}.
+$$ {#eq-jump-mean-field}
+
+Both the CTMC and Equation @eq-jump-mean-field conserve
+$S+I+R=N$. The equality of their *means* is not exact at finite population
+size because nonlinear terms such as $SI$ require a moment closure:
+$\mathbb{E}[SI]\ne\mathbb{E}[S]\mathbb{E}[I]$.
+
+## Julia implementation
+
+The course environment contains Catalyst 16.2.1 and JumpProcesses 9.29.1.
+The reaction network below is written out rather than hidden behind a helper: its
+species are the coordinates of $X$, and its reaction rates are the propensities
+above.
+Catalyst's current `JumpProblem` constructor creates the compatible
+JumpProcesses representation; `Direct()` selects Gillespie's direct
+aggregator and `SSAStepper()` advances from jump to jump. No fixed numerical
+step is used to define the event process.
+
+Before reaching for that machinery it is worth writing the algorithm out, since
+it is only two random draws and the loop is short enough to read in full.
+
+```{julia}
+#| label: code-ch04-setup
+using CairoMakie
+using Catalyst
+using JumpProcesses
+using OrdinaryDiffEq
+using StableRNGs
+using Statistics
+
+const N = 1000
+const β = 0.05
+const c = 10.0
+const γ = 0.25
+const κ = β * c / N
+const u₀ = [:S => 990, :I => 10, :R => 0]
+const tspan = (0.0, 40.0)
+const times = collect(0.0:0.2:40.0)
+
+sir_network = @reaction_network begin
+    κ, S + I --> 2I
+    γ, I --> R
+end
+nothing
+```
+
+### The direct method, written out
+
+The loop below implements the algorithm stated above. At each step it
+forms the two propensities, draws the waiting time
+$\tau\sim\operatorname{Exponential}(a_0)$, and picks the event that fires with
+probability $a_j/a_0$ (@eq-p02-competing). `randexp(rng) / a₀`
+samples an exponential of rate $a_0$; equivalently $-\log U/a_0$ by the inverse
+of @eq-p02-survival.
+
+```{julia}
+#| label: code-ch04-direct
+using Random
+
+function gillespie_direct(state, κ, γ, tmax, rng)
+    S, I, R = state
+    t = 0.0
+    ts, Ss, Is, Rs = [t], [S], [I], [R]
+    while true
+        a₁ = κ * S * I                   # infection propensity
+        a₂ = γ * I                       # recovery propensity
+        a₀ = a₁ + a₂
+        a₀ == 0 && break                 # absorbed: no infectious individuals
+        t += randexp(rng) / a₀           # τ ~ Exponential(a₀)
+        t > tmax && break
+        if rand(rng) * a₀ < a₁           # Pr(J = infection) = a₁ / a₀
+            S -= 1; I += 1
+        else
+            I -= 1; R += 1
+        end
+        push!(ts, t); push!(Ss, S); push!(Is, I); push!(Rs, R)
+    end
+    return ts, Ss, Is, Rs
+end
+
+# The path is piecewise constant, so the state at time t is the state set by the
+# last event at or before t.
+sample_path(ts, values, grid) = [values[searchsortedlast(ts, t)] for t in grid]
+nothing
+```
+
+The absorbing state is explicit: once $I = 0$ both propensities vanish, $a_0 = 0$,
+and no further event can occur. A stochastic epidemic can therefore end on its
+own: the deterministic mean-field solution only approaches $I=0$ asymptotically
+as $t\to\infty$ and never reaches it at any finite time.
+
+```{julia}
+#| label: code-ch04-direct-path
+direct_ts, direct_S, direct_I, direct_R =
+    gillespie_direct((990, 10, 0), κ, γ, last(tspan), StableRNG(20250711))
+
+(; events = length(direct_ts) - 1,
+   last_event_time = round(last(direct_ts); digits = 2),
+   peak_infectious = maximum(direct_I))
+```
+
+### The same process through Catalyst
+
+The symbols `κ` and `γ` in the network are parameters. The initial state is
+integer-valued because a half-person is not a valid CTMC state. We pass
+parameter values by name, which is safer than relying on the order of a
+positional vector.
+
+```{julia}
+#| label: code-ch04-simulate
+jump_parameters = [:κ => κ, :γ => γ]
+jump_problem = JumpProblem(
+    sir_network,
+    u₀,
+    tspan,
+    jump_parameters;
+    aggregator = Direct(),
+    rng = StableRNG(20250711),
+)
+jump_solution = solve(jump_problem, SSAStepper())
+jump_states = Array(jump_solution(times))
+```
+
+The `JumpProblem` stores the CTMC and the random-number generator. Calling
+`solve` returns a piecewise-constant solution: the state changes at event times
+and remains unchanged between events. With the default saving options,
+`jump_solution.t` holds the initial time, one entry per event, *and* the final
+endpoint of `tspan`, so it has two more entries than the number of events; the
+last entry repeats the state reached by the final event. Calling
+`jump_solution(times)` interpolates that path onto a regular grid for plotting;
+it does not turn the model into a time-stepped approximation, and it leaves the
+underlying event trace untouched.
+
+For comparison, the deterministic right-hand side uses exactly the drift in
+Equation @eq-jump-mean-field:
+
+```{julia}
+#| label: code-ch04-ode-comparison
+function sir_drift!(du, u, p, t)
+    κ, γ = p
+    infection = κ * u[1] * u[2]
+    recovery = γ * u[2]
+    du[1] = -infection
+    du[2] = infection - recovery
+    du[3] = recovery
+    return nothing
+end
+
+ode_problem = ODEProblem(sir_drift!, [990.0, 10.0, 0.0], tspan, (κ, γ))
+ode_solution = solve(ode_problem, Tsit5(); saveat = times)
+ode_states = Array(ode_solution)
+```
+
+The `ODEProblem` uses floating-point counts because it represents deterministic
+mean-field flow, whereas the Catalyst problem uses integer species counts.
+Keeping the two constructors adjacent makes the code-to-equation mapping
+explicit.
+
+```{julia}
+#| label: fig-ch04-jump-trajectories
+#| fig-cap: "One exact CTMC SIR trajectory and its deterministic mean-field comparison."
+fig = Figure(size = (760, 430))
+ax = Axis(fig[1, 1], xlabel = "time", ylabel = "people",
+    title = "Gillespie SIR path")
+labels = ["S (jump)", "I (jump)", "R (jump)"]
+colors = [:steelblue, :firebrick, :seagreen]
+for j in 1:3
+    stairs!(ax, times, jump_states[j, :]; color = colors[j],
+        linewidth = 2, label = labels[j])
+end
+lines!(ax, times, ode_states[2, :]; color = :black, linestyle = :dash,
+    linewidth = 2, label = "I (ODE)")
+axislegend(ax, position = :rt)
+fig
+```
+
+## Validation
+
+The first check is structural rather than statistical: every reaction changes
+one compartment down and another up. Thus conservation should hold at every
+saved point.
+
+```{julia}
+#| label: code-ch04-conservation
+mass_error = maximum(abs.(vec(sum(jump_states; dims = 1)) .- N))
+minimum_count = minimum(jump_states)
+@assert mass_error == 0
+@assert minimum_count >= 0
+(; mass_error, minimum_count, number_of_events = length(jump_solution.t) - 2)
+```
+
+An individual path is not expected to lie on the ODE curve. A more informative
+check averages independent paths. Each repetition receives a fresh,
+deterministically chosen `StableRNG`, so the calculation is reproducible
+without changing Julia's global random state.
+
+```{julia}
+#| label: code-ch04-ensemble
+function simulate_jump(seed)
+    problem = JumpProblem(
+        sir_network, u₀, tspan, jump_parameters;
+        aggregator = Direct(), rng = StableRNG(seed),
+    )
+    solution = solve(problem, SSAStepper(); saveat = times)
+    return Array(solution(times))
+end
+
+ensemble = cat((simulate_jump(3000 + k) for k in 1:16)...; dims = 3)
+ensemble_mean = dropdims(mean(ensemble; dims = 3), dims = 3)
+infectious_rmse = sqrt(mean((ensemble_mean[2, :] .- ode_states[2, :]).^2))
+@assert maximum(abs.(sum(ensemble; dims = 1) .- N)) == 0
+infectious_rmse
+```
+
+With only 16 paths, the RMSE is a diagnostic rather than a precision estimate.
+Increasing the number of paths narrows Monte Carlo error approximately as
+$1/\sqrt{M}$, but costs proportionally more simulations.
+
+Finally, the loop written out above and the Catalyst problem should be the same
+process. Individual paths cannot be compared, because the two implementations
+consume their random streams differently and identical seeds do not give
+identical trajectories. Their *distributions*, however, should agree. We run an
+ensemble of each and compare the mean infectious curves against the Monte Carlo
+error of that comparison, reporting the largest discrepancy in standard-error
+units.
+
+Two quantities are needed for that comparison, and they are easy to confuse. The
+sample standard deviation of $M$ paths measures how much the epidemics
+themselves vary, and does not shrink as $M$ grows. The *standard error* of their
+mean, $s/\sqrt{M}$, measures how precisely those $M$ paths locate the average,
+and does shrink, as $1/\sqrt{M}$. Comparing two independent ensembles of size
+$M$ therefore uses the standard error of their difference,
+$\sqrt{(s_1^2+s_2^2)/M}$, which is the `standard_error` computed below; dividing
+the observed difference by it expresses the discrepancy in units of its own
+noise, so a value below about 5 at every time point indicates no detectable
+difference.
+
+```{julia}
+#| label: code-ch04-direct-vs-catalyst
+function direct_states(seed)
+    ts, Ss, Is, Rs = gillespie_direct((990, 10, 0), κ, γ, last(tspan), StableRNG(seed))
+    return permutedims(hcat(sample_path(ts, Ss, times),
+                            sample_path(ts, Is, times),
+                            sample_path(ts, Rs, times)))
+end
+
+M = 64
+direct_ensemble = cat((direct_states(7000 + k) for k in 1:M)...; dims = 3)
+library_ensemble = cat((simulate_jump(8000 + k) for k in 1:M)...; dims = 3)
+
+direct_mean = dropdims(mean(direct_ensemble[2, :, :]; dims = 2), dims = 2)
+library_mean = dropdims(mean(library_ensemble[2, :, :]; dims = 2), dims = 2)
+standard_error = sqrt.(
+    (dropdims(var(direct_ensemble[2, :, :]; dims = 2), dims = 2) .+
+     dropdims(var(library_ensemble[2, :, :]; dims = 2), dims = 2)) ./ M)
+
+largest_z = maximum(abs.(direct_mean .- library_mean) ./ max.(standard_error, eps()))
+@assert largest_z < 5
+(; M, largest_z = round(largest_z; digits = 2),
+   peak_direct = round(maximum(direct_mean); digits = 1),
+   peak_library = round(maximum(library_mean); digits = 1))
+```
+
+This diagnostic detects no discrepancy larger than a few standard errors. If
+both implementations sample the same process, their ensemble means converge to
+the same expectation and their absolute difference is $O_p(M^{-1/2})$;
+finite-sample means need not coincide exactly. The hand-written loop is what
+the chapter derives; `JumpProblem` is what to use in practice. For this
+two-reaction model, dependency-graph optimization offers no meaningful
+advantage, so the reasons to prefer it are elsewhere: the reaction network is
+declared rather than hand-coded, the simulation logic is a tested library
+implementation, and swapping to a dependency-graph aggregator such as
+`SortingDirect()` or `NRM()` needs no change beyond the `aggregator` argument.
+Those aggregators update only the propensities a firing reaction changes,
+which matters for larger networks.
+
+## Interpretation and limitations
+
+The CTMC retains integer counts and event timing, so it can represent
+extinction, early fade-out, and variability in the epidemic peak. Its
+propensities still assume homogeneous mixing and exponential recovery times.
+Real contact networks, latent periods, reporting delays, births, and
+time-varying interventions require additional states or a different model.
+For very large populations, exact SSA can spend most of its time processing
+events; tau-leaping, hybrid jump-ODE models, or an ODE may then be more
+appropriate, with an explicit approximation trade-off.
+
+The [JumpProcesses continuous-time tutorial](https://docs.sciml.ai/JumpProcesses/stable/tutorials/discrete_stochastic_example/)
+and [Catalyst documentation](https://docs.sciml.ai/Catalyst/stable/) document
+the APIs used here. The event formulation follows Gillespie's exact SSA
+[@gillespie1977] and the epidemic interpretation follows the original SIR
+model [@kermack1927].
+
+## Exercises
+
+### Exercise 1 {#ch05-ex1}
+
+Split the infectious class into two sequential Erlang stages $I_1,I_2$, both
+infectious, with progression $I_1\to I_2\to R$ at rate $2\gamma$ per stage.
+New infections enter $I_1$ from contact with either stage:
+
+$$
+S+I_1\to2I_1,\qquad S+I_2\to I_1+I_2,\qquad I_1\to I_2,\qquad I_2\to R,
+$$
+
+with propensities $\kappa SI_1$, $\kappa SI_2$, $2\gamma I_1$, $2\gamma I_2$.
+Add the fourth state to the Julia model, simulate 40 time units with a fixed
+seed, and verify both $S+I_1+I_2+R=N$ and nonnegative integer states. Explain
+why two exponential stages have a less variable infectious duration than one
+exponential stage with mean $1/\gamma$.
+
+### Exercise 2 {#ch05-ex2}
+
+Use the low-level `ConstantRateJump(rate, affect!)` interface from
+JumpProcesses to implement a one-species immigration–death toy process:
+arrivals at a constant immigration rate $\lambda$ and departures at rate $\mu$
+per individual present. Then use the same direct-SSA ideas to add a vaccination
+jump $S\to R$ to SIR. State the new propensity, update the ODE comparison, and
+discuss how a vaccination rate that depends on calendar time would change the
+jump type or simulation setup.
+
+## Companion materials
+
+- [Slides](../slides/chapters/05-jump-processes.html)
+- [Pluto preview](../notebook-exports/chapters/05-jump-processes.html)
+- [Pluto source](../notebooks/chapters/05-jump-processes.jl)

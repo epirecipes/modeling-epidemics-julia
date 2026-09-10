@@ -540,3 +540,158 @@ their sum telescopes to $C(80) - C(0)$. The check confirms the reconstruction to
 machine tolerance, illustrating that the dense output `sol(t)` can be resampled
 onto any grid — here the integer-day grid used to compare a continuous model with
 daily surveillance data, a pattern the observation-model chapter builds on.
+
+### Partial differential equations and age structure
+
+#### Solution to Exercise 1 {#solution-ch04-ex1}
+
+Holding the contact kernel fixed and varying life expectancy tests the scaling in
+$A \approx L/R_0$ without changing $R_0$.
+
+```{julia}
+#| label: sol-ch04-ex1
+using OrdinaryDiffEq
+using CairoMakie
+
+function age_structured_sol!(du, u, p, t)
+    (; Δa, n, C, γ, births, N) = p
+    S = @view u[1:n]; I = @view u[n+1:2n]; R = @view u[2n+1:3n]
+    λ = (C * I) .* (Δa / N)
+    @inbounds for j in 1:n
+        S_in = j == 1 ? births/Δa : S[j-1]
+        I_in = j == 1 ? 0.0 : I[j-1]
+        R_in = j == 1 ? 0.0 : R[j-1]
+        du[j]    = -(S[j] - S_in)/Δa - λ[j]*S[j]
+        du[n+j]  = -(I[j] - I_in)/Δa + λ[j]*S[j] - γ*I[j]
+        du[2n+j] = -(R[j] - R_in)/Δa + γ*I[j]
+    end
+    return nothing
+end
+
+const N_age = 1000.0
+
+function endemic_for_life(life; n = 80, γ = 0.2, mean_age_guess = 16.0)
+    Δa = life/n
+    ages = range(Δa/2, life - Δa/2, length = n)
+    C = [2.0 * ((a < 15 && a′ < 15) ? 1.2 : 0.3) for a in ages, a′ in ages]
+    p = (Δa = Δa, n = n, C = C, γ = γ, births = (N_age/life)*Δa, N = N_age)
+    density = N_age/life
+    λ₀ = 1/mean_age_guess
+    u₀ = zeros(3n)
+    for (j, a) in enumerate(ages)
+        s = exp(-λ₀*a)
+        u₀[j] = density*s
+        u₀[n+j] = density*s*λ₀/γ
+        u₀[2n+j] = density*(1 - s) - u₀[n+j]
+    end
+    sol = solve(ODEProblem(age_structured_sol!, u₀, (0.0, 6*life), p), Tsit5();
+                saveat = life, abstol = 1e-9, reltol = 1e-9)
+    final = sol.u[end]; infectious = final[n+1:2n]
+    A = sum(ages .* infectious)/max(sum(infectious), eps())
+    return (life = life,
+            prevalence = round(sum(infectious)*Δa; digits = 3),
+            mean_age = round(A; digits = 2),
+            ratio = round(A/life; digits = 4))
+end
+
+results = endemic_for_life.([30.0, 50.0, 70.0, 90.0])
+(results = results,
+ ratio_spread = round(maximum(r.ratio for r in results) -
+                      minimum(r.ratio for r in results); digits = 4))
+```
+
+```{julia}
+#| label: fig-sol-ch04-ex1
+#| fig-cap: "Mean age at infection against life expectancy. The relationship is close to proportional, as the approximation A ≈ L/R₀ predicts when the contact structure and hence R₀ are held fixed."
+figure = Figure(size = (720, 340))
+axis = Axis(figure[1, 1], xlabel = "Life expectancy L", ylabel = "Mean age at infection A")
+lines!(axis, [r.life for r in results], [r.mean_age for r in results];
+       color = :firebrick, linewidth = 2)
+scatter!(axis, [r.life for r in results], [r.mean_age for r in results];
+         color = :firebrick, markersize = 9)
+figure
+```
+
+**What the approximation assumes.** $A \approx L/R_0$ comes from a rectangular
+population and a crude balance: at endemic equilibrium each infection must
+replace itself, and the fraction of a lifetime spent susceptible is roughly
+$A/L$, so $A/L \approx 1/R_0$. Holding the contact kernel fixed holds $R_0$
+fixed, so $A$ should scale in proportion to $L$ — which is what the ratio column
+shows, to within a small spread.
+
+The departures come from what the derivation ignores. The mixing kernel here has
+a fixed child/adult boundary at age 15, so changing $L$ changes the *fraction* of
+the population that is "child", and with it the effective reproduction number.
+The approximation also assumes infection is rare enough that susceptibles are
+depleted only slowly, which weakens as prevalence rises. It is a scaling law, not
+an identity.
+
+#### Solution to Exercise 2 {#solution-ch04-ex2}
+
+Raising the child-to-child contact rate raises transmission where susceptibles
+are concentrated, so infection occurs earlier in life.
+
+```{julia}
+#| label: sol-ch04-ex2
+function age_structured_solution!(du, u, p, t)
+    (; Δa, n, C, γ, births, N) = p
+    S = @view u[1:n]; I = @view u[n+1:2n]; R = @view u[2n+1:3n]
+    λ = (C * I) .* (Δa / N)
+    @inbounds for j in 1:n
+        S_in = j == 1 ? births/Δa : S[j-1]
+        I_in = j == 1 ? 0.0 : I[j-1]
+        R_in = j == 1 ? 0.0 : R[j-1]
+        du[j]    = -(S[j] - S_in)/Δa - λ[j]*S[j]
+        du[n+j]  = -(I[j] - I_in)/Δa + λ[j]*S[j] - γ*I[j]
+        du[2n+j] = -(R[j] - R_in)/Δa + γ*I[j]
+    end
+    return nothing
+end
+
+function endemic_summary(child_contact; n = 80, life = 80.0, γ = 0.2)
+    Δa = life/n
+    ages = range(Δa/2, life - Δa/2, length = n)
+    C = [2.0 * ((a < 15 && a′ < 15) ? child_contact : 0.3) for a in ages, a′ in ages]
+    p = (Δa = Δa, n = n, C = C, γ = γ, births = (N_age/life)*Δa, N = N_age)
+    # Seed near the endemic profile, as the chapter does, so the run measures the
+    # equilibrium rather than a transient from an all-susceptible start.
+    density = N_age/life
+    λ₀ = 1/16.0
+    u₀ = zeros(3n)
+    for (j, a) in enumerate(ages)
+        s = exp(-λ₀*a)
+        u₀[j] = density*s
+        u₀[n+j] = density*s*λ₀/γ
+        u₀[2n+j] = density*(1 - s) - u₀[n+j]
+    end
+    sol = solve(ODEProblem(age_structured_solution!, u₀, (0.0, 300.0), p), Tsit5();
+                saveat = 5.0, abstol = 1e-9, reltol = 1e-9)
+    final = sol.u[end]; infectious = final[n+1:2n]
+    return (child_contact = child_contact,
+            population = round(sum(final)*Δa; digits = 3),
+            prevalence = round(sum(infectious)*Δa; digits = 3),
+            mean_age = round(sum(ages .* infectious)/max(sum(infectious), eps()); digits = 2))
+end
+
+[endemic_summary(1.2), endemic_summary(2.5)]
+```
+
+Prevalence rises and the mean age at infection falls. The mechanism is that
+susceptibles are depleted faster when contact among children intensifies, so the
+average individual meets the infection sooner.
+
+The classical approximation makes this quantitative. At endemic equilibrium the
+average time spent susceptible is roughly the mean age at infection $A$, and the
+per-capita force of infection is roughly $1/A$; balancing this against the
+requirement that each infection replace itself in a population with life
+expectancy $L$ gives
+
+$$
+A \approx \frac{L}{R_0}.
+$$
+
+So mean age at infection is inversely proportional to $R_0$: doubling
+transmission roughly halves the age at which a typical person is infected. This
+is the reasoning behind age-targeted vaccination, and the reason that partially
+effective vaccination programmes can *raise* the mean age at infection, which
+matters for infections whose severity increases with age.

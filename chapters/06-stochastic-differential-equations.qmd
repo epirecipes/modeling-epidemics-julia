@@ -1,0 +1,410 @@
+---
+course-unit: ch06-stochastic-differential-equations
+status: complete
+---
+
+# Stochastic differential equations {#sec-stochastic-differential-equations}
+
+::: {.callout-note appearance="simple"}
+**Workshop programme**: taught live on Day 2, Session 2. See the [full schedule](../workshop.qmd).
+:::
+
+A jump process resolves every infection and recovery. A stochastic differential
+equation (SDE) instead describes continuous-valued fluctuations around a
+drift. This is useful when the population is large enough for a diffusion
+approximation to be reasonable, and when we want to connect stochastic
+simulation with the calculus and solvers used for ODEs.
+
+## Learning goals
+
+You will:
+
+- derive the chemical Langevin approximation from SIR reaction propensities;
+- distinguish drift, diffusion columns, and independent Wiener processes;
+- solve a non-diagonal-noise SDE with the current StochasticDiffEq API; and
+- diagnose conservation and the possibility of negative populations.
+
+## Model assumptions and classification
+
+The baseline is the closed, homogeneously mixing SIR population
+$(S,I,R)=(990,10,0)$ with $N=1000$, $c=10.0$, $\beta=0.05$, and
+$\gamma=0.25$. We retain the two transitions
+$S+I\to 2I$ and $I\to R$, but replace integer event counts by a diffusion.
+
+This is a **stochastic, continuous-time, continuous-state, population-level**
+model. “Continuous state” means the numerical approximation can produce real
+values, not that people are fractional. It is an approximation to the
+discrete-state CTMC from @sec-jump-processes, and is most defensible when propensities
+are large and the process is away from absorbing boundaries.
+
+## Equations
+
+Write the stoichiometric columns and propensities as
+
+$$
+ V =
+ \begin{pmatrix}
+ -1 & 0\\
+ 1 & -1\\
+ 0 & 1
+ \end{pmatrix},
+ \qquad
+ a(X)=
+ \begin{pmatrix}
+ \kappa SI\\
+ \gamma I
+ \end{pmatrix},
+ \qquad \kappa=\frac{\beta c}{N}.
+$$
+
+Take an interval $\Delta t$ that is *mesoscopic*: long enough that each
+reaction fires many times, yet short enough that the propensities barely move
+over it. On such an interval a Poisson event count with mean $a_j\Delta t$ can
+be approximated by
+$$
+\operatorname{Poisson}(a_j\Delta t)\approx a_j\Delta t+\sqrt{a_j}\,\Delta W_j,
+$$
+
+where $\Delta W_j$ are independent Brownian increments with variance $\Delta t$.
+The two requirements on $\Delta t$ pull against each other, and the differential
+notation $dt$ used below is the formal limit of this mesoscopic construction
+rather than a literally infinitesimal step. The Validation section returns to
+what that tension costs.
+
+A **Wiener process** $W(t)$ is the continuous-time limit of a random walk: it
+starts at $W(0)=0$, its increments over disjoint intervals are independent, and
+$W(t+dt)-W(t)\sim\operatorname{Normal}(0,dt)$. So $dW$ has mean zero and
+standard deviation $\sqrt{dt}$ — which shrinks more slowly than $dt$ itself, and
+is why the noise term survives the small-$dt$ limit instead of disappearing
+beside the drift.
+
+The approximation above is the normal approximation to a Poisson count, and the
+three facts it needs are short enough to restate here.
+
+1. In @sec-jump-processes the waiting time to the next reaction-$j$ event was
+   exponential with rate $a_j$. Counting those events rather than timing them,
+   the number occurring in a window of width $\Delta t$, short enough that the
+   propensities barely move, is $\operatorname{Poisson}(a_j\Delta t)$.
+2. A Poisson variable has equal mean and variance, both $a_j\Delta t$ here.
+3. A Poisson variable with a large enough mean is close to a normal one
+   matching those two moments, which is the substitution made above.
+
+So @sec-jump-processes resolves every event individually; here we keep only the
+mean and the variance and let the individual events blur together. The
+approximation therefore improves as events become more frequent, and degrades
+when counts are small, which is exactly when a compartment is close to empty.
+
+::: {.callout-note appearance="simple"}
+## Optional background
+
+The exponential waiting time, its memorylessness, and the Poisson count that
+follows from it are derived in @sec-probability-and-stochastic-processes. That
+unit is optional: the three facts above are all this chapter uses, and nothing
+below depends on having read it.
+:::
+
+Substituting both reactions into the time-change equation gives the chemical
+Langevin equation
+
+$$
+ dX = V a(X)\,dt + V\operatorname{diag}(\sqrt{a(X)})\,dW.
+$$ {#eq-chemical-langevin}
+
+Thus the drift $f(X)=Va(X)$ is
+$$
+f(X)=(-a_1,\ a_1-a_2,\ a_2)^\mathsf{T},
+$$
+
+and the $3\times2$ diffusion matrix $G(X)$ has columns
+$$
+G_{\cdot1}=(-\sqrt{a_1},\sqrt{a_1},0)^\mathsf{T},\qquad
+G_{\cdot2}=(0,-\sqrt{a_2},\sqrt{a_2})^\mathsf{T}.
+$$
+
+Because each column of $V$ sums to zero, both the drift and every Brownian
+increment conserve $S+I+R$ algebraically. Numerical integration can still
+accumulate roundoff error.
+
+## Julia implementation
+
+`SDEProblem` accepts an in-place drift `f!` and diffusion `g!`. A vector-valued
+state with a $3\times2$ diffusion requires
+`noise_rate_prototype=zeros(3, 2)`: two columns correspond to the two
+independent Wiener processes. `LambaEM()` is the StochasticDiffEq method for
+Euler--Maruyama with general (non-diagonal) noise in the installed 7.1.1
+environment. The unusual spelling is part of the package API.
+
+```{julia}
+#| label: code-ch05-setup
+using CairoMakie
+using OrdinaryDiffEq
+using StochasticDiffEq
+using StableRNGs
+
+const N = 1000.0
+const β = 0.05
+const c = 10.0
+const γ = 0.25
+const κ = β * c / N
+const u₀ = [990.0, 10.0, 0.0]
+const tspan = (0.0, 40.0)
+const times = collect(0.0:0.1:40.0)
+
+function propensities(u, p)
+    κ, γ = p
+    S, I = max(u[1], 0.0), max(u[2], 0.0)
+    return (κ * S * I, γ * I)
+end
+```
+
+The `max` operations make the code well-defined if an Euler step crosses a
+boundary. They do not repair the interpretation of a negative state; the
+boundary issue is discussed below.
+
+```{julia}
+#| label: code-ch05-kernel
+function sir_drift!(du, u, p, t)
+    infection, recovery = propensities(u, p)
+    du[1] = -infection
+    du[2] = infection - recovery
+    du[3] = recovery
+    return nothing
+end
+
+function sir_diffusion!(G, u, p, t)
+    infection, recovery = propensities(u, p)
+    infection_noise = sqrt(infection)
+    recovery_noise = sqrt(recovery)
+    G[1, 1] = -infection_noise
+    G[2, 1] = infection_noise
+    G[3, 1] = 0.0
+    G[1, 2] = 0.0
+    G[2, 2] = -recovery_noise
+    G[3, 2] = recovery_noise
+    return nothing
+end
+
+noise_shape = zeros(3, 2)
+sde_problem = SDEProblem(
+    sir_drift!, sir_diffusion!, u₀, tspan, (κ, γ);
+    noise_rate_prototype = noise_shape,
+)
+sde_solution = solve(
+    sde_problem, LambaEM();
+    dt = 0.02, adaptive = false, saveat = times,
+    rng = StableRNG(20250711),
+)
+sde_states = Array(sde_solution)
+```
+
+The function `sir_diffusion!` is a direct transcription of the two columns of
+$G$ in Equation @eq-chemical-langevin. It is intentionally not replaced by
+independent noise on $S$, $I$, and $R$: doing that would break the
+reaction-level correlation and population conservation.
+
+For a baseline comparison, solve the drift alone:
+
+```{julia}
+#| label: code-ch05-ode
+ode_problem = ODEProblem(sir_drift!, u₀, tspan, (κ, γ))
+ode_solution = solve(ode_problem, Tsit5(); saveat = times)
+ode_states = Array(ode_solution)
+
+mass_error = maximum(abs.(vec(sum(sde_states; dims = 1)) .- N))
+minimum_state = minimum(sde_states)
+@assert mass_error < 1e-8
+(; mass_error, minimum_state)
+```
+
+The ODE is not the expected trajectory of every SDE path, but it is the
+large-population drift comparison. The conservation assertion is stronger:
+it checks a structural property of the implementation independently of the
+random realization.
+
+```{julia}
+#| label: fig-ch05-diffusion
+#| fig-cap: "A chemical-Langevin SIR path compared with the deterministic drift."
+fig = Figure(size = (760, 430))
+ax = Axis(fig[1, 1], xlabel = "time", ylabel = "people",
+    title = "Chemical Langevin SIR")
+for (j, (name, color)) in enumerate(zip(["S", "I", "R"],
+                                         [:steelblue, :firebrick, :seagreen]))
+    lines!(ax, times, sde_states[j, :]; color, linewidth = 2, label = "$name (SDE)")
+    lines!(ax, times, ode_states[j, :]; color, linestyle = :dash,
+        linewidth = 1.5, label = "$name (ODE)")
+end
+axislegend(ax, position = :rt, nbanks = 2)
+fig
+```
+
+## Validation
+
+The noise columns sum to zero, so conservation is a useful first test. We can
+also check the diffusion construction directly at one valid state:
+
+```{julia}
+#| label: code-ch05-validation
+G = zeros(3, 2)
+sir_diffusion!(G, [900.0, 80.0, 20.0], (κ, γ), 0.0)
+@assert maximum(abs.(vec(sum(G; dims = 1)))) < 1e-12
+@assert mass_error < 1e-8
+```
+
+Those two checks validate the *implementation*. They say nothing about the
+approximation itself, which is the substance of this chapter: the Gaussian
+increments of @eq-chemical-langevin replaced the exact Poisson reaction counts of
+the previous chapter, and only a comparison against that exact process can show
+what the replacement cost. A seed-by-seed path comparison is not meaningful
+here, because the two simulations do not share an explicitly coupled source of
+randomness: the same seed drives a Poisson event stream in one model and
+Gaussian increments on a fixed grid in the other. We therefore compare
+distributions, using the same reaction network as @sec-jump-processes as the
+reference.
+
+The epidemic peak is a good summary to compare because it depends on the whole
+trajectory. A longer horizon is used here than in the figure above, so that
+every path has peaked before the window closes.
+
+```{julia}
+#| label: code-ch05-jump-comparison
+using Catalyst
+using JumpProcesses
+using Statistics
+
+sir_network = @reaction_network begin
+    κ, S + I --> 2I
+    γ, I --> R
+end
+
+const comparison_tspan = (0.0, 60.0)
+
+function jump_peak(seed)
+    problem = JumpProblem(
+        sir_network, [:S => 990, :I => 10, :R => 0],
+        comparison_tspan, [:κ => κ, :γ => γ];
+        aggregator = Direct(), rng = StableRNG(seed),
+    )
+    return maximum(solve(problem, SSAStepper())[sir_network.I])
+end
+
+function sde_peak(seed)
+    problem = SDEProblem(
+        sir_drift!, sir_diffusion!, u₀, comparison_tspan, (κ, γ);
+        noise_rate_prototype = zeros(3, 2),
+    )
+    solution = solve(
+        problem, LambaEM();
+        dt = 0.02, adaptive = false, saveat = 0.1, rng = StableRNG(seed),
+    )
+    return maximum(Array(solution)[2, :])
+end
+
+M = 500
+jump_peaks = [jump_peak(4000 + k) for k in 1:M]
+sde_peaks = [sde_peak(5000 + k) for k in 1:M]
+
+mean_difference = abs(mean(jump_peaks) - mean(sde_peaks))
+mean_standard_error = sqrt((var(jump_peaks) + var(sde_peaks)) / M)
+spread_ratio = std(sde_peaks) / std(jump_peaks)
+
+@assert mean_difference < 3 * mean_standard_error
+(; jump_mean = round(mean(jump_peaks); digits = 1),
+   sde_mean = round(mean(sde_peaks); digits = 1),
+   mean_difference_in_standard_errors =
+       round(mean_difference / mean_standard_error; digits = 2),
+   jump_spread = round(std(jump_peaks); digits = 1),
+   sde_spread = round(std(sde_peaks); digits = 1),
+   spread_ratio = round(spread_ratio; digits = 2))
+```
+
+The two mean peaks agree to well within the Monte Carlo error of the comparison,
+and the two standard deviations agree to a few percent. At $N=1000$ the
+diffusion therefore reproduces not just the location of the epidemic peak but
+how much it varies between outbreaks, which is the substantive claim the
+approximation makes and the reason it is worth using in place of an exact
+simulation. Note the scope of that claim: it concerns the mean and standard
+deviation of one summary, the peak. Agreement here supports the diffusion
+approximation for this summary in this regime; it does not establish that the
+two models have the same full trajectory distribution.
+
+Both numbers are estimates, so read them with the standard errors in mind rather
+than as exact agreement. The standard error above covers sampling uncertainty
+only. It says nothing about the SDE's time-discretization error, nor about the
+slight downward bias from reading the SDE peak off a `saveat = 0.1` grid, which
+can miss a maximum falling between saved points. The ensemble size matters too:
+with $M=40$ instead of
+500 the ratio of standard deviations wanders between roughly 0.7 and 1.1 from one
+batch of seeds to the next, which would say more about the sample size than about
+the approximation. A comparison of variability needs more replicates than a
+comparison of means, because a standard deviation is itself estimated with a
+relative error of about $1/\sqrt{2M}$.
+
+This agreement is specific to the regime, not a general property, and the
+asymmetry between the two models is worth being clear about. Both models make
+the same modelling assumptions — this reaction network, mass-action
+propensities, homogeneous mixing, fixed parameters — and conditional on that
+CTMC the direct method adds nothing further: it introduces no time
+discretization and no diffusion approximation. It is the extra step to the
+diffusion that carries an approximation, because @eq-chemical-langevin needs
+each reaction to fire many times over an interval short enough that the
+propensities barely move. Those two requirements pull against each other, and
+both fail when a compartment is nearly empty. The tests in the exercises reduce
+$N$ and refine $\mathrm{d}t$, and at small populations the diffusion's failures
+are visible in exactly the quantities compared here. An ensemble comparison tests
+the approximation statistically; it does not make the diffusion exact.
+
+## Interpretation and limitations
+
+The chemical Langevin equation is derived by replacing Poisson reaction counts
+with Gaussian increments. It is therefore fast and differentiable in much of
+the interior of the state space, but it can produce $S<0$, $I<0$, or
+$R<0$, especially near extinction, with large time steps, or in small
+populations. Clipping a trajectory after each step changes its probability
+law; it is a pragmatic visualization safeguard, not a principled boundary
+condition. Alternatives include the exact CTMC, nonnegative tau-leaping,
+reflecting/absorbing boundary schemes, or transforming the model.
+
+`noise_rate_prototype` is an API-level detail with mathematical meaning:
+leaving it out would ask for diagonal noise, not the two reaction noises in
+Equation @eq-chemical-langevin. The [StochasticDiffEq SDE tutorial](https://docs.sciml.ai/DiffEqDocs/stable/tutorials/sde_example/)
+documents `SDEProblem`, `EM`, and non-diagonal noise. The approximation itself
+is the chemical Langevin construction associated with reaction networks
+[@gillespie1977].
+
+## Exercises
+
+### Exercise 1 {#ch06-ex1}
+
+Run the SDE with `dt` values $0.1$, $0.05$, and $0.01$, using `adaptive=false`
+and a fixed seed for reproducibility. For each run, record the maximum
+conservation error and the minimum state value. Explain why conservation stays
+accurate to roundoff at every step size, whereas nonnegativity is not
+structurally preserved for a Gaussian diffusion.
+
+Do not read the differences between these runs as pathwise convergence. Using
+the same seed does not give the same Wiener path on different time grids: the
+solves draw random numbers at different times, so they realize different
+Brownian motions. A genuine pathwise convergence experiment needs the noise
+realization to be shared explicitly across the solves, which is what
+[`NoiseWrapper`](https://docs.sciml.ai/DiffEqNoiseProcess/dev/abstract_noise_processes/)
+is for.
+
+### Exercise 2 {#ch06-ex2}
+
+Construct a diagonal-noise SDE that keeps the same drift but adds independent
+noise to $S$, $I$, and $R$ with the same marginal instantaneous variances as
+the reaction-level model, that is
+$$
+G_{\mathrm{diag}}=\operatorname{diag}
+\left(\sqrt{a_1},\ \sqrt{a_1+a_2},\ \sqrt{a_2}\right).
+$$
+
+Compare its conservation error and infected trajectory with the reaction-level
+model. Identify the two off-diagonal covariance terms lost by this replacement,
+and show why the total-population increment now has nonzero variance.
+
+## Companion materials
+
+- [Slides](../slides/chapters/06-stochastic-differential-equations.html)
+- [Pluto preview](../notebook-exports/chapters/06-stochastic-differential-equations.html)
+- [Pluto source](../notebooks/chapters/06-stochastic-differential-equations.jl)

@@ -1,0 +1,112 @@
+---
+title: "Discrete-event simulation"
+course-unit: ch08-discrete-event-simulation
+status: complete
+---
+
+## From rates to life courses
+
+- The jump-process chapter drew events from **population-level rates**: the model
+  knew how many susceptibles there were, not who.
+- Here we write down what *one person does over time* and let a scheduler
+  interleave everybody.
+- Time jumps from event to event. Between events, nothing happens.
+
+::: {.notes}
+The distinction to hold onto is process-oriented versus rate-oriented. Both are
+event-driven and both give the same process for this model; what differs is what
+you write down.
+:::
+
+## The individual as a coroutine
+
+```julia
+@resumable function life_course(sim, person, model, rng)
+    while person.status == :S
+        @yield timeout(sim, rand(rng, Exponential(1/c)))
+        partner = rand(rng, model.people)
+        if partner.status == :I && rand(rng) < β
+            person.status = :I
+        end
+    end
+    @yield timeout(sim, rand(rng, Exponential(1/γ)))
+    person.status = :R
+end
+```
+
+`@yield timeout` suspends the process and hands control back to the scheduler.
+
+::: {.notes}
+Read this aloud as prose: while susceptible, wait for a contact and maybe get
+infected; then wait once more and recover. That readability is the main appeal of
+the process-oriented style.
+:::
+
+## The same process as the jump model
+
+A susceptible contacts a uniformly chosen individual, so a contact is infectious
+with probability $I/N$:
+
+$$
+S \cdot c \cdot \beta \cdot \frac{I}{N} = \beta c \frac{SI}{N}
+$$
+
+- Exactly the transmission propensity of the jump-process chapter.
+- Only the bookkeeping differs — and the validation tests precisely this.
+
+::: {.notes}
+Worth deriving on the board. Students often assume an individual-level model is
+a *different* model; here it is provably the same one, which is why the ensemble
+must match the ODE up to Monte Carlo error.
+:::
+
+## What it buys: arbitrary waiting times
+
+- Nothing requires `Exponential`. Swap the draw and the infectious period changes.
+- No change to the machinery, no extra compartments, no delay equation.
+- This is the cheapest route to non-exponential periods — the next chapter.
+
+::: {.notes}
+This is the reason the chapter sits immediately before agent-based models and two
+before the non-exponential chapter: it makes the point that the waiting-time
+distribution is a free choice at the individual level.
+:::
+
+## What it buys: contention for resources
+
+- `ConcurrentSim` provides `Resource` and `Store`.
+- Infectious individuals can **queue for a finite number of hospital beds**, and
+  you can record who waited and for how long.
+- No compartmental model expresses that naturally.
+
+::: {.notes}
+Often the question a health system actually wants answered is not the peak
+prevalence but whether capacity is exceeded and for how long. Exercise 2 builds
+exactly that.
+:::
+
+## Costs
+
+- $O(N)$ processes: every individual is tracked whether or not anything is
+  happening to them.
+- Recording is **manual** — append on status change, reconstruct a grid afterwards.
+- One run is one stochastic path; the **ensemble** is the unit of analysis.
+
+::: {.notes}
+Contrast with the jump process, which tracks only counts and is far cheaper for
+large populations. Use discrete-event simulation when you need individual
+histories, non-exponential timings, or resources.
+:::
+
+## Takeaways
+
+- Process-oriented simulation describes a **life course**, not a rate.
+- For this model it is provably the same process as the jump chapter's.
+- It generalises cheaply where compartmental models cannot: arbitrary waiting
+  times, and queueing for scarce resources.
+- Always validate against a model you already trust before exploiting either.
+
+::: {.notes}
+Next is agent-based models, which are also individual-level but advance time in
+fixed steps rather than event to event. That contrast is worth previewing here.
+:::

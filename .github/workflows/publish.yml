@@ -2,9 +2,8 @@ name: Publish course
 
 on:
   workflow_dispatch:
-  # push:
-  #   branches: [main]
-  # Re-enable once GitHub Pages is turned on and the course is ready to publish.
+  push:
+    branches: [main]
 
 permissions:
   contents: read

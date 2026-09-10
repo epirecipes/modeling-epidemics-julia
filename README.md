@@ -7,15 +7,15 @@ equations, implemented in Julia, and then checked against something known.
 
 ## Start here
 
-**Attending the workshop?** Work through [Setting up](setup.qmd) before Day 1.
+**Attending the workshop?** Work through [Setting up](https://epirecip.es/modeling-epidemics-julia/setup.html) before Day 1.
 It takes about half an hour, most of which is waiting for downloads, and doing
 it in advance means the first session starts with you writing model code rather
-than installing software. Then see [the schedule](workshop.qmd) for what is
-taught when, and [the session resources](resources.qmd) for the chapter,
+than installing software. Then see [the schedule](https://epirecip.es/modeling-epidemics-julia/workshop.html) for what is
+taught when, and [the session resources](https://epirecip.es/modeling-epidemics-julia/resources.html) for the chapter,
 slides and worksheet of each taught session.
 
 **Working through the course on your own?** Start with the same
-[Setting up](setup.qmd) page, then read from [the introduction](index.qmd)
+[Setting up](https://epirecip.es/modeling-epidemics-julia/setup.html) page, then read from [the introduction](https://epirecip.es/modeling-epidemics-julia/)
 onward. The workshop pages are safe to ignore: every chapter links its own
 slides and notebook at the end, and each has two exercises with worked
 solutions.
@@ -43,7 +43,7 @@ session.
 ## Getting the materials
 
 Full instructions, including what to do when a step fails, are in
-[Setting up](setup.qmd). In short:
+[Setting up](https://epirecip.es/modeling-epidemics-julia/setup.html). In short:
 
 ```bash
 git clone https://github.com/epirecipes/modeling-epidemics-julia.git

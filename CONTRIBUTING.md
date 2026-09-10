@@ -5,15 +5,45 @@ see [Setting up](setup.qmd) instead.
 
 ## Requirements
 
-- Julia 1.12
+- Julia 1.12.5, exactly
 - Quarto 1.9 or newer
 
-Two environments must be instantiated. The second serves chapter 8 alone,
+The Julia version is a pin, not a floor. `Manifest.toml` records
+`julia_version = "1.12.5"`, CI reads that line to choose its Julia, and Quarto's
+Julia engine refuses to execute a document when the running Julia differs at all,
+failing the whole render with `Julia version mismatch in notebook file`. A juliaup
+channel such as `1.12` tracks the newest patch release, so it drifts off the pin
+the moment a new one ships.
+
+Install the pinned version and make it the Julia this directory uses. Run both
+lines from the top of the course folder; they are identical on every platform,
+PowerShell included:
+
+```bash
+juliaup add 1.12.5
+juliaup override set 1.12.5
+```
+
+A juliaup override applies to that directory alone, so plain `julia` and Quarto
+both get 1.12.5 inside the course while your default Julia everywhere else is
+untouched, and no environment variable is needed. `juliaup override status`
+shows the override and `juliaup override unset` removes it.
+
+`juliaup default 1.12.5` also works, but changes the default for every Julia
+project on the machine. If you would rather point Quarto at the binary
+explicitly, ask Julia for its own path rather than guessing at the layout,
+which differs across platforms:
+
+```bash
+export QUARTO_JULIA="$(julia +1.12.5 -e 'print(Base.julia_cmd()[1])')"
+```
+
+Two environments must be instantiated. The second serves chapter 9 alone,
 which needs a package that conflicts with the rest of the course:
 
 ```bash
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
-julia --project=environments/ch08 -e 'using Pkg; Pkg.instantiate()'
+julia --project=environments/ch10 -e 'using Pkg; Pkg.instantiate()'
 ```
 
 ## The rule that catches people first
@@ -74,7 +104,7 @@ CI runs all seven of these, and they are the fastest way to check your work.
 Each exits nonzero with specific messages.
 
 ```bash
-# The 24-unit artifact contract and 48 exercise/solution pairs.
+# The 25-unit artifact contract and 50 exercise/solution pairs.
 julia --project=. scripts/check_structure.jl
 
 # Figure captions, slide notes, notebook interactivity, solutions, citations.
@@ -125,3 +155,4 @@ the repository's Pages source as **GitHub Actions** and push `main`.
 The sibling `../sir-julia/` repository is outside this course repository and is
 used only as local reference material. Its examples predate current APIs, so
 verify against current package documentation before adapting anything from it.
+
