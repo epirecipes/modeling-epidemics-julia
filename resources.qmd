@@ -87,7 +87,7 @@ The **Pluto preview** is a saved copy of the notebook: it shows the model at its
 
 ### Agent-based models extended session — Day 3, Session 2
 
-The second half of the same unit, so the book chapter and notebook are the ones above.
+The second half of the same unit, so the book chapter is the same as the one above, but we included new slides and another worksheet (in case you complete the first one during the previous session).
 
 - [Book](chapters/09-agent-based-models.html)
 - [Slides](slides/chapters/09-agent-based-models-awareness.html)
