@@ -8,10 +8,10 @@ project:
     - index.qmd
     - setup.qmd
     - workshop.qmd
+    - resources.qmd
     - prerequisites/*.qmd
     - chapters/*.qmd
     - appendices/*.qmd
-    - resources.qmd
     - references.qmd
   resources:
     - data/**
@@ -27,6 +27,7 @@ book:
     - index.qmd
     - setup.qmd
     - workshop.qmd
+    - resources.qmd
     - part: "Prerequisites"
       chapters:
         - prerequisites/01-julia-essentials.qmd
@@ -51,7 +52,6 @@ book:
         - chapters/15-interventions-and-optimization.qmd
         - chapters/16-advanced-optimal-control.qmd
         - chapters/17-data-to-decision-capstone.qmd
-    - resources.qmd
   appendices:
     - appendices/01-universal-differential-equations.qmd
     - appendices/02-probabilistic-numerical-integration.qmd

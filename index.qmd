@@ -1,3 +1,5 @@
+# Welcome {.unnumbered}
+
 This executable course develops mathematical models from their assumptions and equations through simulation, inference, and decision-making in Julia.
 
 The course supports a mixed audience across its 25 teaching units:
@@ -6,9 +8,11 @@ The course supports a mixed audience across its 25 teaching units:
 - Seventeen core chapters progress from the SIR model to a complete data-to-decision case study.
 - Five advanced appendices extend the same modeling ideas to scientific machine learning, probabilistic numerics, surrogate models, model composition, and symbolic analysis.
 
-Every teaching unit has a detailed book chapter, a Reveal.js slide deck, an interactive Pluto notebook, and two exercises with solutions.
+Every teaching unit has a detailed book chapter, a slide deck, an interactive Pluto notebook, and two exercises with solutions.
 
 Start with [Setting up](setup.qmd) to install Julia, VS Code, Quarto, and the course packages.
+
+## Workshop
 
 The 3-day workshop teaches nine of these units across ten sessions; the other
 sixteen are written for self-study. Workshop participants: see the [workshop
