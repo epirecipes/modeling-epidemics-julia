@@ -1,6 +1,6 @@
 # Workshop resources {.unnumbered}
 
-Welcome to the workshop! Below you will find the materials for all ten taught sessions, organised in the order they will be presented.
+Welcome to the workshop! Below you will find the materials for all ten taught sessions, organised in the order they will be presented. The workshop will cover a selection of material from this book, with the remaining chapters provided for self-study and future reference.
 
 For each session, you will use three resources:
 
