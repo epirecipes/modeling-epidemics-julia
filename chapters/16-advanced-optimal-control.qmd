@@ -19,7 +19,14 @@ is informative.
 The chapter follows the formulations collected in
 [EpiPolicies](https://github.com/epirecipes/EpiPolicies): minimising cases under
 a resource budget, holding prevalence beneath a capacity threshold, and
-combining a non-pharmaceutical intervention with vaccination.
+combining a non-pharmaceutical intervention with vaccination. @montesolivas2026
+set out the *direct* approach behind them — the dynamics are discretised into
+constraints and the whole problem handed to a general-purpose nonlinear solver,
+rather than characterised indirectly through Pontryagin conditions — and work it
+through lockdown, vaccination and dengue-control case studies. That paper writes
+its problems in JuMP directly, where this chapter uses the InfiniteOpt layer
+above it, but both transcribe to the same kind of nonlinear program and solve it
+with Ipopt.
 
 ## Learning goals
 
