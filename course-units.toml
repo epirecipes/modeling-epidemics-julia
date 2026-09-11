@@ -135,7 +135,7 @@ status = "complete"
 track = "self-study"
 environment = "root"
 packages = ["ConcurrentSim", "ResumableFunctions", "Distributions", "OrdinaryDiffEq", "CairoMakie"]
-sources = ["../sir-julia/tutorials/des_agentsjl/des_agentsjl.jmd", "../sir-julia/tutorials/des/des.jmd"]
+sources = ["../sir-julia/tutorials/des/des.jmd"]
 
 [[units]]
 id = "ch09"

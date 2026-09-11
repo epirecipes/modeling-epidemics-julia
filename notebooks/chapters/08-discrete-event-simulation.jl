@@ -12,13 +12,13 @@ end
 
 # ╔═╡ dc547ed6-be9c-4923-ae58-02fcf7074a73
 begin
-        using ConcurrentSim
-    using ResumableFunctions
-    using Random
+    using CairoMakie
+    using ConcurrentSim
     using Distributions
     using OrdinaryDiffEq
-    using CairoMakie
     using PlutoUI
+    using Random
+    using ResumableFunctions
 end
 
 # ╔═╡ 9102da18-896f-4640-8798-93accbf4121e
@@ -26,21 +26,29 @@ md"""
 # Discrete-event simulation
 
 Companion notebook for `ch08-discrete-event-simulation` (see the
-[book chapter](../../chapters/08-discrete-event-simulation.qmd) for the
-full derivation and both implementations).
+[book chapter](../../chapters/08-discrete-event-simulation.qmd) for the full
+derivation and the ensemble validation).
 
-Adjust the event-process parameters below and watch a fresh
-`ConcurrentSim process` realisation re-run reactively against the deterministic SIR
-ODE. The **fixed-delay recovery** toggle switches the recovery
-event's `timing` from the default exponential sampler to the constant
-$\tau = 1/\gamma$ used in Exercise 1, connecting this unit back to the fixed
-delay of the DDE appendix without any history function.
+The chapter's model is reproduced below in a `SIRDES` module, under the names the
+chapter uses — `Person`, `EpidemicModel`, `record!`, `life_course`,
+`simulate_des`, `on_grid`. Two things differ, both forced by interactivity: the
+chapter reads ``\beta``, ``c`` and ``\gamma`` from module-level constants,
+whereas here they are slider-bound and so travel on the model instead; and this
+notebook runs a single realisation where the chapter averages forty.
 
-Both engines below draw partners the same way: a susceptible agent picks one
-individual uniformly from all $N$, itself included. A draw that lands on itself,
-or on a susceptible or recovered agent, passes without transmission. Counting
-those null draws gives a force of infection of $\beta c I / N$, which is the
-deterministic curve the stochastic paths are plotted against.
+Move the sliders and a fresh `ConcurrentSim` realisation re-runs against the
+deterministic SIR ODE. The **fixed-delay recovery** toggle replaces the
+exponential recovery draw with the constant ``\tau = 1/\gamma``, which is
+Exercise 1. In a process-oriented simulation the infectious period is simply a
+number you draw before waiting, so changing its distribution is a one-line
+change and needs no new machinery.
+
+Both halves of the notebook draw partners the same way: a susceptible picks one
+individual uniformly from all ``N``, itself included. A draw that lands on
+itself, or on a susceptible or recovered individual, passes without
+transmission. Counting those null draws gives a force of infection of
+``\beta c I / N``, which is the deterministic curve the stochastic paths are
+plotted against.
 """
 
 # ╔═╡ 68d3bbd7-d0ab-4cc2-bd82-3d3d9c6e4aa8
@@ -54,63 +62,18 @@ c (contact rate): $(@bind c PlutoUI.Slider(2.0:1.0:20.0; default = 10.0, show_va
 seed (rng seed for the event queue): $(@bind seed PlutoUI.Slider(1:20; default = 1, show_value = true))
 
 Use a **fixed** recovery delay τ = 1/γ instead of exponential recovery:
-$(@bind fixed_delay CheckBox(default = false))
+$(@bind fixed_delay PlutoUI.CheckBox(default = false))
 """
-
-# ╔═╡ 5a85d311-b65c-492a-9604-d5258cbba059
-begin
-    @agent struct Person(NoSpaceAgent)
-        status::Symbol
-    end
-
-    function transmit!(agent, model)
-        alter = random_agent(model)
-        if alter.status == :I && (rand(abmrng(model)) ≤ model.β)
-            agent.status = :I
-        end
-        return nothing
-    end
-    recover!(agent, model) = (agent.status = :R)
-
-    transmit_propensity(agent, model) = agent.status == :S ? model.c : 0.0
-    recovery_propensity(agent, model) = agent.status == :I ? model.γ : 0.0
-    fixed_delay_timing(agent, model, propensity) = agent.status == :I ? model.τ : Inf
-
-    susceptible(x) = count(==(:S), x)
-    infected(x) = count(==(:I), x)
-    recovered(x) = count(==(:R), x)
-    nothing
-end
-
-# ╔═╡ fee2aca7-cd0e-4b2b-b0a9-5565b0a36efa
-function init_eventqueue_model(β, c, γ, N, I0, rng; fixed_delay = false)
-    properties = Dict(:β => β, :c => c, :γ => γ, :τ => 1 / γ)
-    transmit_event = AgentEvent(action! = transmit!, propensity = transmit_propensity)
-    recovery_event = fixed_delay ?
-        AgentEvent(action! = recover!, propensity = recovery_propensity, timing = fixed_delay_timing) :
-        AgentEvent(action! = recover!, propensity = recovery_propensity)
-    events = (transmit_event, recovery_event)
-    model = ConcurrentSim process(Person, events; properties, rng)
-    for i in 1:N
-        status = i <= I0 ? :I : :S
-        add_agent!(Person(; id = i, status = status), model)
-    end
-    return model
-end
 
 # ╔═╡ 74b95ca9-2c37-4ba9-a768-7ca20e4ede4f
 begin
     N = 1000
     I0 = 10
     tf = 40.0
-    sample_dt = 0.1
 
-    rng = Xoshiro(seed)
-    eq_model = init_eventqueue_model(β, c, γ, N, I0, rng; fixed_delay = fixed_delay)
-    to_collect = [(:status, f) for f in (susceptible, infected, recovered)]
-    eq_data, _ = run!(eq_model, tf; adata = to_collect, when = sample_dt)
-
-    # exponential recovery, so this is the mean field only when fixed_delay is off
+    # The deterministic mean field, used as the reference curve in both halves
+    # of the notebook. It assumes exponential recovery, so with the fixed-delay
+    # toggle on it is a comparison at equal means rather than the mean field.
     function sir_ode!(du, u, p, t)
         S, I, R = u
         βp, cp, γp = p
@@ -121,10 +84,11 @@ begin
         du[3] = γp * I
         return nothing
     end
-    sol_ode = solve(ODEProblem(sir_ode!, [Float64(N - I0), Float64(I0), 0.0], (0.0, tf), (β, c, γ)), Tsit5())
+    sol_ode = solve(ODEProblem(sir_ode!, [Float64(N - I0), Float64(I0), 0.0],
+                               (0.0, tf), (β, c, γ)), Tsit5())
 
-    # findmax over solver knots lands between steps, so read the interpolant
-    # on a fine grid instead.
+    # findmax over the solver's adaptive knots lands between steps, so read the
+    # interpolant on a fine grid instead.
     ode_grid = range(0.0, tf; length = 4001)
     ode_I = [sol_ode(t)[2] for t in ode_grid]
     ode_peak, ode_peak_idx = findmax(ode_I)
@@ -132,53 +96,146 @@ begin
     nothing
 end
 
-# ╔═╡ 7d7f1fef-98f5-4170-8a97-65800e8d3a17
+# ╔═╡ 5a85d311-b65c-492a-9604-d5258cbba059
+module SIRDES
+    using ConcurrentSim, ResumableFunctions, Distributions, Random
+
+    mutable struct Person
+        id::Int
+        status::Symbol
+    end
+
+    # β, c and γ are fields here because the notebook binds them to sliders;
+    # the chapter reads them from module-level constants instead.
+    mutable struct EpidemicModel
+        sim::Simulation
+        β::Float64
+        c::Float64
+        γ::Float64
+        people::Vector{Person}
+        times::Vector{Float64}
+        susceptible::Vector{Int}
+        infectious::Vector{Int}
+        recovered::Vector{Int}
+    end
+
+    function record!(model::EpidemicModel)
+        push!(model.times, now(model.sim))
+        push!(model.susceptible, count(p -> p.status == :S, model.people))
+        push!(model.infectious,  count(p -> p.status == :I, model.people))
+        push!(model.recovered,   count(p -> p.status == :R, model.people))
+        return nothing
+    end
+
+    # One individual's whole life course. Exercise 1 is the single ternary on the
+    # recovery wait: nothing here requires the period to be exponential.
+    @resumable function life_course(sim::Simulation, person::Person,
+                                    model::EpidemicModel, rng, fixed_delay::Bool)
+        while person.status == :S
+            @yield timeout(sim, rand(rng, Exponential(1 / model.c)))
+            partner = rand(rng, model.people)   # uniform over all N, self included
+            if partner.status == :I && rand(rng) < model.β
+                person.status = :I
+                record!(model)
+            end
+        end
+        if person.status == :I
+            @yield timeout(sim, fixed_delay ? 1 / model.γ :
+                                rand(rng, Exponential(1 / model.γ)))
+            person.status = :R
+            record!(model)
+        end
+    end
+
+    function simulate_des(β, c, γ, N, I0, tf, seed, fixed_delay)
+        sim = Simulation()
+        people = [Person(i, i <= N - I0 ? :S : :I) for i in 1:N]
+        model = EpidemicModel(sim, β, c, γ, people, [0.0], [N - I0], [I0], [0])
+        rng = Xoshiro(seed)
+        for person in people
+            @process life_course(sim, person, model, rng, fixed_delay)
+        end
+        run(sim, tf)
+        return model
+    end
+
+    # Recording is manual and happens only at status changes, so the output has
+    # to be step-reconstructed onto a regular grid afterwards.
+    function on_grid(model::EpidemicModel, grid)
+        values = zeros(length(grid))
+        for (k, t) in enumerate(grid)
+            idx = searchsortedlast(model.times, t)
+            values[k] = model.infectious[max(idx, 1)]
+        end
+        return values
+    end
+end
+
+# ╔═╡ fee2aca7-cd0e-4b2b-b0a9-5565b0a36efa
 begin
-    fig = Figure(size = (720, 420))
-    ax = Axis(fig[1, 1]; xlabel = "time", ylabel = "infectious count",
-              title = "ConcurrentSim process ($(fixed_delay ? "fixed" : "exponential") recovery) vs SIR ODE")
-    stairs!(ax, eq_data.time, eq_data.infected_status; color = :firebrick, linewidth = 2, label = "I (ConcurrentSim process)")
-    lines!(ax, ode_grid, ode_I; color = :black, linestyle = :dash, linewidth = 2, label = "I (SIR ODE, exponential recovery)")
-    axislegend(ax; position = :rt)
-    fig
+    sample_grid = collect(0.0:0.5:tf)
+    des = SIRDES.simulate_des(β, c, γ, N, I0, tf, seed, fixed_delay)
+    des_I = SIRDES.on_grid(des, sample_grid)
+
+    # individuals only ever change status, so N is conserved exactly at every
+    # recorded instant — the chapter's `population_conserved` check
+    des_conserved = all(s + i + r == N for (s, i, r) in
+                        zip(des.susceptible, des.infectious, des.recovered))
+    nothing
+end
+
+# ╔═╡ 7d7f1fef-98f5-4170-8a97-65800e8d3a17
+let
+    figure = Figure(size = (760, 420))
+    axis = Axis(figure[1, 1]; xlabel = "Time", ylabel = "Infectious",
+                title = "ConcurrentSim, $(fixed_delay ? "fixed" : "exponential") recovery, seed $(seed)")
+    stairs!(axis, sample_grid, des_I; color = :firebrick, linewidth = 2,
+            label = "I (discrete-event simulation)")
+    lines!(axis, ode_grid, ode_I; color = :black, linestyle = :dash, linewidth = 2,
+           label = "I (SIR ODE, exponential recovery)")
+    axislegend(axis; position = :rt, framevisible = false)
+    figure
 end
 
 # ╔═╡ 44c0a9f7-7a5e-4201-a743-1d46feac505d
 begin
-    peak_eq, idx_eq = findmax(eq_data.infected_status)
-    conserved_eq = all(r -> r.susceptible_status + r.infected_status + r.recovered_status == N, eachrow(eq_data))
+    des_peak, des_peak_idx = findmax(des_I)
+    des_peak_t = sample_grid[des_peak_idx]
     recovery_note = fixed_delay ?
-        "The toggle is **on**, so agents recover exactly τ = $(round(1/γ; digits = 2)) after infection. The dashed curve keeps exponential recovery with the same average duration, so it is a comparison at equal means rather than the mean field of this process. Matching a fixed infectious period needs an infection-age, renewal or delay formulation, which is what the DDE appendix builds." :
-        "The toggle is **off**, so recovery is exponential in both, and the dashed curve is the mean field the stochastic path fluctuates around."
+        "The toggle is **on**, so every infectious individual recovers exactly τ = $(round(1/γ; digits = 2)) after infection. The dashed curve keeps exponential recovery with the same mean, so it is a comparison at equal means rather than the mean field of this process. Concentrating the infectious period around its mean shortens the spread of the generation interval, which tends to push the peak higher and earlier — the direction Exercise 1 asks you to explain, and the subject of the non-exponential periods chapter." :
+        "The toggle is **off**, so recovery is exponential in both, and the dashed curve is the mean field this single stochastic path fluctuates around."
     recovery_label = fixed_delay ? "fixed τ = $(round(1/γ; digits = 2))" : "exponential"
 
+    # interpolate into a plain string, then parse: md"..." mis-pairs the **
+    # markers when a line carries several values
     Markdown.parse("""
     **Current run** (β = $(β), c = $(c), γ = $(γ), seed = $(seed), recovery = $(recovery_label)):
 
-    - Highest *recorded* ConcurrentSim process count: **$(peak_eq)** at t ≈ $(round(eq_data.time[idx_eq]; digits = 2)). ConcurrentSim.jl records once the model has advanced by at least $(sample_dt) time units, at an event time, rather than after every event, so the true path maximum can fall between recorded observations and be higher.
+    - Peak infectious count: **$(round(Int, des_peak))** at t ≈ $(round(des_peak_t; digits = 2)). The model records only at status changes, so this is the step-reconstructed value on a grid of 0.5; the true path maximum can fall between grid points and be higher.
     - SIR ODE peak: **$(round(ode_peak; digits = 1))** at t ≈ $(round(ode_peak_t; digits = 2)), read off the solver's interpolant on a fine grid rather than its adaptive knots.
-    - Conservation of N holds in every recorded row: **$(conserved_eq)**
+    - Conservation of N holds at every recorded instant: **$(des_conserved)**
 
     $(recovery_note)
 
-    With the fixed-delay toggle on, the recovery time is carried by the event the queue
-    has already scheduled for that agent, not by a field on `Person`, which stores only
-    `status`. That is how an individual-level model reaches a fixed infectious period
-    with no history function.
+    The chapter averages forty realisations; this notebook runs one, so that moving a
+    slider gives an answer immediately. A single path carries real randomness, so change
+    the seed a few times before concluding anything from one of them.
     """)
 end
 
 # ╔═╡ b5a7713e-1ad6-4f56-80fa-94fedcd0e333
 md"""
-## Alternative engine: `ConcurrentSim.jl` with a limited resource
+## Contention for scarce resources: triaged beds
 
-`ConcurrentSim` ships a `Resource`: a counted pool with a request queue. Nothing
-in `ConcurrentSim process` plays that role, so a queue there is yours to build. The beds
-below are **triaged**: each infectious individual is either severe or mild, and
-severe cases are served first while beds are scarce.
+The chapter's second motivation for discrete-event simulation is contention.
+`ConcurrentSim` ships a `Resource`: a counted pool with a request queue, which no
+compartmental model expresses naturally.
 
-Exercise 2 builds the plain first-come, first-served version. Try it before
-reading on, since the code below already queues.
+Exercise 2 asks for the plain version — a fixed number of beds, first come first
+served. **The model below goes beyond that exercise**: its beds are *triaged*, so
+each infectious individual is either severe or mild, and severe cases are served
+first while beds are scarce. Build the first-come-first-served version yourself
+before reading on, since the code here already queues by priority.
 
 Three assumptions this model makes:
 
@@ -189,8 +246,9 @@ Three assumptions this model makes:
 - Triage is **non-preemptive**. A severe case jumps ahead of mild cases *waiting*
   in the queue, but never displaces a mild case already occupying a bed.
 - The bed is requested with `lock(m.beds; priority = ...)`, where lower numbers
-  are served first, so severe cases carry 0 and mild cases 1. The chapter writes
-  the same call as `request`, which is ConcurrentSim's other name for `lock`.
+  are served first, so severe cases carry 0 and mild cases 1. The chapter's
+  exercise and its solution write the same call as `request`, which is
+  ConcurrentSim's other name for `lock`.
 """
 
 # ╔═╡ 1cabfe77-0395-4843-b785-bfc19fd24bf4
@@ -300,14 +358,16 @@ begin
 end
 
 # ╔═╡ e3c3507c-52a5-4475-800e-0a629195348d
-begin
-    fig2 = Figure(size = (720, 380))
-    ax2 = Axis(fig2[1, 1]; xlabel = "time", ylabel = "infectious count",
-               title = "ConcurrentSim: $(num_beds) triaged beds")
-    stairs!(ax2, cs_model.ta, cs_model.Ia; color = :steelblue, linewidth = 2, label = "I (ConcurrentSim)")
-    lines!(ax2, ode_grid, ode_I; color = :black, linestyle = :dash, linewidth = 2, label = "I (SIR ODE, unlimited beds)")
-    axislegend(ax2; position = :rt)
-    fig2
+let
+    figure = Figure(size = (760, 380))
+    axis = Axis(figure[1, 1]; xlabel = "Time", ylabel = "Infectious",
+                title = "ConcurrentSim: $(num_beds) triaged beds")
+    stairs!(axis, cs_model.ta, cs_model.Ia; color = :steelblue, linewidth = 2,
+            label = "I (bed-constrained)")
+    lines!(axis, ode_grid, ode_I; color = :black, linestyle = :dash, linewidth = 2,
+           label = "I (SIR ODE, unlimited beds)")
+    axislegend(axis; position = :rt, framevisible = false)
+    figure
 end
 
 # ╔═╡ 48b8d3ee-63cc-4439-919e-1180aaac01fd
@@ -356,15 +416,11 @@ end
 (
     course_unit = "ch08-discrete-event-simulation",
     status = "complete",
-    β = β,
-    c = c,
-    γ = γ,
-    seed = seed,
-    fixed_delay = fixed_delay,
-    num_beds = num_beds,
-    severe_fraction = severe_fraction,
-    eq_peak = peak_eq,
-    cs_peak = cs_peak,
+    controls = (; β, c, γ, seed, fixed_delay, num_beds, severe_fraction),
+    des_peak = round(Int, des_peak),
+    ode_peak = round(ode_peak; digits = 2),
+    beds_peak = cs_peak,
+    population_conserved = des_conserved,
 )
 
 # ╔═╡ Cell order:
@@ -372,15 +428,15 @@ end
 # ╠═dc547ed6-be9c-4923-ae58-02fcf7074a73
 # ╟─9102da18-896f-4640-8798-93accbf4121e
 # ╟─68d3bbd7-d0ab-4cc2-bd82-3d3d9c6e4aa8
+# ╠═74b95ca9-2c37-4ba9-a768-7ca20e4ede4f
 # ╠═5a85d311-b65c-492a-9604-d5258cbba059
 # ╠═fee2aca7-cd0e-4b2b-b0a9-5565b0a36efa
-# ╠═74b95ca9-2c37-4ba9-a768-7ca20e4ede4f
-# ╟─7d7f1fef-98f5-4170-8a97-65800e8d3a17
+# ╠═7d7f1fef-98f5-4170-8a97-65800e8d3a17
 # ╟─44c0a9f7-7a5e-4201-a743-1d46feac505d
 # ╟─b5a7713e-1ad6-4f56-80fa-94fedcd0e333
 # ╟─1cabfe77-0395-4843-b785-bfc19fd24bf4
 # ╠═556260cf-77ba-4529-8e54-c2377478bc4a
 # ╠═d3117a11-7b9f-4d57-b3d0-b24738b05b9e
-# ╟─e3c3507c-52a5-4475-800e-0a629195348d
+# ╠═e3c3507c-52a5-4475-800e-0a629195348d
 # ╟─48b8d3ee-63cc-4439-919e-1180aaac01fd
 # ╠═ec7779dc-56a8-4b33-83cb-f3269e2b0c50
