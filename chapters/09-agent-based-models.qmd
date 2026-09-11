@@ -6,7 +6,7 @@ status: complete
 # Agent-based models {#sec-agent-based-models}
 
 ::: {.callout-note appearance="simple"}
-**Workshop programme**: taught live on Day 3, Session 2. See the [full schedule](../workshop.qmd).
+**Workshop programme**: taught live on Day 3, Session 1. See the [full schedule](../workshop.qmd).
 :::
 
 An agent-based model (ABM) represents a population as interacting individuals.

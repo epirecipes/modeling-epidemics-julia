@@ -6,7 +6,7 @@ status: complete
 # Reaction networks and moment closure {#sec-reaction-networks}
 
 ::: {.callout-note appearance="simple"}
-**Workshop programme**: taught live on Day 2, Session 3. See the [full schedule](../workshop.qmd).
+**Workshop programme**: taught live on Day 2, Session 2. See the [full schedule](../workshop.qmd).
 :::
 
 Every model so far has been written as *states changing*: a right-hand side for
