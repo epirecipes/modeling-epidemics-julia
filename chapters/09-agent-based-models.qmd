@@ -6,7 +6,7 @@ status: complete
 # Agent-based models {#sec-agent-based-models}
 
 ::: {.callout-note appearance="simple"}
-**Workshop programme**: taught live on Day 3, Session 1. See the [full schedule](../workshop.qmd).
+**Workshop programme**: taught live on Day 3, Sessions 1 and 2. See the [full schedule](../workshop.qmd).
 :::
 
 An agent-based model (ABM) represents a population as interacting individuals.
@@ -25,9 +25,21 @@ You will:
 - name the pieces that define a neighbourhood in a spatial ABM, and say what
   changes when contacts are drawn from one; and
 - compare an ensemble of individual simulations with the deterministic SIR
-  ODE while identifying effects that aggregation hides.
+  ODE while identifying effects that aggregation hides;
+- validate a model that has no reference solution to check against; and
+- judge when an individual-level model earns its *additional* cost over a
+  population model, separately from whether a model needs to be stochastic.
 
 ## Model assumptions and classification
+
+Every agent-based model is built from the same three components [@datseris2022]:
+the **agents**, the individuals that act; the **environment**, the space they
+live in, which decides who is near whom; and the **rules**, what happens to one
+agent in one step and what happens to the world once per step. The sections below
+follow that order — `Person` is the agent, the `nothing` space is the
+environment, and `agent_step!` with `model_step!` are the rules — and the frame is
+worth holding onto, because the agents are usually the easy part while the
+environment and the rules are where the modelling assumptions live.
 
 The population has $N=1000$ named individuals. Initially 10 are infectious,
 990 are susceptible, and none are recovered. At every $\Delta t=0.1$ time
@@ -47,18 +59,20 @@ its aggregated contact rule is designed to approximate mass action.
 ## Equations
 
 Let $Z_i(t)\in\{S,I,R\}$ be individual $i$'s status and
-$I_t=\sum_i\mathbf{1}(Z_i(t)=I)$. For a susceptible, the probability of no
-successful transmission in one step, conditional on $K_i=k$, is
+$I_t=\sum_i\mathbf{1}(Z_i(t)=I)$. Write $p$ for the proportion infectious among
+the people a susceptible can actually *reach*. For a susceptible, the probability
+of no successful transmission in one step, conditional on $K_i=k$, is
 
 $$
- \left(1-\beta\frac{I_t}{N}\right)^k.
+ \left(1-\beta p\right)^k.
 $$
 
 Averaging over $K_i\sim\operatorname{Poisson}(c\Delta t)$ gives
 
 $$
  \Pr(Z_i(t+\Delta t)=I\mid Z_i(t)=S)
- =1-\exp\!\left[-c\Delta t\,\beta\frac{I_t}{N}\right].
+ =1-\mathbb{E}\left[(1-\beta p)^{K_i}\right]
+ =1-\exp\!\left[-c\Delta t\,\beta p\right].
 $$ {#eq-abm-infection}
 
 The recovery probability is
@@ -66,8 +80,18 @@ $$
 \Pr(Z_i(t+\Delta t)=R\mid Z_i(t)=I)=1-\exp(-\gamma\Delta t).
 $$
 
-For small $\Delta t$, Equation @eq-abm-infection is approximately
-$\beta c(I_t/N)\Delta t$, matching the SIR force of infection. The
+The exponent in Equation @eq-abm-infection is a rate $\beta c\,p$ acting for a
+time $\Delta t$, and for small $\Delta t$ it is approximately
+$\beta c p\,\Delta t$. That matches the SIR force of infection $\beta cI/N$
+exactly, **provided $p=I_t/N$** — which holds here only because a contact is a
+uniform draw from the whole population.
+
+That proviso is doing more work than it appears to, and it is the hinge for
+everything spatial later in the chapter. Nothing in the rules forces $p$ to be
+the global prevalence. Drawing contacts from a fixed neighbourhood instead makes
+$p$ the *local* prevalence among those few people, the two quantities decouple,
+and the resulting model is not a noisy version of the SIR equations but a
+different model that will not scatter around them. The
 individual model still carries more state than the population equations:
 each agent's current status is retained, so the population counts are a
 summary we choose to compute rather than the model's only representation.
@@ -97,6 +121,7 @@ using Agents
 using CairoMakie
 using Distributions
 using OrdinaryDiffEq
+using Random
 using StableRNGs
 using Statistics
 
@@ -114,6 +139,15 @@ const times = collect(0.0:Δt:(nsteps * Δt))
     next_status::Symbol
 end
 ```
+
+`Person(NoSpaceAgent)` is not a class inheriting from a base class, and reading
+it that way causes trouble later. Julia keeps data in `struct` types and
+behaviour in functions, which are selected by the types of their arguments, so a
+struct has no methods of its own. What `@agent` does is copy in the fields the
+model machinery requires — `id` for a no-space agent, `id` and `pos` for a grid
+agent — and then add the fields you asked for. `Person` inherits no behaviour
+from `NoSpaceAgent`, because there is none to inherit; the rules arrive
+separately, as the ordinary functions below.
 
 The contact loop uses the model's random-number generator through
 `abmrng(model)`. `random_agent(model)` is the current Agents.jl helper for
@@ -152,8 +186,11 @@ recovered_count(model) = count(person.status == :R for person in allagents(model
 ```
 
 The model properties are a named tuple, so `model.β`, `model.c`, and
-`model.Δt` are ordinary Julia field accesses. The `mdata` functions below are
-called by `run!` at the initial state and after each step.
+`model.Δt` are ordinary Julia field accesses. A named tuple cannot be written
+to, which is fine while every property is a constant of the run; a model that
+*updates* a property as it goes needs a `Dict` instead, as the awareness model
+later in this section does. The `mdata` functions below are called by `run!` at
+the initial state and after each step.
 
 ```{julia}
 #| label: code-ch06-constructor
@@ -238,19 +275,47 @@ whole population. Replacing that choice is the main way an ABM is extended, so
 it is worth naming the pieces.
 
 A **space** in Agents.jl is the structure that decides which agents are near
-which others. The library provides grids and lattices, graphs, continuous
-space, and street maps, and a model can define its own. Whichever is used, the
-property the rules actually consult is the **neighbourhood**: the set of agents
-within a given distance of a focal agent.
+which others [@datseris2022]. A model can define its own, and the library
+provides these:
 
+| Kind | Agents.jl type | Used for |
+|---|---|---|
+| Grid or lattice, 2D or $n$D | `GridSpace`, `GridSpaceSingle` | space as discrete cells |
+| Graph or network | `GraphSpace` | contact and social networks |
+| Continuous | `ContinuousSpace` | movement, flocking |
+| Street map | `OpenStreetMapSpace` | routes in a real city |
+
+`GridSpace` allows many agents per cell; `GridSpaceSingle` allows at most one,
+so filling every cell makes the grid and the population the same object.
+
+Whichever space is used, the property the rules actually consult is the
+**neighbourhood**: the set of agents within a given distance of a focal agent.
 Two model choices define it. The **radius** says how far to look, and the
 **metric** says how distance is counted. On a grid, `:chebyshev` counts a
 diagonal step as one step, so radius 1 gives the eight surrounding cells, the
 Moore neighbourhood; `:euclidean` measures straight-line distance and gives a
 disc; `:manhattan` sums the horizontal and vertical steps and gives a diamond.
-A grid is also either periodic, wrapping at the edges so that every agent has
-the same number of neighbours, or bounded, in which case agents near an edge
-have fewer.
+The shapes are the names, and only the Chebyshev count has a closed form you can
+do in your head, $(2r+1)^2-1$:
+
+| Metric | Shape | $r=1$ | $r=2$ | $r=3$ |
+|---|---|---|---|---|
+| `:chebyshev` | square | 8 | 24 | 48 |
+| `:euclidean` | disc | 4 | 12 | 28 |
+| `:manhattan` | diamond | 4 | 12 | 24 |
+
+A grid is also either **periodic**, wrapping at the edges so that every agent
+has the same number of neighbours, or **bounded**, in which case agents near an
+edge have fewer. It is tempting to read a smaller neighbourhood as a lower risk,
+but that does not follow: the number of contacts a susceptible makes is drawn
+from $\operatorname{Poisson}(c\Delta t)$ however many neighbours there are, and
+what sets the per-contact risk is the *proportion* infectious nearby, the $p$ of
+Equation @eq-abm-infection. A corner agent with one infectious neighbour out of
+three faces a higher per-contact risk than a middle agent with one out of eight.
+What edges genuinely change is the number of *distinct* people reachable and the
+uniformity of the population: on a bounded grid, where an agent lives becomes
+part of the model, and the epidemic front can run out of room. Wrapping removes
+both effects, which is why the model below uses it.
 
 ```{julia}
 #| label: code-ch06-space
@@ -298,10 +363,278 @@ fig
 
 Swapping `random_agent(model)` for `rand(abmrng(model), collect(nearby_agents(person, model, radius)))`
 turns the well-mixed model into a spatial one without changing anything else
-about the rules. It does change the epidemic, and it changes it in a way that
-the parameters alone do not reveal: the combination $\beta c/\gamma$ is the
-mass-action reproduction number, and on a lattice with a fixed neighbourhood it
-is not the model's $R_0$. Exercise 1 builds that model and works out why.
+about the rules. That one line is the whole difference, so it is worth building
+the spatial model here and reusing it for the rest of the chapter.
+
+```{julia}
+#| label: code-ch06-grid
+@agent struct GridPerson(GridAgent{2})
+    status::Symbol
+    next_status::Symbol
+end
+
+function grid_agent_step!(person, model)
+    person.next_status = person.status
+    if person.status == :S
+        neighbours = collect(nearby_agents(person, model, model.radius))
+        for _ in 1:rand(abmrng(model), Poisson(model.c * model.Δt))
+            contact = rand(abmrng(model), neighbours)
+            if contact.status == :I && rand(abmrng(model)) < model.β
+                person.next_status = :I
+                break
+            end
+        end
+    elseif person.status == :I
+        if rand(abmrng(model)) < 1 - exp(-model.γ * model.Δt)
+            person.next_status = :R
+        end
+    end
+    return nothing
+end
+
+function initialize_grid_model(seed; infectives = I₀, radius = 2, timestep = Δt)
+    model = StandardABM(
+        GridPerson,
+        GridSpaceSingle((40, 25); periodic = true, metric = :chebyshev);
+        agent_step! = grid_agent_step!,
+        model_step!,
+        properties = (β = β, c = c, γ = γ, Δt = timestep, radius = radius),
+        rng = StableRNG(seed),
+    )
+    for position in positions(model)
+        add_agent!(position, model; status = :S, next_status = :S)
+    end
+    for id in shuffle(abmrng(model), collect(allids(model)))[1:infectives]
+        model[id].status = :I
+        model[id].next_status = :I
+    end
+    return model
+end
+```
+
+A periodic $40\times25$ grid has 1000 cells, so filling every one gives the same
+$N=1000$ population as the well-mixed model, with every agent holding exactly 24
+neighbours at radius 2 and no boundary special cases. `model_step!` and the three
+counting functions are reused unchanged: only the contact draw differs.
+
+Changing that draw changes the epidemic, and it changes it in a way the
+parameters alone do not reveal. The combination $\beta c/\gamma$ is the
+*mass-action* reproduction number, and on a lattice with a fixed neighbourhood it
+is not the model's $R_0$. Exercise 1 works out why.
+
+### Behaviour that responds to information
+
+Every model so far has had people behave the same way from the first day of the
+epidemic to the last. Populations do not, and the rule below is the smallest
+departure worth making: **a susceptible who can see at least $m$ infectious
+people within `info_radius` cells takes precautions for that step**, and the
+chance of catching the infection from any one contact falls from $\beta$ to
+$\beta(1-\alpha)$.
+
+The information radius and the contact radius are separate numbers. One decides
+who you can *see*, the other who can *infect* you, and nothing forces them to
+match. Three settings let the same precautions be triggered by different
+information: `:none` is the model above, `:local` is the rule just stated, and
+`:national` reacts instead to the prevalence $I/N$ in the whole population, the
+way someone watching the news would. Note what the model grants that last rule —
+the true prevalence, at once and without under-reporting or delay.
+
+```{julia}
+#| label: code-ch06-awareness
+function is_aware(person, model)
+    if model.information == :none
+        return false
+    elseif model.information == :national
+        return model.prevalence >= model.θ
+    elseif model.information == :local
+        return count(a -> a.status == :I,
+                     nearby_agents(person, model, model.info_radius)) >= model.m
+    else
+        throw(ArgumentError(
+            "unknown information rule $(model.information); " *
+            "expected :none, :local or :national"))
+    end
+end
+
+function aware_agent_step!(person, model)
+    person.next_status = person.status
+    if person.status == :S
+        transmission = is_aware(person, model) ? model.β * (1 - model.α) : model.β
+        neighbours = collect(nearby_agents(person, model, model.radius))
+        for _ in 1:rand(abmrng(model), Poisson(model.c * model.Δt))
+            contact = rand(abmrng(model), neighbours)
+            if contact.status == :I && rand(abmrng(model)) < transmission
+                person.next_status = :I
+                break
+            end
+        end
+    elseif person.status == :I
+        if rand(abmrng(model)) < 1 - exp(-model.γ * model.Δt)
+            person.next_status = :R
+        end
+    end
+    return nothing
+end
+
+function aware_model_step!(model)
+    model.aware_days += model.Δt *
+        count(p -> p.status == :S && is_aware(p, model), allagents(model))
+    for person in allagents(model)
+        person.status = person.next_status
+    end
+    model.prevalence = infected_count(model) / N
+    return nothing
+end
+```
+
+`aware_model_step!` does two things besides committing the statuses. It adds up
+**aware person-days**, the number of susceptible people taking precautions times
+the length of the step, and it records the prevalence that the `:national` rule
+will read on the next step. The order of the three operations matters:
+`aware_agent_step!` decided this step's transmission from the statuses and the
+prevalence as they stood at the *start* of the step, so the count of aware people
+has to be taken before either is updated.
+
+Because `prevalence` and `aware_days` are written during the run, the properties
+are a `Dict` rather than the named tuple used above.
+
+```{julia}
+#| label: code-ch06-awareness-model
+function initialize_aware_model(seed; information = :none, α = 0.5, m = 1,
+                                info_radius = 3, θ = 0.05,
+                                infectives = I₀, radius = 2, timestep = Δt)
+    model = StandardABM(
+        GridPerson,
+        GridSpaceSingle((40, 25); periodic = true, metric = :chebyshev);
+        agent_step! = aware_agent_step!,
+        model_step! = aware_model_step!,
+        properties = Dict(
+            :β => β, :c => c, :γ => γ, :Δt => timestep, :radius => radius,
+            :information => information, :α => α, :m => m,
+            :info_radius => info_radius, :θ => θ,
+            :prevalence => infectives / N, :aware_days => 0.0,
+        ),
+        rng = StableRNG(seed),
+    )
+    for position in positions(model)
+        add_agent!(position, model; status = :S, next_status = :S)
+    end
+    for id in shuffle(abmrng(model), collect(allids(model)))[1:infectives]
+        model[id].status = :I
+        model[id].next_status = :I
+    end
+    return model
+end
+
+function run_to_extinction(seed; max_steps = 10_000, kwargs...)
+    model = initialize_aware_model(seed; kwargs...)
+    steps = 0
+    while infected_count(model) > 0
+        steps += 1
+        steps > max_steps && error(
+            "still infectious after $max_steps steps; a response too weak to " *
+            "interrupt transmission can run far longer than these settings")
+        step!(model, 1)
+    end
+    return (; final = recovered_count(model), aware_days = model.aware_days)
+end
+
+awareness_seeds = 7000 .+ (1:8)
+
+function summarise_awareness(; kwargs...)
+    runs = [run_to_extinction(seed; kwargs...) for seed in awareness_seeds]
+    return (; final = round(mean(r.final for r in runs); digits = 1),
+              aware_days = round(Int, mean(r.aware_days for r in runs)))
+end
+```
+
+Comparing the two information rules needs a fair basis, because either can be
+made to look better simply by having more people take precautions for longer.
+Aware person-days is that basis: it measures how much precaution was taken. The
+national threshold $\theta$ is therefore chosen so that the national rule has the
+population take roughly the same amount of precaution as the local rule does, and
+only then are the epidemics compared.
+
+```{julia}
+#| label: code-ch06-awareness-comparison
+awareness_comparison = (
+    nobody_reacts = summarise_awareness(information = :none),
+    local_information = summarise_awareness(information = :local, m = 1, α = 0.5),
+    national_information = summarise_awareness(information = :national,
+                                               θ = 0.05, α = 0.5),
+)
+```
+
+At $\theta=0.05$ the national rule accumulates about 3,900 aware person-days
+against the local rule's 4,500, so the two populations take a comparable amount
+of precaution — the national one slightly less. The epidemics are not
+comparable at all: the local rule ends with roughly 47 infections and the
+national rule with over 600, against 656 when nobody reacts. Identical
+precautions, applied by a similar number of people for a similar length of time,
+and an order of magnitude between the outcomes.
+
+A large part of the explanation is targeting. Local information places
+precautions on people whose own neighbourhood holds a case, and on this grid
+every transmission happens between neighbours, so the precautions land where
+transmission is about to occur. A national trigger spreads the same effort evenly
+over a population that is mostly nowhere near a case, and switches it on only
+once prevalence is already high.
+
+This is a stripped-down, single-layer instance of a **coupled
+awareness–epidemic model**, in which a behaviour or awareness process runs
+alongside the disease process over the same individuals. The usual formulation
+gives each process its own layer of a multiplex network — a physical contact
+layer carrying the infection and a separate social layer carrying the
+information, with unaware–aware–unaware (UAU) dynamics on the second
+[@sun2024] — and richer versions let individuals weigh the cost and benefit of
+precautions as a game against their neighbours [@wang2025]. Our $\alpha$ is
+their awareness-induced protection factor written the other way round.
+
+Three assumptions make the result above an optimistic benchmark rather than a
+forecast, and each is a place the literature goes further:
+
+- **The information radius contains the contact radius.** With `info_radius = 3`
+  against a contact radius of 2, at $m=1$ no susceptible with a current
+  infectious contact-neighbour is ever missed. That containment is a mechanism
+  built into the comparison, not an incidental parameter choice. In a multiplex
+  formulation the two layers are genuinely different networks, which is what
+  would be needed for a wider information radius to buy real advance warning.
+- **Awareness has no memory.** It is recomputed from scratch every step, so
+  somebody who sees no infection this step behaves normally again. The standard
+  treatment gives awareness its own forgetting rate, so vigilance decays rather
+  than switching off [@sun2024], or lets the cost of compliance accumulate and
+  fatigue [@wang2025].
+- **Awareness is never transmitted.** People here only ever observe infection;
+  nobody tells anybody. In the reference models awareness is itself contagious,
+  spreading between neighbours at its own rate, so information and disease race
+  each other [@sun2024].
+
+Knowledge is also instantaneous and perfect, where real infection precedes
+symptoms and reporting takes days; both failures push the same way. And every
+aware person-day counts the same whether it stands for a mask or a closed shop,
+so it measures participation and is not a cost. One result from the wider
+literature is worth holding alongside ours: global, mass-media awareness lowers
+prevalence substantially when the protection it induces is near-complete, and
+does much less when that protection is only partial [@sun2024]. Local
+information is not simply better than national information in all settings.
+
+This rule is also the clearest answer to why the method is worth its cost. The
+national rule is a function of $I/N$, and a compartmental model can carry it as a
+transmission rate $\beta(I)$ that falls with prevalence, needing no individuals
+at all. The local rule is a function of one person's own neighbourhood. Writing
+it in $S$, $I$ and $R$ would require the number of susceptible–infectious
+neighbour pairs, then triples, and the system does not close. A model whose state
+is the three totals cannot express the rule.
+
+"Only an agent-based model can do this" would nonetheless be too strong. Pairwise
+formulations and message-passing methods reach the same class of rule, and the
+Markov-chain approximations used in both papers above yield an analytic epidemic
+threshold from the spectral radius of a matrix. They buy that tractability with
+either a restriction on the contact structure or a closure approximation, and
+what a closure discards is a local correlation — the Markov-chain treatments
+assume the states of neighbouring individuals are independent [@sun2024] — which
+is precisely what a rule like this one responds to. An ABM keeps the local
+configuration directly, and pays for it in computation.
 
 ## Validation
 
@@ -380,6 +713,126 @@ That orders the two summaries, not the mean curve against every path: a
 replicate that fades out early can peak below the mean curve. Averaging is not
 interchangeable with taking a maximum, which Exercise 2 makes quantitative.
 
+### Validating a model with no reference solution
+
+Everything checked so far leaned on the ODE. The spatial model cannot be checked
+that way, because the ODE is exactly the thing it moved away from: a gap between
+them is either a discovery about space or a bug in the contact rule, and the
+comparison cannot say which. This is the ordinary difficulty with an
+individual-level model, and it is worth having a method for.
+
+The method is to build a version of the model whose answer you already know.
+Keep every line of the rules, the same grid, the same population and the same
+parameters, and change exactly one thing: draw each contact from the whole
+population rather than from a neighbourhood. That model has no spatial structure
+left, so its $p$ is $I_t/N$ and it should reproduce the ODE to within the
+margins measured above. If it does, the code the two models share is behaving,
+and the search for an explanation of the gap narrows to the one line that
+differs.
+
+In this chapter that control is already built and already checked: it is the
+well-mixed model of the preceding sections, which differs from the grid model
+only in using `random_agent(model)` in place of `nearby_agents`, and whose
+ensemble mean was compared against the ODE above.
+
+A control that passes, though, provides less evidence than it appears to. It
+holds the shared code fixed and changes the contact draw, so it exercises the
+transmission rule, the recovery rule, the two-phase update and the Poisson
+contact count. It does **not** exercise the spatial machinery at all, because
+removing that machinery is precisely what it does. A wrong radius, a metric that
+is not the one you think, a grid that fails to wrap, or a neighbour set that
+includes the focal agent would every one of them pass this control and still be
+present in the spatial model. So check that machinery directly, on the grid the
+model actually runs on.
+
+```{julia}
+#| label: code-ch06-probes
+probe = initialize_grid_model(20250711)
+probe_neighbours = Dict(id => Set(a.id for a in nearby_agents(probe[id], probe, 2))
+                        for id in allids(probe))
+
+@assert all(length(s) == 24 for s in values(probe_neighbours))
+@assert all(length(Set(a.id for a in nearby_agents(probe[id], probe, 1))) == 8
+            for id in allids(probe))
+@assert all(!(id in s) for (id, s) in probe_neighbours)
+@assert all(id in probe_neighbours[other]
+            for (id, s) in probe_neighbours for other in s)
+
+(; people = nagents(probe),
+   cells = length(collect(positions(probe))),
+   degree_at_radius_1 = length(Set(a.id for a in nearby_agents(probe[1], probe, 1))),
+   degree_at_radius_2 = length(first(values(probe_neighbours))))
+```
+
+Every agent has 24 distinct neighbours at radius 2 and 8 at radius 1, nobody is
+their own neighbour, and the neighbour relation is symmetric. A uniform degree is
+the effect of wrapping: on a bounded grid the first check would fail on every
+edge cell. Together the control and these four probes cover more than either does
+alone, and they still do not amount to a proof that the model is correct.
+
+### Extinction and the shape of the outcome distribution
+
+Every run so far started from ten infectives spread across the population, and
+every one took off. Real outbreaks start with one case, and whether anything
+happens at all is then a matter of chance. That gives a second analytic result to
+check against: the branching-process argument of the jump-process chapter
+predicts that a single introduction fails to establish with probability $1/R_0$,
+which is $\gamma/(\beta c) = 0.5$ here.
+
+```{julia}
+#| label: code-ch06-introductions
+function grid_final_size(seed; radius, max_steps = 6000)
+    model = initialize_grid_model(seed; infectives = 1, radius = radius)
+    for _ in 1:max_steps
+        infected_count(model) == 0 && return recovered_count(model)
+        step!(model, 1)
+    end
+    infected_count(model) == 0 && return recovered_count(model)
+    error("epidemic still infectious after $max_steps steps")
+end
+
+introduction_seeds = 9000 .+ (1:200)
+final_sizes = Dict(radius => [grid_final_size(seed; radius) for seed in introduction_seeds]
+                   for radius in (1, 2))
+fizzled = Dict(radius => final_sizes[radius] .< 100 for radius in (1, 2))
+
+introduction_summary = [(; radius,
+    neighbours = (2radius + 1)^2 - 1,
+    fizzle_fraction = round(mean(fizzled[radius]); digits = 3),
+    mean_if_it_takes_off = any(.!fizzled[radius]) ?
+        round(mean(final_sizes[radius][.!fizzled[radius]]); digits = 1) : nothing,
+    mean_over_all_runs = round(mean(final_sizes[radius]); digits = 1))
+    for radius in (1, 2)]
+```
+
+At radius 2 the fizzle fraction lands close to the mass-action $1/R_0 = 0.5$; at
+radius 1 it is nowhere near it, even though $\beta$, $c$ and $\gamma$ — and hence
+$\beta c/\gamma = 2$ — are identical in both. Changing only the size of the
+neighbourhood changes whether the branching-process prediction applies at all,
+which is the most direct measurement in this chapter of what the spatial
+structure is doing.
+
+```{julia}
+#| label: fig-ch06-introductions
+#| fig-cap: "Final epidemic size across 200 introductions of a single infectious person, at contact radius 1 and radius 2. At radius 1 the outcomes form one continuous spread of small outbreaks; at radius 2 they fall into two separated groups, and the overall mean lies in the gap between them."
+fig = Figure(size = (860, 360))
+for (j, radius) in enumerate((1, 2))
+    ax = Axis(fig[1, j]; xlabel = "final number recovered", ylabel = "runs",
+        title = "contact radius $radius")
+    hist!(ax, Float64.(final_sizes[radius]); bins = 40, color = (:steelblue, 0.8))
+    vlines!(ax, [mean(final_sizes[radius])]; color = :firebrick, linestyle = :dash,
+        linewidth = 2)
+end
+fig
+```
+
+The radius 2 panel is the reason to report two numbers rather than one. The
+outcomes are bimodal: most runs either die out almost immediately or grow large,
+and the mean over all runs falls in the sparsely populated gap between the two
+groups, describing an outcome the model almost never produces. The honest summary
+is a probability of take-off together with a size given take-off, because each of
+those describes something that actually happens.
+
 ## Interpretation and limitations
 
 The ABM can be extended by replacing the no-space model with a grid, network,
@@ -389,6 +842,47 @@ create clustering, superspreading, and spatial waves that a mass-action ODE
 cannot represent. The price is computational and inferential: agent rules
 need careful calibration, contact mechanisms can be difficult to observe, and
 random seeds do not remove structural uncertainty.
+
+That price is worth paying only for some questions, and two decisions that often
+get run together are worth separating. Whether a model should be **stochastic**
+is settled by whether counts are small enough that a probability is wanted rather
+than a curve — and the jump-process chapter answers that with no agents at all,
+more cheaply than anything here. Whether a model should be **individual and
+spatial** is a further question, and it is settled by whether contact structure
+or local heterogeneity moves the answer you were asked for. The single
+introductions above measure exactly that: identical $\beta$, $c$ and $\gamma$,
+and changing only the neighbourhood size moves the fraction of introductions that
+establish. Where such a shift does not occur, the equations are cheaper, faster,
+and easier to fit.
+
+Unlike the timestep of an ODE solver, $\Delta t$ here is part of the model rather
+than a numerical tolerance. In the ODE chapters the solver chose and refined it
+until it stopped mattering; in this model it sets how many contacts a person
+makes per step and how often anyone can recover, so it belongs to the model
+definition and has to be swept deliberately. Freezing the statuses within a step
+cuts both ways: an agent that recovers at the end of a step was treated as
+infectious for every contact attempt made during it, while an agent infected
+during the step cannot transmit until the step after. One of those raises
+transmission and the other lowers it, so the net direction is a question for
+measurement rather than argument, which is what Exercise 2 does.
+
+Contacts are drawn with replacement, which matters more on the grid than in the
+well-mixed model: a susceptible can meet the same neighbour twice out of only 24.
+That is not double counting, because $c$ is a rate of contact *events* rather
+than of distinct people met, and at $c=10$ with $\Delta t=0.1$ the mean number of
+draws per step is one, so a repeat arises in roughly 2% of steps. Drawing
+distinct people instead would make the number of contacts depend on how many
+neighbours a person happens to have, which is a different modelling assumption
+rather than a correction.
+
+Finally, a seed buys less reproducibility than it appears to. `StableRNG` fixes
+the random *stream*, not what the code draws from it: `shuffle`, Poisson sampling
+and `rand(rng, collection)` are library implementations, and any of them may
+consume a different number of values, or combine them differently, in another
+version. The figures quoted in this chapter therefore depend on the Julia version
+and the resolved package set as much as on the seeds, both of which are committed
+in this repository's `Project.toml` and `Manifest.toml`. On another combination,
+expect the conclusions to hold and the digits not to.
 
 Our synchronous two-phase update avoids an order artifact. The contact rule
 samples with replacement, so an agent can draw itself as a contact. A
@@ -409,36 +903,30 @@ its modeling rationale are described by Datseris, Vahdati, and DuBois
 
 ### Exercise 1 {#ch09-ex1}
 
-Replace the no-space model with a spatial one, so that a susceptible can only
-contact its immediate neighbors. Use this specification, which keeps the
-population identical to the chapter's and leaves no ambiguity about who is
-adjacent to whom:
+Use `initialize_grid_model` from this chapter, which already supplies the
+periodic $40\times25$ `GridSpaceSingle` with `metric = :chebyshev`, one
+stationary agent per cell, and the same $\beta$, $c$, $\gamma$, and $\Delta t$.
+Run it at `radius = 1`, so that a susceptible can contact only the eight-cell
+Moore neighborhood, with the chapter's 10 initial infectives.
 
-- a periodic $40\times25$ `GridSpaceSingle` with `metric = :chebyshev`, so
-  radius 1 is the eight-cell Moore neighborhood;
-- one stationary agent per cell, giving $N=1000$ as before;
-- 10 initial infectives chosen uniformly at random, everyone else susceptible;
-- the same $\beta$, $c$, $\gamma$, and $\Delta t$;
-- contacts drawn uniformly from `nearby_agents(person, model, 1)`;
-- a run of at least 60 time units, continued until $I=0$: spatial spread is
-  far slower than well-mixed spread, and the chapter's 30 units can end while
-  the well-mixed reference and spatial realizations are still running, so a
-  count recorded there need not be a final size.
-
-Derive the agent from `GridAgent{2}`, which already supplies `pos`, so do not
-add a position field by hand. Because the grid is full and periodic, every
-agent has exactly eight neighbors and the empty-neighborhood case cannot
-arise.
+Each run needs at least 60 time units, continued until $I=0$: spatial spread is
+far slower than well-mixed spread, and the 30 units used earlier in the chapter
+can end while both the well-mixed reference and the spatial realizations are
+still running, so a count recorded there need not be a final size. Confirm that
+$I=0$ at the end of every run before calling the recovered count a final size,
+and extend the horizon if necessary.
 
 Verify $S+I+R=N$, then compare the final size against the well-mixed model of
 this chapter over several seeds, using the same stopping rule. Explain which
 assumption behind Equation @eq-abm-infection has failed. Note that while
 $\beta$, $c$, and $\gamma$ are unchanged, the combination $\beta c/\gamma=2$
 is the *mass-action* reproduction number and is not the spatial model's
-$R_0$; part of the exercise is to say why not. Repeating the run at radius 5
-will help you check your explanation. Confirm that $I=0$ at the end of every
-run before calling the recovered count a final size; extend the horizon if
-necessary.
+$R_0$; the substance of the exercise is to say why not, quantitatively — work
+out how many *distinct* susceptibles an index case reaches when repeated
+contacts land on a fixed pool of eight neighbors, and compare that with 2.
+Repeating the run at radius 5, where each agent has 120 neighbors, will let you
+check your explanation against a case where mass action should be much closer to
+recovered.
 
 ### Exercise 2 {#ch09-ex2}
 
@@ -528,5 +1016,6 @@ would count it twice.
 ## Companion materials
 
 - [Slides](../slides/chapters/09-agent-based-models.html)
+- [Slides: awareness and behaviour](../slides/chapters/09-agent-based-models-awareness.html)
 - [Pluto preview](../notebook-exports/chapters/09-agent-based-models.html)
 - [Pluto source](../notebooks/chapters/09-agent-based-models.jl)

@@ -25,6 +25,20 @@ errors = String[]
 
 length(units) == 25 || push!(errors, "Expected 25 teaching units, found $(length(units)).")
 
+# A unit normally occupies one session. `sessions = [1, 2]` lets a long unit
+# claim several consecutive slots on the same day; `session` stays the first of
+# them so that the schedule still sorts on a single number.
+function unit_sessions(unit)
+    haskey(unit, "sessions") && return collect(unit["sessions"])
+    haskey(unit, "session") && return [unit["session"]]
+    return Int[]
+end
+
+function session_phrase(sessions)
+    length(sessions) == 1 && return "Session $(only(sessions))"
+    return "Sessions " * join(sessions[1:(end - 1)], ", ") * " and $(sessions[end])"
+end
+
 function unit_stem(unit)
     number = replace(unit["id"], r"^[a-z]+" => "")
     "$(number)-$(unit["slug"])"
@@ -81,11 +95,13 @@ for unit in units
             haskey(unit, key) || push!(errors, "$id is a workshop unit but has no '$key'.")
         end
         if haskey(unit, "day") && haskey(unit, "session")
-            slot = (unit["day"], unit["session"])
-            if haskey(workshop_slots, slot)
-                push!(errors, "$id and $(workshop_slots[slot]) both claim day $(slot[1]) session $(slot[2]).")
-            else
-                workshop_slots[slot] = id
+            for session in unit_sessions(unit)
+                slot = (unit["day"], session)
+                if haskey(workshop_slots, slot)
+                    push!(errors, "$id and $(workshop_slots[slot]) both claim day $(slot[1]) session $(slot[2]).")
+                else
+                    workshop_slots[slot] = id
+                end
             end
         end
         haskey(unit, "time_minutes") && push!(workshop_minutes, unit["time_minutes"])
@@ -116,7 +132,7 @@ for unit in units
     # The opening callout on every book page is a further copy of the schedule, so it
     # drifts silently on a reorder unless it is checked against course-units.toml.
     expected_callout = if track == "workshop" && haskey(unit, "day") && haskey(unit, "session")
-        "**Workshop programme**: taught live on Day $(unit["day"]), Session $(unit["session"])."
+        "**Workshop programme**: taught live on Day $(unit["day"]), $(session_phrase(unit_sessions(unit)))."
     elseif track == "self-study"
         "**Self-study**: not taught at the workshop"
     end

@@ -717,13 +717,15 @@ resource abstraction that `ConcurrentSim` provides natively.
 #### Solution to Exercise 1 {#solution-ch09-ex1}
 
 The grid model changes the contact assumption: a susceptible samples only
-agents in its Moore neighborhood.  `GridSpaceSingle` holds at most one agent
-per cell, so filling every cell of a periodic $40\times25$ grid gives the same
-$N=1000$ population as the chapter, with exactly eight neighbors each and no
-boundary special cases.  `GridAgent{2}` supplies `pos`, and `:chebyshev` is
-the metric under which radius 1 is the Moore neighborhood.  The radius is a
-model property here only so the same code can answer the final part of the
-question.
+agents in its Moore neighborhood.  This is the chapter's `initialize_grid_model`
+run at `radius = 1`, repeated here in full because each page renders as its own
+document and cannot reach the chapter's definitions.  `GridSpaceSingle` holds at
+most one agent per cell, so filling every cell of a periodic $40\times25$ grid
+gives the same $N=1000$ population as the chapter, with exactly eight neighbors
+each and no boundary special cases.  `GridAgent{2}` supplies `pos`, and
+`:chebyshev` is the metric under which radius 1 is the Moore neighborhood.  The
+radius is a model property so that the same code can answer the final part of the
+question at radius 5.
 
 ```{julia}
 using Agents
