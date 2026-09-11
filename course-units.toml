@@ -146,6 +146,7 @@ status = "complete"
 track = "workshop"
 day = 3
 session = 1
+sessions = [1, 2]
 time_minutes = 165
 environment = "root"
 packages = ["Agents", "Distributions", "StableRNGs", "CairoMakie"]
