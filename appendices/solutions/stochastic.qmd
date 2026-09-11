@@ -488,16 +488,19 @@ form: always check the return code before reading the numbers.
 
 #### Solution to Exercise 1 {#solution-ch08-ex1}
 
-The exercise asks for an `EventQueueABM` recovery event whose `timing`
-returns the fixed value $\tau = 1/\gamma = 4$ instead of an exponential
-draw, compared against the deterministic DDE at the same parameters.
+The exercise asks for the exponential recovery draw in `life_course` to be
+replaced by a fixed period $\tau = 1/\gamma = 4$, with the ensemble mean compared
+against the exponential version. In a process-oriented simulation this is a
+one-line change: the infectious period is just a number drawn before waiting, so
+a different distribution needs no new machinery — no history function, no extra
+agent state, and no change to the scheduler.
 
 ```{julia}
 #| label: code-sol-ch08-ex1
-using Agents
+using ConcurrentSim
+using ResumableFunctions
+using Distributions
 using Random
-using DelayDiffEq
-using OrdinaryDiffEq
 
 β = 0.05
 c = 10.0
@@ -507,71 +510,105 @@ I0 = 10
 tf = 40.0
 τ = 1 / γ
 
-@agent struct QueuePerson(NoSpaceAgent)
+mutable struct DESPerson
+    id::Int
     status::Symbol
 end
 
-function transmit!(agent, model)
-    alter = random_agent(model)
-    if alter.status == :I && (rand(abmrng(model)) ≤ model.β)
-        agent.status = :I
+mutable struct DESModel
+    sim::Simulation
+    people::Vector{DESPerson}
+    times::Vector{Float64}
+    infectious::Vector{Int}
+end
+
+function des_record!(m::DESModel)
+    push!(m.times, now(m.sim))
+    push!(m.infectious, count(p -> p.status == :I, m.people))
+    return nothing
+end
+
+# identical to the chapter's life_course except for the recovery wait below
+@resumable function des_life_course(sim::Simulation, person::DESPerson,
+                                    m::DESModel, rng, fixed::Bool)
+    while person.status == :S
+        @yield timeout(sim, rand(rng, Exponential(1 / c)))
+        partner = rand(rng, m.people)
+        if partner.status == :I && rand(rng) < β
+            person.status = :I
+            des_record!(m)
+        end
     end
-    return nothing
+    if person.status == :I
+        # the whole exercise is this ternary
+        @yield timeout(sim, fixed ? τ : rand(rng, Exponential(1 / γ)))
+        person.status = :R
+        des_record!(m)
+    end
 end
-recover!(agent, model) = (agent.status = :R)
 
-transmit_propensity(agent, model) = agent.status == :S ? model.c : 0.0
-recovery_propensity(agent, model) = agent.status == :I ? model.γ : 0.0
-fixed_delay_timing(agent, model, propensity) = agent.status == :I ? model.τ : Inf
-
-infected(x) = count(==(:I), x)
-
-properties = Dict(:β => β, :c => c, :γ => γ, :τ => τ)
-transmit_event = AgentEvent(action! = transmit!, propensity = transmit_propensity)
-recovery_event = AgentEvent(action! = recover!, propensity = recovery_propensity, timing = fixed_delay_timing)
-model = EventQueueABM(QueuePerson, (transmit_event, recovery_event); properties, rng = Xoshiro(20250711))
-for i in 1:N
-    add_agent!(QueuePerson(; id = i, status = i <= I0 ? :I : :S), model)
+function simulate_des(seed, fixed)
+    sim = Simulation()
+    people = [DESPerson(i, i <= N - I0 ? :S : :I) for i in 1:N]
+    m = DESModel(sim, people, [0.0], [I0])
+    rng = Xoshiro(seed)
+    for person in people
+        @process des_life_course(sim, person, m, rng, fixed)
+    end
+    run(sim, tf)
+    return m
 end
-data, _ = run!(model, tf; adata = [(:status, infected)])
 
-peak_idx = argmax(data.infected_status)
-eq_peak = data.infected_status[peak_idx]
-eq_peak_t = data.time[peak_idx]
+# recording happens only at status changes, so step-reconstruct onto a grid
+des_grid = collect(0.0:0.5:tf)
 
-function sir_dde!(du, u, h, p, t)
-    S, I, R = u
-    βp, cp, τp = p
-    Ntot = S + I + R
-    λ = βp * cp * I / Ntot
-    Sd, Id, Rd = h(p, t - τp)
-    Ntotd = Sd + Id + Rd
-    λd = βp * cp * Id / Ntotd
-    du[1] = -λ * S
-    du[2] = λ * S - λd * Sd
-    du[3] = λd * Sd
-    return nothing
+function des_on_grid(m::DESModel)
+    values = zeros(length(des_grid))
+    for (k, t) in enumerate(des_grid)
+        idx = searchsortedlast(m.times, t)
+        values[k] = m.infectious[max(idx, 1)]
+    end
+    return values
 end
-sir_history(p, t) = [1000.0, 0.0, 0.0]
-sol_dde = solve(DDEProblem(sir_dde!, [990.0, 10.0, 0.0], sir_history, (0.0, tf), (β, c, τ);
-                            constant_lags = [τ]),
-                 MethodOfSteps(Tsit5()); reltol = 1e-8, abstol = 1e-8)
-dde_peak, dde_idx = findmax(sol_dde[2, :])
 
-(eq_peak = eq_peak, eq_peak_t = round(eq_peak_t; digits = 2),
- dde_peak = round(dde_peak; digits = 1), dde_peak_t = round(sol_dde.t[dde_idx]; digits = 2))
+# a single path says nothing about the change, so compare ensembles, using the
+# same forty realisations and seeds as the chapter's validation
+function ensemble_mean_I(fixed)
+    runs = [des_on_grid(simulate_des(21_000 + k, fixed)) for k in 1:40]
+    return [sum(getindex.(runs, k)) / length(runs) for k in eachindex(des_grid)]
+end
+
+exponential_mean = ensemble_mean_I(false)
+fixed_mean = ensemble_mean_I(true)
+
+exp_peak, exp_idx = findmax(exponential_mean)
+fix_peak, fix_idx = findmax(fixed_mean)
+
+(
+    exponential_peak = round(exp_peak; digits = 1),
+    exponential_peak_t = des_grid[exp_idx],
+    fixed_peak = round(fix_peak; digits = 1),
+    fixed_peak_t = des_grid[fix_idx],
+    peak_ratio = round(fix_peak / exp_peak; digits = 3),
+)
 ```
 
-The single stochastic `EventQueueABM` realisation peaks close to — a bit
-below, as expected for one finite-population sample — the deterministic
-DDE's peak, and at a comparable time. This individual-level construction
-reaches the same fixed-delay assumption **without a history function**: no
-population-level state needs to "remember" what happened $\tau$ time units
-ago, because each infectious agent's own scheduled recovery event already
-carries that information. The DDE's method of steps is a workaround for the
-fact that a population-level ODE has *forgotten* who was infected when; an
-individual-level model like this one never has that problem in the first
-place.
+Both ensembles hold the *mean* infectious period at $1/\gamma = 4$ and differ
+only in its **shape**, yet the fixed-delay ensemble peaks higher and earlier.
+This is the generation-interval argument of @sec-non-exponential-periods. An
+exponential period has a long tail: some individuals stay infectious far longer
+than average while many recover almost immediately, which spreads each
+generation of transmission out in time. Collapsing the period onto its mean
+removes that spread, so a cohort infected together also recovers together and
+the epidemic burns through the susceptible pool faster, concentrating incidence
+into a sharper, earlier peak.
+
+Note what the change did *not* require. A population-level model has forgotten
+who was infected and when, so imposing a fixed duration on it needs a history
+function and lag-aware numerics — the delay equations of
+@sec-non-exponential-periods. An individual-level process already carries that
+information in each individual's own scheduled event, so the same assumption
+costs a single ternary and no new solver.
 
 #### Solution to Exercise 2 {#solution-ch08-ex2}
 
@@ -668,13 +705,12 @@ that an individual's `status` is still `:I` (and so can still transmit)
 throughout both the *waiting* period and the treatment `timeout`; a scarce
 bed supply lengthens the effective time each individual spends counted as
 infectious, which is exactly the kind of resource-contention effect a
-`Resource` makes easy to express. `EventQueueABM`, as used in this appendix,
-has propensities and actions attached to individual agents but no concept
-of a shared, capacity-limited object that multiple agents must queue for —
-modeling beds there would require encoding the queue and occupancy
-bookkeeping by hand inside the agent's own state, which is precisely the
-kind of general process/resource abstraction `ConcurrentSim` provides
-natively.
+`Resource` makes easy to express. The agent-based models of
+@sec-agent-based-models attach rules and state to individual agents but have no
+concept of a shared, capacity-limited object that agents must queue for, so
+modeling beds there would mean encoding the queue and the occupancy bookkeeping
+by hand inside the agents' own state — precisely the general process and
+resource abstraction that `ConcurrentSim` provides natively.
 
 ### Agent-based models
 
