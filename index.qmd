@@ -1,5 +1,3 @@
-# Modeling Epidemics with Julia {.unnumbered}
-
 This executable course develops mathematical models from their assumptions and equations through simulation, inference, and decision-making in Julia.
 
 The course supports a mixed audience:
