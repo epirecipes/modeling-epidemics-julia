@@ -14,7 +14,7 @@ The ten sessions move in the following order: deterministic foundations and disc
 - **Day 2: beyond the basics.** Continuous-time jump processes, reaction networks and moment closure, sensitivity and identifiability, and interventions and optimisation.
 - **Day 3: a new perspective.** Agent-based models across two sessions, building the model and then extending it.
 
-The workshop deliberately stops before parameter estimation and Bayesian inference ([ch12](chapters/12-parameter-estimation.html), [ch13](chapters/13-bayesian-inference.html)). For those interested in fitting models to data and inference, we recommend having a look at the modelling course ["Model Fitting and Inference for Infectious Disease Dynamics"](https://www.lshtm.ac.uk/study/courses/short-courses/infectious-diseases-dynamics).
+The workshop deliberately stops before parameter estimation and Bayesian inference ([ch12](chapters/12-parameter-estimation.html), [ch13](chapters/13-bayesian-inference.html)). For those interested in fitting models to data and inference, we recommend having a look at the modelling course ["Model Fitting and Inference for Infectious Disease Dynamics"](https://mfiidd.github.io/mfiidd/).
 
 ## Before the workshop
 
