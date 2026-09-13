@@ -2,7 +2,7 @@
 title: "Worksheet — Reaction networks and moment closure"
 course-unit: ch07-reaction-networks
 artifact: worksheet
-status: draft
+status: complete
 ---
 
 # Worksheet: change the network, not the model
@@ -104,7 +104,7 @@ model needs rewriting — that is the whole point.
 # TODO: define `sirs_network` as the SIR network plus a waning reaction
 # `ω, R --> S`. Remember to add :ω to the parameter map below.
 sirs_network = missing
-sirs_parameters = [:κ => κ, :γ => γ, :ω => 0.02]
+sirs_parameters = [:κ => κ, :γ => γ, :ω => 0.02];
 ```
 
 ```{julia}
@@ -177,8 +177,17 @@ function closure_gap(population; trajectories = 100, seed0 = 500)
     ensemble = cat((one_run(seed0 + k) for k in 1:trajectories)...; dims = 3)
     ensemble_mean = dropdims(mean(ensemble; dims = 3), dims = 3)[2, :]
     extinct = mean(ensemble[2, end, :] .== 0)
+
+    # The closure is an ODE like any other and its solver can give up early, in
+    # which case `saveat` returns fewer points than `times` asked for. Report the
+    # retcode and compare over the horizon the closure actually reached, rather
+    # than assuming it got to t = 40.
+    horizon = length(closure_mean)
     return (; population,
-            relative_gap = maximum(abs.(closure_mean .- ensemble_mean)) / population,
+            retcode = solution.retcode,
+            reached = solution.t[end],
+            relative_gap = maximum(abs.(closure_mean .- ensemble_mean[1:horizon])) / population,
+            smallest_mean = minimum(closure_mean),
             extinct)
 end
 nothing
@@ -196,10 +205,14 @@ if gaps === missing
 else
     for g in gaps
         println("N = ", lpad(g.population, 5),
-                "  relative gap = ", round(g.relative_gap; digits = 4),
-                "  extinct fraction = ", round(g.extinct; digits = 3))
+                "  ", rpad(g.retcode, 9),
+                "  reached t = ", lpad(g.reached, 4),
+                "  relative gap = ", lpad(round(g.relative_gap; digits = 4), 6),
+                "  extinct = ", lpad(round(g.extinct; digits = 2), 4),
+                "  smallest mean = ", lpad(round(g.smallest_mean; digits = 1), 8))
     end
-    println("\n✓ compare the two columns: the closure degrades as extinction becomes common")
+    println("\n✓ read the columns together: the closure degrades, then fails outright,")
+    println("  as extinction becomes the common outcome")
 end
 ```
 
