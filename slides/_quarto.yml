@@ -6,6 +6,8 @@ project:
     - chapters/*.qmd
     - appendices/*.qmd
 
+bibliography: ../references.bib
+
 engines: [julia]
 
 julia:

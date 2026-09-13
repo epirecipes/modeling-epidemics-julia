@@ -9,7 +9,7 @@ day = 1
 session = 1
 time_minutes = 90
 environment = "root"
-packages = ["Julia standard library", "StableRNGs"]
+packages = ["Julia standard library", "Catalyst", "ForwardDiff", "StableRNGs", "CairoMakie"]
 sources = ["https://docs.julialang.org/en/v1/"]
 
 [[units]]
