@@ -21,13 +21,13 @@ const DESCRIPTOR = :grey35
 
 outcomes = [
     (85, palette.susceptible, "Simulate",
-        "deterministic · stochastic ·\nindividual-based models"),
+        "Deterministic · Stochastic ·\nAgent-based models"),
     (62, palette.incidence, "Infer",
-        "observation models · calibration ·\nBayesian inference · identifiability"),
+        "Observation models · \nBayesian inference · Identifiability"),
     (39, palette.recovered, "Compare scenarios",
-        "alternative assumptions · uncertainty ·\nintervention strategies"),
+        "Testing alternative assumptions · Uncertainty"),
     (16, palette.infected, "Design interventions",
-        "objectives · constraints · optimisation"),
+        "Objectives · Constraints · Optimisation"),
 ]
 
 # Font sizes are pixels and box geometry is in data units, so convert one to the
@@ -127,7 +127,7 @@ elsewhere. The methods we show here are not unique to Julia.
 What Julia brings together:
 
 - Model code can remain generic. Multiple dispatch selects an applicable method from the argument types, and those types give the compiler information it can use to optimise execution.
-- Julia’s scientific packages make use of shared types and interfaces. This often allows a problem specification to be reused with compatible solvers and embedded in sensitivity, optimisation and inference workflows.
+- Julia’s scientific packages make use of shared types and interfaces. This often allows a problem specification to be reused on different workflows.
 
 Together, these features can mean less duplicated model code and less
 framework-specific integration code when moving between stages of an analysis.
@@ -254,20 +254,15 @@ end
 (value_of(1 + 1), @value_of 1 + 1)
 ```
 
-- The same text both times: the function is handed `2`, the macro is handed
-  `:(1 + 1)`, the code itself — operations at the branches, names at the
-  leaves, an *abstract syntax tree*.
-- Anything starting with `@` is a **macro**: it receives that structure and
-  returns a different one, and what it returns is what runs.
+- The function returns `2`, while the macro returns a `QuoteNode` object, which is a data structure that represents the code `:(1 + 1)`.
 
+- `@macroexpand` shows you what cames back from a macro.
+For example: 
 ```{julia}
 #| label: s-p01-macroexpand
 #| echo: true
 @macroexpand @assert x > 0
 ```
-
-- `@macroexpand` shows you what came back: `@assert` became an `if`, keeping
-  your source text for the error message.
 
 ::: {.notes}
 A function receives values, a macro receives the unevaluated code. 
@@ -281,7 +276,7 @@ function could not have produced it, because by the time a function was called
 the comparison would already be a `Bool`. 
 :::
 
-## You have done this in R {.smaller}
+## Expressions in R {.smaller}
 
 ::: {.columns}
 ::: {.column width="50%"}
@@ -312,50 +307,10 @@ eval(e)
 
 - `:( )` is Julia's `quote()`: it captures the code instead of running it, and
   what comes back is an object you can inspect and change.
-- Inspecting and rewriting code before it runs is **not** a Julia distinction.
-- The difference is what happens next: R runs *bytecode* through its own virtual
-  machine; Julia compiles to instructions the processor runs directly.
 
 ::: {.notes}
 The same rewriting mechanism costs R an interpretation step at run time and costs
 Julia nothing, because the rewritten code is compiled like everything else.
-:::
-
-## Manipulating the abstract syntax tree (AST) {.smaller}
-
-Because the AST is just a standard object, you can modify it at runtime before executing it. 
-For example, we can change an expression (written `:( )`) from an addition into a multiplication:
-
-```{julia}
-#| label: s-p01-ast-manipulate
-#| echo: true
-# 1. Capture the expression without evaluating it
-my_expr = :(2 + 5)
-
-# 2. Inspect the components of the AST
-println("Original Head: ", my_expr.head) # Output: call
-println("Original Args: ", my_expr.args) # Output: Any[:+, 2, 5]
-
-# 3. Modify the AST: Change the function symbol from + to *
-my_expr.args[1] = :*
-
-# 4. Evaluate the modified tree
-result = eval(my_expr)
-println("Result: ", result) # Output: 10 (instead of 7!)
-```
-
-::: {.notes}
-This is the slow version of the previous slide, so it earns its place only if the
-room looked blank there. Skip it if they were with you.
-
-`my_expr` is an ordinary object. `.head` says what kind of expression it is,
-`.args` holds the pieces, and assigning into `.args` edits the code before
-anything runs. None of that is special syntax; it is field access on a value,
-which is what makes "code is data" literal rather than a figure of speech.
-
-`eval` is what finally runs it. A macro does this same thing automatically, which
-is what lets the next slides read `S + I --> 2I` as a reaction rather than an
-error.
 :::
 
 ## Julia code can stay close to the mathematics {.smaller}
@@ -409,15 +364,13 @@ equations(ode_model(sir_network))
 :::
 
 ::: {.notes}
-This is the payoff of the macro block, so give it room. `S + I --> 2I` is not
-ordinary Julia: `-->` is an operator that nothing gives a meaning to, so the line
+A Susceptible individual ($S$) meets an Infectious individual ($I$). They interact, the infection spreads, and the result is now two Infectious individuals ($2I$). This transition happens at a specific per-capita transmission rate $\beta c/N$.
+
+The recovery rate $\gamma$ determines how quickly an Infectious individual ($I$) becomes Recovered ($R$).
+
+`-->` is an operator that nothing gives a meaning to, so the line
 parses but cannot be evaluated. The macro supplies the meaning, reads it as a
 reaction, and generates what is on the right.
-
-Run the right-hand cell live if the room is with you. The point lands when they
-see the derivatives match the arrows they just read, and that nobody wrote them.
-
-This shortcut covers mass-action reactions.
 :::
 
 ## Named tuples and multiple dispatch {.smaller}
@@ -450,89 +403,6 @@ A positional parameter tuple that someone reorders still runs, and returns wrong
 Reading by field cannot fail that way. 
 
 On dispatch, the example is built so the *second* argument decides, because the habit from other languages is to expect the first argument, or a receiver object, to own the behaviour. It does not here. That is what lets a solver package written by one group and a problem type written by another meet without either importing the other's opinions.
-:::
-
-## Differentiating model code {.smaller}
-
-::: {.columns}
-::: {.column width="50%"}
-**PyTorch, JAX, TensorFlow**
-
-A fixed catalogue of array
-operations with derivatives
-attached.
-
-Your model has to be rewritten
-in `torch` operations first.
-:::
-
-::: {.column width="50%"}
-**ForwardDiff, Enzyme**
-
-A *dual number* carries a value
-and its derivative.
-:::
-:::
-
-```{julia}
-#| label: s-p01-forwarddiff
-#| echo: true
-using ForwardDiff
-
-function sir_ode!(du, u, (; β, c, γ, N), t)   # a semicolon (;) inside a function definition or call is used to separate positional arguments from keyword arguments
-    S, I, R = u
-    λ = β * c * I / N
-    du[1] = -λ * S
-    du[2] =  λ * S - γ * I
-    du[3] =  γ * I
-    return nothing
-end
-
-u0 = [990.0, 10.0, 0.0]
-p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
-
-function new_infection_rate(β)
-    du = zeros(eltype(β), 3)
-    sir_ode!(du, u0, merge(p, (β = β,)), 0.0)  
-    return du[2]
-end
-
-ForwardDiff.derivative(new_infection_rate, p.β)
-```
-
-::: {.notes}
-$\mathrm{d}I/\mathrm{d}t$ is $\beta c S I / N - \gamma I$, s
-o the derivative with respect to $\beta$ is $c S I / N = 10 \times 990 \times 10 / 1000 = 99$. 
-
-Anyone who has used PyTorch: it differentiates a library, Julia differentiates the language. 
-
-Where these gradients go: the sensitivity and identifiability session on Day 2,
-and the interventions session, both use them. Model fitting and Bayesian
-inference are not sessions here, and the programme points at the LSHTM course
-"Model Fitting and Inference for Infectious Disease Dynamics" instead.
-:::
-
-## The rule this puts on your code {.smaller}
-
-```julia
-du = zeros(3)              # Vector{Float64}: blocks differentiation
-du = zeros(eltype(β), 3)   # matches whatever the caller passed
-```
-
-```
-MethodError: no method matching
-  Float64(::ForwardDiff.Dual{...})
-```
-
-- Differentiation calls your function with a A *dual number* carries a value
-and its derivative.
-- Anything pinned to `Float64` refuses it: the buffer you write into, or a
-  signature such as `sir_ode!(du::Vector{Float64}, ...)`.
-- This is the most common reason a model that simulates correctly cannot be
-  fitted.
-
-::: {.notes}
-
 :::
 
 ## Broadcasting: the dot {.smaller}
@@ -593,6 +463,67 @@ out == per_100k  # comparing the `out` array defined here with the `per_100k` ar
 The `!` signals that the function modifies an argument, and `.=` computes and writes each element directly into the existing `out` array. The result is stored in `out`, not returned. Solvers can reuse this array across repeated calls, avoiding a new output array each time.
 :::
 
+## Differentiating model code {.center}
+
+Three ways to get a derivative of model code:
+
+- **By hand**: exact, but redone every time the model changes
+- **Finite differences**: $(f(\beta + h) - f(\beta))/h$, but it is an approximation.
+- **Automatic differentiation (AD)**: the computer applies the chain rule to the operations on the system of equations
+
+## Differentiating model code {.smaller}
+
+_ForwardDiff_ and _Enzyme_ implement AD. Here is an example using ForwardDiff:
+
+```{julia}
+#| label: s-p01-forwarddiff
+#| echo: true
+using ForwardDiff
+
+function sir_ode!(du, u, (; β, c, γ, N), t)   # a semicolon (;) inside a function definition or call 
+                                              #is used to separate positional arg from keyword arg.
+    S, I, R = u
+    λ = β * c * I / N
+    du[1] = -λ * S
+    du[2] =  λ * S - γ * I
+    du[3] =  γ * I
+    return nothing
+end
+
+u0 = [990.0, 10.0, 0.0]
+p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
+
+function new_infection_rate(β)
+    du = zeros(eltype(β), 3)
+    sir_ode!(du, u0, merge(p, (β = β,)), 0.0)  
+    return du[2]
+end
+
+ForwardDiff.derivative(new_infection_rate, p.β)
+```
+
+- Using `eltype()` on the input collection to extract the correct type.
+
+::: {.notes}
+$\mathrm{d}I/\mathrm{d}t$ is $\beta c S I / N - \gamma I$, so the derivative with respect to $\beta$ is $c S I / N = 10 \times 990 \times 10 / 1000 = 99$. 
+
+During a normal simulation, `eltype` returns `Float64`, while during a ForwardDiff simulation, `eltype` returns `ForwardDiff.Dual`.
+
+Anyone who has used PyTorch: it differentiates a library, Julia differentiates the language. 
+
+Why two packages. `ForwardDiff` is forward-mode, and its cost grows with the
+number of parameters you differentiate with respect to, so it is the cheap
+choice for a handful of them. `Enzyme` also does reverse-mode, where the cost
+grows with the number of outputs instead, which is what you want for the
+gradient of a single likelihood with respect to many parameters. Both are called
+the same way on the same unmodified model code.
+
+Where these gradients go: the sensitivity and identifiability session on Day 2,
+and the interventions session, both use them. Model fitting and Bayesian
+inference are not sessions here, and the programme points at the LSHTM course
+"Model Fitting and Inference for Infectious Disease Dynamics" instead.
+:::
+
 ## A figure from code
 
 ```{julia}
@@ -616,24 +547,31 @@ fig
 
 using StableRNGs
 
-seed = 123
+a = rand(StableRNG(123), 3)   # a new generator, seed 123, returns three numbers
+b = rand(StableRNG(123), 2)   # another new generator, same seed returns two numbers
 
-draws_a = rand(StableRNG(seed), 1)
-draws_b = rand(StableRNG(seed), 1)
-draws_c = rand(StableRNG(seed + 1), 1)
+rng = StableRNG(123)          # one generator, used twice
+c = rand(rng, 3)
+d = rand(rng, 3)
 
-println("draws_a == draws_b: ", draws_a == draws_b)
-println("draws_a != draws_c: ", draws_a != draws_c)
-println("draws_a: ", draws_a, " draws_b: ", draws_b, " draws_c: ", draws_c)
+println("a, new generator:   ", round.(a; digits = 3))
+println("b, new generator:   ", round.(b; digits = 3))
+println("c, rng first call:  ", round.(c; digits = 3))
+println("d, rng second call: ", round.(d; digits = 3))
 ```
 
-- A random-number generator produces a sequence
-- The seed determines where that sequence starts 
-- Recreating `StableRNG(123)` reproduces the same draws
-- The generator advances when it is used, so another call using the same generator produces the next values in the sequence
+- A random-number generator produces a sequence, and the seed says where that sequence starts
+- `a`, `b` and `c` each start a fresh sequence from seed 123, so they agree number for number — `b` only asked for the first two of them
+- `d` reuses `rng`, which has already been advanced by the call that produced `c`, so it continues the sequence rather than repeating it
+- Passing the generator as an argument keeps the randomness visible at the call site
 :::
 
 ::: {.notes}
+Read the four lines down the screen. The first three are separate sequences that
+all start from seed 123, so they agree wherever they overlap; `b` stops after two
+numbers only because that is what it asked for. The fourth is that same sequence
+carried on from where `c` left it.
+
 The contrast worth drawing is with a global seed. `StableRNGs` fixes the stream
 across Julia versions, where the built-in generator may change between releases.
 Passing the generator as an argument also makes the source of randomness visible
@@ -663,7 +601,7 @@ R has renv and targets, and Quarto is the same tool in both languages. The next 
 | `RCall.jl` | `R"..."` runs R; `@rget`, `@rput` move variables |
 | `PythonCall.jl` | Python from Julia, and `juliacall` for the reverse |
 | `JuliaCall` (R package) | call your Julia model from R |
-| `ccall` | a C or Fortran library directly, with no glue layer |
+| `ccall` | a C or Fortran library directly, with a Julia wrapper |
 
 - Adoption can be partial: one model kernel in Julia, called from the pipeline
   you already have.
@@ -681,100 +619,10 @@ other language.
 `ccall` is worth one sentence beyond the table: reaching a C library takes no
 hand-written C glue and no compilation step of your own, which is how a package
 such as `Sundials.jl` gets at an established solver — it is a Julia wrapper
-around `ccall`s rather than a compiled shim. It is also the concrete version of
-the two-language claim from the start of the session.
+around `ccall`s.
 
 None of these packages is installed for this course, so this slide is a pointer
 rather than something to try today.
-:::
-
-## If you are interested in performance...
-
-These serial microbenchmarks compare implementations of the same small numerical algorithms.
-
-```{julia}
-#| label: fig-s-p01-benchmarks
-#| echo: false
-#| fig-cap: "Run time relative to C on the JuliaLang micro-benchmark suite: grey points are individual benchmarks, the large point is their geometric mean. Data: JuliaLang/Microbenchmarks, 2022."
-using CSV, DataFrames, CairoMakie, EpiModelingCourse
-
-const BENCH_DIR = joinpath(pkgdir(EpiModelingCourse), "data")
-geomean(x) = exp(sum(log, x) / length(x))
-pretty_name = Dict("c" => "C", "julia" => "Julia", "lua" => "LuaJIT",
-    "fortran" => "Fortran", "java" => "Java", "javascript" => "JavaScript",
-    "matlab" => "Matlab", "mathematica" => "Mathematica", "python" => "Python",
-    "octave" => "Octave", "r" => "R", "rust" => "Rust", "go" => "Go")
-language_colour(l) = l == "julia" ? :firebrick : l == "c" ? :steelblue : :grey35
-
-# Times as a multiple of C, over the benchmarks C itself ran.
-function relative_to_c(table)
-    ctime = Dict(r.benchmark => r.time for r in eachrow(table[table.language .== "c", :]))
-    kept = table[[haskey(ctime, r.benchmark) for r in eachrow(table)], :]
-    kept.rel = [r.time / ctime[r.benchmark] for r in eachrow(kept)]
-    return kept
-end
-
-bench22 = relative_to_c(CSV.read(joinpath(BENCH_DIR, "language_benchmarks_2022.csv"), DataFrame))
-summary22 = sort!(combine(groupby(bench22, :language), :rel => geomean => :gmean), :gmean)
-order = summary22.language
-position = Dict(l => i for (i, l) in enumerate(order))
-
-with_theme(course_theme()) do
-    fig = Figure(size = (960, 450))
-    ax = Axis(fig[1, 1]; yscale = log10, ylabel = "run time / C time",
-        xticks = (1:length(order), [pretty_name[l] for l in order]),
-        xticklabelrotation = pi / 6, xticklabelsize = 19, yticklabelsize = 18,
-        ylabelsize = 21)
-    hlines!(ax, [1.0]; color = (:black, 0.35), linestyle = :dash)
-    scatter!(ax, [position[r.language] for r in eachrow(bench22)], bench22.rel;
-        color = (:grey70, 0.55), markersize = 9)
-    scatter!(ax, 1:length(order), summary22.gmean;
-        color = [language_colour(l) for l in order], markersize = 21)
-    fig
-end
-```
-
-- Julia's geometric-mean runtime is about **1.2× C** in this snapshot.
-- It does not predict the speed of every application.
-- It does show that custom numerical loops need not be rewritten in a
-  lower-level language.
-
-::: {.notes}
-These are micro-benchmarks: small tasks such as recursive Fibonacci, integer parsing and the Mandelbrot set. The benchmark documentation says so itself, that these are not comprehensive application benchmarks, and that they test common language patterns using serial implementations. 
-The vertical axis is logarithmic, so each gridline is a factor of ten, and the grey points show that a single language spans a wide range across tasks. Data from the JuliaLang Microbenchmarks repository, 2022; the ordering has been stable for years, but present the values as a snapshot rather than a current measurement.
-:::
-
-## If you are interested in code size...
-
-```{julia}
-#| label: fig-s-p01-codelength
-#| echo: false
-#| fig-cap: "Run time against source length for the same benchmark suite, one point per language. Data from 2016, which is the last year source lengths were published with the timings."
-bench16 = relative_to_c(CSV.read(joinpath(BENCH_DIR, "language_benchmarks_2016.csv"), DataFrame))
-summary16 = combine(groupby(bench16, :language),
-    :rel => geomean => :gmean, :kb => first => :kb)
-label_left = ("c", "fortran", "java", "python", "r")
-
-with_theme(course_theme()) do
-    fig = Figure(size = (960, 450))
-    ax = Axis(fig[1, 1]; yscale = log10, xlabel = "source length (KB)",
-        ylabel = "run time / C time", xlabelsize = 21, ylabelsize = 21,
-        xticklabelsize = 18, yticklabelsize = 18)
-    scatter!(ax, summary16.kb, summary16.gmean;
-        color = [language_colour(l) for l in summary16.language], markersize = 17)
-    text!(ax, summary16.kb, summary16.gmean;
-        text = [pretty_name[l] for l in summary16.language],
-        align = [(l in label_left ? :right : :left, :center) for l in summary16.language],
-        offset = [(l in label_left ? -13 : 13, 0) for l in summary16.language],
-        fontsize = 17, color = [language_colour(l) for l in summary16.language])
-    xlims!(ax, 2.0, 13.0)
-    ylims!(ax, 0.7, 700)
-    fig
-end
-```
-
-::: {.notes}
-This is the older figure, 2016, because source lengths stopped being published alongside the timings after that. Nothing since has moved Julia out of that corner, but present it as a historical snapshot. Both axes matter: languages on the left are compact, languages at the bottom are fast, and before Julia you generally chose one or the other. 
 :::
 
 ## Next:
