@@ -21,9 +21,10 @@ for writing the analysis and a fast one for the parts that turn out to be too
 slow. Julia is designed to be both. It is dynamically typed and interactive like
 R, but compiles to native code, so the model kernels you write in this course
 are the same code that runs inside the solvers — nothing is rewritten in C to
-make it fast enough. That matters here because epidemic models are run
-thousands of times over, in stochastic ensembles, sensitivity sweeps, and
-inference.
+make it fast enough [@bezanson2017]. @roesch2023 makes the same case for
+computational biology at more length. That matters here because epidemic
+models are run thousands of times over, in stochastic ensembles, sensitivity
+sweeps, and inference.
 
 ::: {.callout-note collapse="true"}
 ## Coming from R?
@@ -69,6 +70,12 @@ By the end of this unit you should be able to:
   pair without glue code;
 - draw the same random numbers on every machine with `StableRNGs`, and say what
   that does and does not guarantee about what you compute from them;
+- say what a macro does to your code before that code runs, and use
+  `@macroexpand` to see the result;
+- explain why a derivative of your own model is available without rewriting
+  it in another library's operations;
+- name the route by which Julia code calls R, Python or C, and what a
+  crossing costs;
 - render a figure from code with `CairoMakie`.
 
 ## Model assumptions and classification
@@ -387,12 +394,334 @@ compatible ODE solver needs no change to the kernel you wrote, and why the same
 `ODEProblem` usually goes straight to a sensitivity or inference package. One
 exception is worth knowing before you meet it: some automatic-differentiation
 backends cannot differentiate through code that writes into arrays, and want the
-out-of-place kernel instead. What dispatch cannot do is invent a combination
-nobody has written, and that is what "compatible" means above: `solve` works for
+out-of-place kernel instead. The section on differentiating code you wrote
+yourself, below, says what that machinery is. What dispatch cannot do is invent
+a combination nobody has written, and that is what "compatible" means above:
+`solve` works for
 the pair in front of it because some package defines a method for those two
 types.
 Independently written SciML packages compose because each adds methods rather
 than editing anyone else's.
+
+### From text to machine code
+
+The sections that follow all depend on what Julia does between the moment you
+press Enter and the moment a number comes back. It happens in three stages.
+
+**Reading.** Julia first turns the text you typed into a structured object
+called an *expression*. The expression records what the code means rather than
+how it was spelled: `β * c * I / N` becomes a small tree with the operations at
+the branches and the names at the leaves. Spacing and comments are gone by this
+point. Putting a colon in front of code gives you the expression instead of the
+result, and `dump` prints its structure:
+
+```{julia}
+#| label: p01-ast
+dump(:(x + 1))
+```
+
+The head says what kind of thing this is, here a function call, and the
+arguments are the function `+`, the name `x`, and the number `1`. This
+representation has a standard name, the *abstract syntax tree*: a tree because
+operations nest inside operations, syntax because it mirrors the structure of
+what you wrote, abstract because the formatting has been dropped.
+
+An expression is an ordinary value, so you can take it apart and put it back
+together before running it:
+
+```{julia}
+#| label: p01-ast-rewrite
+e = :(2 + 5)
+e.args[1] = :*
+eval(e)
+```
+
+**Rewriting.** That is the mechanism behind the next section. Anything
+beginning with `@` is a *macro*, a rule that receives the expression and
+returns a different expression to be used in its place.
+
+**Compiling.** Julia then translates the expression into native machine
+instructions for your processor, and does this separately for each combination
+of argument types the function is called with. This is where multiple dispatch
+feeds in. Knowing that `S` holds a `Float64` and not some unspecified value
+lets the compiler emit a single machine multiply rather than a lookup while the
+program runs. It is also why calling a function with a type it has never seen
+does something useful, which the section on differentiation relies on.
+
+::: {.callout-note collapse="true"}
+## The same idea in R
+
+R exposes its own syntax trees, and the same three steps work there:
+
+```r
+my_expr <- quote(2 + 5)
+as.list(my_expr)          # [[1]] `+`  [[2]] 2  [[3]] 5
+my_expr[[1]] <- quote(`*`)
+eval(my_expr)             # 10
+```
+
+`lobstr::ast(y <- x * 10)` draws the tree, and `substitute` is what lets
+`plot(x, y)` label the axes with the names you passed rather than their values.
+A formula such as `y ~ x + z` is the same device: `~` quotes what is written on
+either side instead of computing it, which is how a modelling function receives
+your terms rather than their values. Inspecting and rewriting code before it
+runs is not a Julia distinction.
+
+The difference is the third stage. R's just-in-time compiler turns your
+function into *bytecode*, an instruction set that R's own virtual machine reads
+and carries out one instruction at a time, calling into R's precompiled C
+routines as it goes. Julia compiles to instructions your processor runs
+directly [@bezanson2017]. The same rewriting mechanism that gives R users a
+convenient formula interface therefore gives Julia users a modelling notation
+that runs at full speed.
+:::
+
+### Macros and modelling notation
+
+Names beginning with `@` appear in nearly every later chapter:
+`@reaction_network` in @sec-reaction-networks, `@model` in
+@sec-bayesian-inference, `@agent` in @sec-agent-based-models. These are macros,
+and a macro is not a function you call. It is a rewrite applied to your code
+before the code runs.
+
+A function receives *values*: by the time `f(x + 1)` reaches `f`, the addition
+has happened and `f` sees a number. A macro receives the *expression* `x + 1`
+itself, unevaluated, and may do anything with it, including discarding it or
+turning it into fifty lines of something else. Writing one is not needed
+anywhere in this course. Reading one takes a few lines:
+
+```{julia}
+#| label: p01-macro
+macro log_and_run(ex)
+    println("about to run: ", ex)
+    return esc(ex)
+end
+
+@log_and_run 10 * 20
+```
+
+The `println` happens while the code is being prepared, not while it runs. What
+the macro returns is what executes, and `@macroexpand` shows you what that was:
+
+```{julia}
+#| label: p01-macroexpand
+@macroexpand @log_and_run 10 * 20
+```
+
+The message appears again because expanding the macro is what runs the
+`println`. The multiplication does not: `@macroexpand` stops at the expression
+the macro handed back, without evaluating it. Point it at any of the package
+macros below and you get the same thing, a few dozen lines longer.
+
+That is what lets a package offer notation that is not ordinary Julia.
+Catalyst's `@reaction_network` accepts reaction arrows [@loman2023]:
+
+```{julia}
+#| label: p01-reaction-network
+using Catalyst
+
+sir_network = @reaction_network begin
+    β * c / N, S + I --> 2I
+    γ,         I     --> R
+end
+nothing
+```
+
+`-->` is a real Julia operator that no function gives a meaning to, so
+`S + I --> 2I` is an expression Julia can represent but cannot evaluate. The
+macro supplies the meaning, reading it as a reaction and generating the
+corresponding equations. Nothing about that is private to the package: the
+equations can be printed, and they are the ones we wrote by hand above.
+
+```{julia}
+#| label: p01-reaction-equations
+equations(ode_model(sir_network))
+```
+
+A package defining notation this way is offering a *domain-specific language*:
+a small vocabulary specialised to one subject, here chemical and
+epidemiological reactions. `@macroexpand` prints the code a macro generated,
+which is how you check what a line of that vocabulary became.
+
+Other languages reach some of the same ground by *operator overloading*, and
+if you have used `cvxpy` or `sympy` in Python you have seen it. There, `<=` and
+`+` are given new meanings for a special kind of object, and calling them
+builds a description of the model instead of computing with numbers. It works
+well and it has two limits. It only reaches operators
+the language already has, so it cannot give you `-->`, or `~` meaning "is
+distributed as" inside a model block. And the description is assembled while
+the program runs, every time it runs. A macro does the work once, before the
+program starts, and leaves nothing behind.
+
+One description can then produce several models. @sec-reaction-networks turns
+the network above into a system of differential equations, a stochastic
+differential equation, and a jump process, without restating the transmission
+assumptions three times.
+
+The cost is error messages about code you did not write. When a macro reports a
+problem at a line that does not appear in your file, the line is in the
+generated code, and `@macroexpand` is how you find out what it was.
+
+### Differentiating code you wrote yourself
+
+Several later chapters need derivatives. How far does the epidemic peak move if
+$\beta$ moves a little? Fitting a model to data, finding the intervention with
+the lowest cost, and the sampler used in @sec-bayesian-inference all work by
+following the derivative of some quantity with respect to the parameters.
+
+There are three ways to get one. Differentiate by hand and write the result
+out, which is exact, error-prone, and has to be redone whenever the model
+changes. Approximate it as $(f(\beta + h) - f(\beta))/h$ for some small $h$,
+which is easy and loses accuracy. Or use *automatic differentiation*: have the
+computer apply the chain rule to the operations your program performs,
+which is accurate to the same precision as the original calculation and needs
+no algebra from you.
+
+The Julia version of the third option works through the type system rather than
+through a separate library of operations. `ForwardDiff` defines a number type
+called a *dual number* that carries two values, the quantity itself and its
+derivative, with arithmetic defined so the second slot accumulates the chain
+rule [@revels2016]. Because the kernel says nothing about what kind of number
+`S` is, calling it with dual numbers runs the same source code and returns
+derivatives alongside the rates:
+
+```{julia}
+#| label: p01-forwarddiff
+using ForwardDiff
+
+function new_infection_rate(β)
+    du = zeros(eltype(β), 3)
+    sir_ode!(du, u0, merge(p, (β = β,)), 0.0)
+    return du[2]
+end
+
+ForwardDiff.derivative(new_infection_rate, p.β)
+```
+
+Nothing was written twice: `sir_ode!` is the function from the top of this
+section, unchanged.
+
+The value is checkable by hand, and worth checking the first time you use this.
+Differentiating $\mathrm{d}I/\mathrm{d}t = \beta c S I / N - \gamma I$ with
+respect to $\beta$ leaves $c S I / N$, which at the baseline state is
+$10 \times 990 \times 10 / 1000$:
+
+```{julia}
+#| label: p01-forwarddiff-check
+analytic = p.c * u0[1] * u0[2] / p.N
+(analytic, ForwardDiff.derivative(new_infection_rate, p.β) ≈ analytic)
+```
+
+That agreement is not the agreement of a good approximation. A finite
+difference $(f(\beta + h) - f(\beta))/h$ has to trade truncation error against
+rounding error in the choice of $h$; here the chain rule was applied to the
+operations the kernel performs, so there is no $h$ to choose.
+
+This is a different arrangement from the one used by PyTorch, JAX and
+TensorFlow, which you may know from machine learning. Those libraries supply a
+fixed catalogue of array operations with hand-written derivatives attached, and
+can differentiate a program only to the extent that it is written in that
+catalogue. A model written in plain NumPy cannot be differentiated by PyTorch
+until it is rewritten in `torch` operations. The catalogue is large and well
+optimised, so for the neural networks it was designed around this is seldom a
+limitation. It becomes one when the thing you want to differentiate is a stiff
+solver, an adaptive timestep controller, or the epidemic model you wrote last
+week. Applying differentiation to the language instead of to a library is the
+design Julia takes [@innes2019]. `Enzyme` pushes it further down, to the
+intermediate representation the compiler produces on the way to machine code,
+which lets it differentiate functions that overwrite their arguments and code
+originally written in C or Fortran [@moses2020].
+
+Two directions are available, and the choice is about shape rather than
+accuracy. *Forward mode* carries derivatives along with the calculation and
+costs one pass per input parameter: cheap for a model with three parameters,
+expensive for one with three thousand. *Reverse mode* runs the calculation and
+then walks it backwards, costing roughly one pass however many parameters there
+are, at the price of storing intermediate results. Fitting a handful of
+epidemiological parameters is forward-mode work; training the neural network
+inside a universal differential equation, in the appendix of that name, is
+reverse-mode work.
+
+::: {.callout-important}
+## Do not pin a model kernel to `Float64`
+
+Automatic differentiation works by calling your function with a number type it
+has not seen before, so anything that insists on `Float64` refuses those
+numbers. The array written into is the usual culprit:
+
+```julia
+du = zeros(3)                  # Vector{Float64}: blocks AD
+du = zeros(eltype(β), 3)       # matches whatever the caller passed
+```
+
+A signature can do the same damage:
+
+```julia
+function sir_ode!(du::Vector{Float64}, u::Vector{Float64}, p, t)  # blocks AD
+```
+
+The kernels written out in these chapters leave those types unwritten. This
+follows from the dispatch section above, and it is the most common reason a
+model that simulates correctly cannot then be fitted. The error names the type
+it could not build, `MethodError: no method matching
+Float64(::ForwardDiff.Dual{...})`, which is worth recognising on sight.
+
+One exception is worth knowing about, because its signature does not show it.
+`EpiModelingCourse.sir_ode!`, the shared copy of this kernel, converts the
+parameters it is given into the `SIRParameters` type, whose fields are declared
+`Float64`. It still differentiates with respect to the state, which it reads
+straight out of `u`, but not with respect to a parameter — and a parameter is
+what fitting, sensitivity analysis and optimisation all differentiate against.
+Use the kernel as written above when you want that derivative.
+:::
+
+### Why the pieces fit together
+
+The three features above are one argument, not three. Independently written
+packages combine because of dispatch, because library code is written against
+abstract types such as `Number` and `AbstractArray` rather than `Float64`, and
+because a macro can generate code that other packages then consume. That is why
+a reaction network written with one package can be differentiated by another
+whose author never heard of it.
+
+Composability does not mean any two Julia packages work together. It means the
+work needed is usually adding methods rather than converting data. R achieves a
+good deal of the same thing by other means: S3 and S4 generics dispatch on the
+first argument, and the community's shared commitment to `data.frame` means
+most analysis packages pipe into each other cleanly. R dispatches on one
+argument and by convention; Julia dispatches on all of them and in the
+compiler, so a new type meets an old solver more often without either side
+being modified.
+
+### Working alongside R, Python and C
+
+Adopting Julia for a model does not require moving anything else. Julia calls
+R, Python, C and Fortran from inside a Julia session, and R and Python call
+Julia in return.
+
+- `RCall.jl` runs R code and moves data across. `R"..."` sends a string to an R
+  session, and `@rget` and `@rput` move variables between the two. Your
+  cleaning pipeline, your `ggplot2` figures and the R package your group has
+  relied on for years stay where they are.
+- `PythonCall.jl` does the same for Python, and its companion `juliacall` lets
+  a Python script call Julia.
+- The `JuliaCall` R package is the reverse direction for R, so a colleague can
+  call your Julia model without learning Julia.
+- `ccall` reaches a function in a compiled C or Fortran library directly, with
+  no intermediate layer. In most languages, making a C library available means
+  writing glue in C and compiling it; here it is one expression naming the
+  library, the function, and the argument types, and no C of your own. It is
+  how a package such as `Sundials.jl` reaches an established numerical library:
+  the package is a Julia wrapper around `ccall`s, not a compiled shim.
+
+Every crossing converts data, so a loop calling R once per iteration will be
+slow. You have two package environments to install and keep working, which is
+where most of the trouble starts. An error raised on the far side arrives with
+a stack trace from the other language.
+
+Adoption can therefore be partial: one model kernel in Julia, called from the
+pipeline you already have. None of these packages is used elsewhere in this
+course, which keeps the course environment to one language.
 
 ### Reproducible randomness
 
@@ -471,8 +800,12 @@ kernels, broadcasting and comprehensions, loops that collect into arrays, named
 tuples read by field and updated with `merge`, dispatch, and seeded randomness.
 This unit is deliberately narrow: it is not a full Julia tutorial. It does not
 cover package management beyond activating and
-instantiating the course environment, performance profiling, metaprogramming,
-user-defined `struct`s, or the type system's parametric machinery. For those, consult the official
+instantiating the course environment, performance profiling,
+user-defined `struct`s, or the type system's parametric machinery. Macros are
+covered only far enough to read one and expand it; writing your own is needed
+nowhere in this course. Automatic differentiation is described here but
+exercised later, in @sec-sensitivity-and-identifiability and the universal
+differential equations appendix. For those, consult the official
 [Julia documentation](https://docs.julialang.org/en/v1/) and the
 [performance tips](https://docs.julialang.org/en/v1/manual/performance-tips/).
 The [CairoMakie documentation](https://docs.makie.org/stable/) covers the

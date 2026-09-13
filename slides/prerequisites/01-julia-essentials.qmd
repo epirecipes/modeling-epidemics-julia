@@ -99,19 +99,19 @@ end
 
 ::: {.notes}
 Calibration and Bayesian inference are not sessions, and the
-programme points at the LSHTM course "Model Fitting and Inference for Infectious Disease Dynamics" instead. Identifiability sits in this box because it asks what the data could tell you about the parameters, and that half is taught. The observation-model, parameter-estimation and Bayesian-inference chapters are written and available for self-study, the interventions session makes the connection in passing because the optimiser that finds the best intervention is the same machinery that finds the best-fitting parameters.
+programme points at the LSHTM course "Model Fitting and Inference for Infectious Disease Dynamics" instead. 
+The observation-model, parameter-estimation and Bayesian-inference chapters are available for self-study.
 :::
 
 ## What we want when modelling? {.smaller}
 
 ::: {style="margin-top: 3.5em;"}
 
-| What we want | What Julia offers |
-|---|---|
-| Models that are easy to inspect and modify | Scientific models written as ordinary Julia code |
-| Thousands of simulations and scenarios | Compiled performance |
-| Simulation, fitting and intervention analysis | Tools designed to work together in one language |
-| Analyses that colleagues can reproduce | Recorded packages, versions and random seeds |
+- Models that are easy to inspect and modify 
+- Thousands of simulations and scenarios 
+- Simulation, fitting and intervention analysis 
+- Analyses that can be reproduced 
+
 :::
 
 ::: {.notes}
@@ -122,7 +122,7 @@ programme points at the LSHTM course "Model Fitting and Inference for Infectious
 
 ::: {style="margin-top: 1.5em;"}
 Yes you can. Comparable models can be built, simulated and fitted in R, Python and
-elsewhere. The methods are not unique to Julia.
+elsewhere. The methods we show here are not unique to Julia.
 
 What Julia brings together:
 
@@ -134,7 +134,558 @@ framework-specific integration code when moving between stages of an analysis.
 
 :::
 ::: {.notes}
-None of these tasks is unique to Julia. R and Python can also support epidemic modelling. Julia becomes particularly attractive when we are developing a custom model and need to run it repeatedly. The code describing transmission can remain readable Julia code, while Julia compiles it for efficient execution. We can then connect that model to simulation, fitting, uncertainty analysis and intervention design without maintaining a separate low-level implementation.
+Julia becomes particularly attractive when we are developing a custom model. For example, the code describing transmission can remain readable Julia code, while Julia compiles it for efficient execution. We can then connect that model to simulation, fitting, uncertainty analysis and intervention design without maintaining a separate low-level implementation.
+:::
+
+## This session {.smaller}
+
+- Getting set up: *VS Code*, and the *REPL* and its modes
+- What Julia makes possible:
+  - *Macros*, a rule that intercepts and rewrites your code
+  - *Multiple dispatch*, and why packages compose
+  - *Automatic differentiation* of your own model code
+  - Working alongside *R and Python*
+- What you will write in the worksheet:
+  - *In-place kernels*, and *named tuples* for parameters
+  - *Broadcasting* over a grid
+  - Figures using `CairoMakie`
+  - *Reproducible randomness* with `StableRNGs`
+
+::: {.notes}
+
+:::
+
+## Finding your way around VS Code {.smaller}
+
+::: {style="margin-top: 2.5em;"}
+| Where | What you will use it for |
+|---|---|
+| *Explorer*, left | the course folder — open the *folder*, not a single file |
+| *Editor*, centre | the `.qmd` worksheet you are working in |
+| *Panel*, bottom | the Julia REPL and the terminal, as tabs |
+| *Plot pane* | figures, appears when the first one is drawn |
+
+- The command palette, `Cmd`/`Ctrl`+`Shift`+`P`, reaches everything:
+  *Julia: Start REPL*, *Quarto: Render*.
+- The folder you open is how Julia and Quarto know which project you are in.
+
+:::
+::: {.notes}
+Coming from RStudio, two things are different and both cause the same confusion.
+RStudio has four fixed panes; VS Code shows whatever is open, so the REPL is not
+there until you start it. And RStudio's menus are replaced by the command
+palette, which is worth demonstrating once because it is how they will find
+anything they cannot see.
+
+The failure that costs the most time is opening a single file instead of the
+folder. Julia and Quarto both take the open folder as the project, so a worksheet
+opened on its own will not find the course environment.
+:::
+
+## The REPL has four modes {.smaller}
+
+REPL stands for Read, Evaluate, Print, and Loop
+
+Type one character at an empty prompt; `Backspace` returns.
+
+| Key | Mode | For |
+|---|---|---|
+| — | Julia | evaluating expressions (default) |
+| `?` | help | `?expm1` — docstring, signatures, examples |
+| `]` | package | `]st`, `]instantiate` — and it names the active environment |
+| `;` | shell | `ls`, `cd`, `git status` without leaving Julia |
+
+- The package prompt names the **active environment** — check it first when a
+  package seems missing. Start Julia with `--project=.` from the repo root.
+
+::: {.notes}
+A package that appears to be missing almost always means the project
+environment was never activated, and a plain `julia` starts in the default
+environment wherever it is launched.
+:::
+
+## Your environment
+
+::: {style="margin-top: 1.5em;"}
+- `Project.toml` — the packages this project asks for.
+- `Manifest.toml` — the exact version of every package resolved.
+- `Pkg.instantiate()` rebuilds that set anywhere. You ran it in setup.
+- The `pkg> st` (short for "status") list all packages in your environment. "Not installed" usually means "not here".
+
+:::
+::: {.notes}
+If someone hits a package error it is almost certainly the environment, not the installation: a bare `julia` starts in the default environment wherever it is launched, so the fix is `--project=.` from the repository root, or `] activate .`. 
+What the Manifest adds: it pins the resolved version of every package rather than naming the packages. R has renv, so this is not a Julia exclusive. The difference is that project and manifest environments are part of Julia's standard package workflow rather than an add-on.
+:::
+
+## Running code as you read
+
+::: {style="margin-top: 1.5em;"}
+Chapters and worksheets are Quarto documents: prose with cells like this one.
+
+```{julia}
+#| label: s-p01-firstcell
+#| echo: true
+2 + 2
+```
+
+- `Ctrl`/`Cmd`+`Shift`+`Enter` runs the cell the cursor sits in.
+- Output appears in the REPL, figures in the plot pane.
+- In a plain `.jl` file, `Shift`+`Enter` sends a single line instead.
+
+:::
+::: {.notes}
+Put the cursor in a cell, run it, and show the REPL waking up the first time. If the REPL is not running, the shortcut starts one.
+:::
+
+## Macros: the `@` {.smaller}
+
+Julia reads your code into a *structure* before running it.
+While normal functions receive values, macros receive the raw, unevaluated expression itself.
+
+```{julia}
+#| label: s-p01-macro-vs-function
+#| echo: true
+value_of(x) = x                  # a function receives a value
+macro value_of(ex)               # a macro receives the code
+    QuoteNode(ex)                # hand it back as data instead of running it
+end
+
+(value_of(1 + 1), @value_of 1 + 1)
+```
+
+- The same text both times: the function is handed `2`, the macro is handed
+  `:(1 + 1)`, the code itself — operations at the branches, names at the
+  leaves, an *abstract syntax tree*.
+- Anything starting with `@` is a **macro**: it receives that structure and
+  returns a different one, and what it returns is what runs.
+
+```{julia}
+#| label: s-p01-macroexpand
+#| echo: true
+@macroexpand @assert x > 0
+```
+
+- `@macroexpand` shows you what came back: `@assert` became an `if`, keeping
+  your source text for the error message.
+
+::: {.notes}
+A function receives values, a macro receives the unevaluated code. 
+Both sides of the first cell are handed the same text, and the
+function can only ever see 2.
+
+`QuoteNode` makes the macro hand the expression back as data rather than returning code that runs.
+
+On the `@assert` expansion, point at the string "x > 0" in the error branch. A
+function could not have produced it, because by the time a function was called
+the comparison would already be a `Bool`. 
+:::
+
+## You have done this in R {.smaller}
+
+::: {.columns}
+::: {.column width="50%"}
+**R**
+
+```r
+my_expr <- quote(2 + 5)
+as.list(my_expr)
+# [[1]] `+`  [[2]] 2  [[3]] 5
+
+my_expr[[1]] <- quote(`*`)
+eval(my_expr)   # 10
+```
+:::
+
+::: {.column width="50%"}
+**Julia**
+
+```{julia}
+#| label: s-p01-ast-rewrite
+#| echo: true
+e = :(2 + 5)
+e.args[1] = :*
+eval(e)
+```
+:::
+:::
+
+- `:( )` is Julia's `quote()`: it captures the code instead of running it, and
+  what comes back is an object you can inspect and change.
+- Inspecting and rewriting code before it runs is **not** a Julia distinction.
+- The difference is what happens next: R runs *bytecode* through its own virtual
+  machine; Julia compiles to instructions the processor runs directly.
+
+::: {.notes}
+The same rewriting mechanism costs R an interpretation step at run time and costs
+Julia nothing, because the rewritten code is compiled like everything else.
+:::
+
+## Manipulating the abstract syntax tree (AST) {.smaller}
+
+Because the AST is just a standard object, you can modify it at runtime before executing it. 
+For example, we can change an expression (written `:( )`) from an addition into a multiplication:
+
+```{julia}
+#| label: s-p01-ast-manipulate
+#| echo: true
+# 1. Capture the expression without evaluating it
+my_expr = :(2 + 5)
+
+# 2. Inspect the components of the AST
+println("Original Head: ", my_expr.head) # Output: call
+println("Original Args: ", my_expr.args) # Output: Any[:+, 2, 5]
+
+# 3. Modify the AST: Change the function symbol from + to *
+my_expr.args[1] = :*
+
+# 4. Evaluate the modified tree
+result = eval(my_expr)
+println("Result: ", result) # Output: 10 (instead of 7!)
+```
+
+::: {.notes}
+This is the slow version of the previous slide, so it earns its place only if the
+room looked blank there. Skip it if they were with you.
+
+`my_expr` is an ordinary object. `.head` says what kind of expression it is,
+`.args` holds the pieces, and assigning into `.args` edits the code before
+anything runs. None of that is special syntax; it is field access on a value,
+which is what makes "code is data" literal rather than a figure of speech.
+
+`eval` is what finally runs it. A macro does this same thing automatically, which
+is what lets the next slides read `S + I --> 2I` as a reaction rather than an
+error.
+:::
+
+## Julia code can stay close to the mathematics {.smaller}
+
+Macros let a package define notation for its own subject. Written as reactions,
+the SIR model reads close to how it is spoken — and Julia turns that into the
+differential equations for you:
+
+::: {.columns}
+::: {.column width="47%"}
+**What you write**
+
+```{julia}
+#| label: s-p01-reaction-network
+#| echo: true
+using Catalyst
+
+sir_network = @reaction_network begin
+    β * c / N, S + I --> 2I
+    γ,         I     --> R
+end
+nothing
+```
+:::
+
+::: {.column width="53%"}
+**What Julia derives from it**
+
+```{julia}
+#| label: s-p01-ode-equations
+#| echo: true
+equations(ode_model(sir_network))
+```
+:::
+:::
+
+- Nobody typed those derivatives: the macro read the arrows and generated them.
+- What it built is a model *object*, not just code, so other packages take it as
+  input: `SDEProblem(sir_network, …)` and `JumpProblem(sir_network, …)` are the
+  same network, and the problem derived from it carries on into fitting and
+  optimisation.
+- The transmission assumptions are therefore written once. 
+
+::: {style="font-size: 0.6em;"}
+| | |
+|---|---|
+| $\beta$ | transmission probability per contact |
+| $c$ | contacts per person per day |
+| $\gamma$ | recovery rate, per day |
+| $N$ | population size, $S + I + R$ |
+:::
+
+::: {.notes}
+This is the payoff of the macro block, so give it room. `S + I --> 2I` is not
+ordinary Julia: `-->` is an operator that nothing gives a meaning to, so the line
+parses but cannot be evaluated. The macro supplies the meaning, reads it as a
+reaction, and generates what is on the right.
+
+Run the right-hand cell live if the room is with you. The point lands when they
+see the derivatives match the arrows they just read, and that nobody wrote them.
+
+This shortcut covers mass-action reactions.
+:::
+
+## Named tuples and multiple dispatch {.smaller}
+
+::: {style="margin-top: 2.5em;"}
+```{julia}
+#| label: s-p01-dispatch
+#| echo: true
+p = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)   # read by name, never by position
+
+force_of_infection(p, I::Number)         = p.β * p.c * I / p.N
+force_of_infection(p, I::AbstractVector) = p.β .* p.c .* I ./ p.N
+
+(force_of_infection(p, 10), force_of_infection(p, [10, 50, 200]))
+```
+
+::: {style="font-size: 0.6em;"}
+| Call                                   | Method selected     |
+| -------------------------------------- | ------------------- |
+| `force_of_infection(p, 10)`            | `I::Number`         |
+| `force_of_infection(p, [10, 50, 200])` | `I::AbstractVector` |
+:::
+
+- Both definitions are methods of the same function. Julia selects the applicable method from the positional argument types
+- The type of `I` determines whether the scalar or vector method is used
+
+:::
+::: {.notes}
+A positional parameter tuple that someone reorders still runs, and returns wrong numbers with no error. 
+Reading by field cannot fail that way. 
+
+On dispatch, the example is built so the *second* argument decides, because the habit from other languages is to expect the first argument, or a receiver object, to own the behaviour. It does not here. That is what lets a solver package written by one group and a problem type written by another meet without either importing the other's opinions.
+:::
+
+## Differentiating model code {.smaller}
+
+::: {.columns}
+::: {.column width="50%"}
+**PyTorch, JAX, TensorFlow**
+
+A fixed catalogue of array
+operations with derivatives
+attached.
+
+Your model has to be rewritten
+in `torch` operations first.
+:::
+
+::: {.column width="50%"}
+**ForwardDiff, Enzyme**
+
+A *dual number* carries a value
+and its derivative.
+:::
+:::
+
+```{julia}
+#| label: s-p01-forwarddiff
+#| echo: true
+using ForwardDiff
+
+function sir_ode!(du, u, (; β, c, γ, N), t)   # a semicolon (;) inside a function definition or call is used to separate positional arguments from keyword arguments
+    S, I, R = u
+    λ = β * c * I / N
+    du[1] = -λ * S
+    du[2] =  λ * S - γ * I
+    du[3] =  γ * I
+    return nothing
+end
+
+u0 = [990.0, 10.0, 0.0]
+p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
+
+function new_infection_rate(β)
+    du = zeros(eltype(β), 3)
+    sir_ode!(du, u0, merge(p, (β = β,)), 0.0)  
+    return du[2]
+end
+
+ForwardDiff.derivative(new_infection_rate, p.β)
+```
+
+::: {.notes}
+$\mathrm{d}I/\mathrm{d}t$ is $\beta c S I / N - \gamma I$, s
+o the derivative with respect to $\beta$ is $c S I / N = 10 \times 990 \times 10 / 1000 = 99$. 
+
+Anyone who has used PyTorch: it differentiates a library, Julia differentiates the language. 
+
+Where these gradients go: the sensitivity and identifiability session on Day 2,
+and the interventions session, both use them. Model fitting and Bayesian
+inference are not sessions here, and the programme points at the LSHTM course
+"Model Fitting and Inference for Infectious Disease Dynamics" instead.
+:::
+
+## The rule this puts on your code {.smaller}
+
+```julia
+du = zeros(3)              # Vector{Float64}: blocks differentiation
+du = zeros(eltype(β), 3)   # matches whatever the caller passed
+```
+
+```
+MethodError: no method matching
+  Float64(::ForwardDiff.Dual{...})
+```
+
+- Differentiation calls your function with a A *dual number* carries a value
+and its derivative.
+- Anything pinned to `Float64` refuses it: the buffer you write into, or a
+  signature such as `sir_ode!(du::Vector{Float64}, ...)`.
+- This is the most common reason a model that simulates correctly cannot be
+  fitted.
+
+::: {.notes}
+
+:::
+
+## Broadcasting: the dot {.smaller}
+
+Broadcasting allows to perform operations elementwise, and can be called implicitly by "dot" operations. For example:
+```{julia}
+#| label: s-p01-broadcast
+#| echo: true
+cases = [12, 40, 7]
+pop   = [1000, 5000, 800]
+
+per_100k = 1e5 .* cases ./ pop
+```
+
+Or to functions like:
+
+```{julia}
+#| label: s-p02-broadcast
+#| echo: true
+incidence_per_100k(case_count, population) =
+    100_000 * case_count / population
+
+cases      = [12, 40, 7]
+populations = [1000, 5000, 800]
+
+per_100k = incidence_per_100k.(cases, populations)
+```
+
+::: {.notes}
+In many languages you vectorise because loops are slow, so the vectorised form is forced on you whether or not it expresses the model clearly. 
+:::
+
+## In place: `!`  {.smaller}
+
+- The `!` signals that the function modifies an argument (a naming convention, not a special syntax)
+
+::: {style="margin-top: 2.5em;"}
+```{julia}
+#| label: s-p01-inplace
+#| echo: true
+
+function incidence_per_100k!(out, cases, populations)
+    out .= incidence_per_100k.(cases, populations)
+    return nothing
+end
+
+out = zeros(length(cases))
+
+incidence_per_100k!(out, cases, populations)
+
+out == per_100k  # comparing the `out` array defined here with the `per_100k` array defined in the previous slide
+```
+
+- `.=` computes and writes each element directly into the existing `out` array
+- The result is stored in `out`, not returned. Solvers can reuse this array across repeated calls, avoiding a new output array each time
+:::
+::: {.notes}
+The `!` signals that the function modifies an argument, and `.=` computes and writes each element directly into the existing `out` array. The result is stored in `out`, not returned. Solvers can reuse this array across repeated calls, avoiding a new output array each time.
+:::
+
+## A figure from code
+
+```{julia}
+#| label: fig-s-p01-per100k
+#| echo: true
+#| fig-cap: "Reported cases per 100 000 people, three regions."
+using CairoMakie
+fig = Figure(size = (740, 330))
+ax = Axis(fig[1, 1]; ylabel = "cases per 100 000",
+    xticks = (1:3, ["North", "South", "East"]))
+barplot!(ax, 1:3, per_100k)
+fig
+```
+
+## Reproducible randomness {.smaller}
+
+::: {style="margin-top: 2.5em;"}
+```{julia}
+#| label: s-p01-rng
+#| echo: true
+
+using StableRNGs
+
+seed = 123
+
+draws_a = rand(StableRNG(seed), 1)
+draws_b = rand(StableRNG(seed), 1)
+draws_c = rand(StableRNG(seed + 1), 1)
+
+println("draws_a == draws_b: ", draws_a == draws_b)
+println("draws_a != draws_c: ", draws_a != draws_c)
+println("draws_a: ", draws_a, " draws_b: ", draws_b, " draws_c: ", draws_c)
+```
+
+- A random-number generator produces a sequence
+- The seed determines where that sequence starts 
+- Recreating `StableRNG(123)` reproduces the same draws
+- The generator advances when it is used, so another call using the same generator produces the next values in the sequence
+:::
+
+::: {.notes}
+The contrast worth drawing is with a global seed. `StableRNGs` fixes the stream
+across Julia versions, where the built-in generator may change between releases.
+Passing the generator as an argument also makes the source of randomness visible
+at the call site instead of depending on whatever ran before it.
+:::
+
+## The workflow will feel familiar
+
+::: {style="margin-top: 2.5em;"}
+| In R | Here |
+|---|---|
+| RStudio | Julia for VS Code |
+| `renv` | `Project.toml` + `Manifest.toml` |
+| R Markdown | Quarto, supports several languages |
+| `data.frame` | `DataFrames.jl` |
+| `ggplot2` |  `CairoMakie` |
+:::
+
+::: {.notes}
+R has renv and targets, and Quarto is the same tool in both languages. The next two slides show the argument rather than asserting it, and the ODE session demonstrates it on a real problem.
+:::
+
+## You do not have to leave R {.smaller}
+
+| | |
+|---|---|
+| `RCall.jl` | `R"..."` runs R; `@rget`, `@rput` move variables |
+| `PythonCall.jl` | Python from Julia, and `juliacall` for the reverse |
+| `JuliaCall` (R package) | call your Julia model from R |
+| `ccall` | a C or Fortran library directly, with no glue layer |
+
+- Adoption can be partial: one model kernel in Julia, called from the pipeline
+  you already have.
+- Each crossing converts data, and you now maintain two environments.
+
+::: {.notes}
+For this room this is often the slide that decides whether Julia is usable at
+all, because nobody is going to re-implement a working surveillance pipeline.
+
+Say plainly that the costs are real. Conversion at every crossing makes a loop
+that calls R once per iteration slow, two package environments is the most common
+thing to break, and an error on the far side arrives with a stack trace from the
+other language.
+
+`ccall` is worth one sentence beyond the table: reaching a C library takes no
+hand-written C glue and no compilation step of your own, which is how a package
+such as `Sundials.jl` gets at an established solver — it is a Julia wrapper
+around `ccall`s rather than a compiled shim. It is also the concrete version of
+the two-language claim from the start of the session.
+
+None of these packages is installed for this course, so this slide is a pointer
+rather than something to try today.
 :::
 
 ## If you are interested in performance...
@@ -191,7 +742,6 @@ end
 ::: {.notes}
 These are micro-benchmarks: small tasks such as recursive Fibonacci, integer parsing and the Mandelbrot set. The benchmark documentation says so itself, that these are not comprehensive application benchmarks, and that they test common language patterns using serial implementations. 
 The vertical axis is logarithmic, so each gridline is a factor of ten, and the grey points show that a single language spans a wide range across tasks. Data from the JuliaLang Microbenchmarks repository, 2022; the ordering has been stable for years, but present the values as a snapshot rather than a current measurement.
-Why this matters here: epidemic models are run thousands of times over, in ensembles, sensitivity sweeps and inference, so the cost of the inner loop is not an abstract concern.
 :::
 
 ## If you are interested in code size...
@@ -225,328 +775,6 @@ end
 
 ::: {.notes}
 This is the older figure, 2016, because source lengths stopped being published alongside the timings after that. Nothing since has moved Julia out of that corner, but present it as a historical snapshot. Both axes matter: languages on the left are compact, languages at the bottom are fast, and before Julia you generally chose one or the other. 
-:::
-
-## This session
-
-- In this session we will cover:
-  - Finding your way around *VSCode*;
-  - The *REPL* and its modes;
-  - *Broadcasting* over a grid;
-  - *In-place kernels*;
-  - Figures using `CairoMakie`;
-  - *Named tuples* for parameters, and *multiple dispatch*;
-  - *Reproducible randomness* with `StableRNGs`.
-
-::: {.notes}
-
-:::
-
-## Finding your way around VS Code {.smaller}
-
-::: {style="margin-top: 2.5em;"}
-| Where | What you will use it for |
-|---|---|
-| *Explorer*, left | the course folder — open the *folder*, not a single file |
-| *Editor*, centre | the `.qmd` worksheet you are working in |
-| *Panel*, bottom | the Julia REPL and the terminal, as tabs |
-| *Plot pane* | figures, appears when the first one is drawn |
-
-- The command palette, `Cmd`/`Ctrl`+`Shift`+`P`, reaches everything:
-  *Julia: Start REPL*, *Quarto: Render*.
-- The folder you open is how Julia and Quarto know which project you are in.
-
-:::
-::: {.notes}
-Show this live rather than reading it: open the folder, start the REPL from the
-palette, run one cell, let the plot pane appear.
-
-Coming from RStudio, two things are different and both cause the same confusion.
-RStudio has four fixed panes; VS Code shows whatever is open, so the REPL is not
-there until you start it. And RStudio's menus are replaced by the command
-palette, which is worth demonstrating once because it is how they will find
-anything they cannot see.
-
-The failure that costs the most time is opening a single file instead of the
-folder. Julia and Quarto both take the open folder as the project, so a worksheet
-opened on its own will not find the course environment. If someone reports a
-missing package, check this before anything else, together with the environment
-name at the `pkg>` prompt.
-:::
-
-## The REPL has four modes {.smaller}
-
-REPL stands for Read, Evaluate, Print, and Loop
-
-Type one character at an empty prompt; `Backspace` returns.
-
-| Key | Mode | For |
-|---|---|---|
-| — | Julia | evaluating expressions (default) |
-| `?` | help | `?expm1` — docstring, signatures, examples |
-| `]` | package | `]st`, `]instantiate` — and it names the active environment |
-| `;` | shell | `ls`, `cd`, `git status` without leaving Julia |
-
-- The package prompt names the **active environment** — check it first when a
-  package seems missing. Start Julia with `--project=.` from the repo root.
-
-::: {.notes}
-Demonstrate the four modes live rather than reading the table: enter and leave
-each one, and show `?expm1` in particular, since help mode answers most "what
-arguments does this take" questions faster than a web search and works offline.
-Point out the environment name in the package prompt, which the next slide picks
-up: a package that appears to be missing almost always means the project
-environment was never activated, and a plain `julia` starts in the default
-environment wherever it is launched.
-:::
-
-## Your environment
-
-::: {style="margin-top: 1.5em;"}
-- `Project.toml` — the packages this project asks for.
-- `Manifest.toml` — the exact version of every package resolved.
-- `Pkg.instantiate()` rebuilds that set anywhere. You ran it in setup.
-- The `pkg>` prompt names your environment. "Not installed" usually means "not here".
-
-:::
-::: {.notes}
-If someone hits a package error today it is almost certainly the environment, not the installation: a bare `julia` starts in the default environment wherever it is launched, so the fix is `--project=.` from the repository root, or `] activate .`. The setup page has this under "a package seems to be missing". Worth saying plainly what the Manifest adds: it pins the resolved version of every package rather than naming the packages. R has renv, so this is not a Julia exclusive. The difference is that project and manifest environments are part of Julia's standard package workflow rather than an add-on.
-:::
-
-## Running code as you read
-
-::: {style="margin-top: 1.5em;"}
-Chapters and worksheets are Quarto documents: prose with cells like this one.
-
-```{julia}
-#| label: s-p01-firstcell
-#| echo: true
-2 + 2
-```
-
-- `Ctrl`/`Cmd`+`Shift`+`Enter` runs the cell the cursor sits in.
-- Output appears in the REPL, figures in the plot pane.
-- In a plain `.jl` file, `Shift`+`Enter` sends a single line instead.
-
-:::
-::: {.notes}
-Do this live rather than describing it: put the cursor in a cell, run it, and show the REPL waking up the first time. Warn them that the first cell of a session is slow because the plotting stack compiles, and that this is once per session, not once per cell. If the REPL is not running, the shortcut starts one.
-:::
-
-## Julia code can stay close to the mathematics {.smaller}
-
-::: {.columns}
-::: {.column width="42%"}
-Force of infection:
-
-$$
-\lambda = \beta c \frac{I}{N}
-$$
-
-Compartmental rates:
-
-$$
-\frac{\mathrm{d}S}{\mathrm{d}t} = -\lambda S
-$$
-
-$$
-\frac{\mathrm{d}I}{\mathrm{d}t} = \lambda S - \gamma I
-$$
-
-$$
-\frac{\mathrm{d}R}{\mathrm{d}t} = \gamma I
-$$
-:::
-
-::: {.column width="58%"}
-```julia
-function sir_ode!(du, u, (; β, c, γ, N), t)
-    S, I, R = u
-
-    λ = β * c * I / N
-
-    du[1] = -λ * S
-    du[2] =  λ * S - γ * I
-    du[3] =  γ * I
-    return nothing
-end
-```
-
-::: {style="font-size: 0.6em;"}
-| | |
-|---|---|
-| $\beta$ | transmission probability per contact |
-| $c$ | contacts per person per day |
-| $\gamma$ | recovery rate, per day |
-| $N$ | population size, $S + I + R$ |
-:::
-
-::: {style="margin-top: 1em;"}
-- Greek letters are ordinary variable names: `\beta`⇥ → `β`, `\gamma`⇥ → `γ`, `\lambda`⇥ → `λ`. Plain ASCII names works as well.
-:::
-:::
-
-:::
-::: {.notes}
-The point is that you can read the implementation against the equations line by line, which is how you check a model you did not write.
-
-This is not a Julia distinction. R allows non-ASCII identifiers in a UTF-8 locale, and Python has allowed them since PEP 3131, so
-this is not a capability other languages lack. What Julia adds is that the LaTeX-style tab completion is built into the REPL and the editor tooling, and that the convention is common enough that package APIs use these names themselves. It is a readability and convention argument, not a composability one.
-:::
-
-## Broadcasting: the dot {.smaller}
-
-Broadcasting allows to perform operations elementwise, and can be called implicitly by "dot" operations. For example:
-```{julia}
-#| label: s-p01-broadcast
-#| echo: true
-cases = [12, 40, 7]
-pop   = [1000, 5000, 800]
-
-per_100k = 1e5 .* cases ./ pop
-```
-
-Or to functions like:
-
-```{julia}
-#| label: s-p02-broadcast
-#| echo: true
-incidence_per_100k(case_count, population) =
-    100_000 * case_count / population
-
-cases      = [12, 40, 7]
-populations = [1000, 5000, 800]
-
-per_100k = incidence_per_100k.(cases, populations)
-```
-
-::: {.notes}
-In many languages you vectorise because loops are slow, so the vectorised form is forced on you whether or not it expresses the model clearly. Here a loop compiles to the same thing, so broadcasting is a choice about readability. That matters most when a mechanism does not vectorise neatly: you can write it as ordinary scalar code and loops
-without paying for it.
-:::
-
-## In place: `!` and `.=` {.smaller}
-
-::: {style="margin-top: 2.5em;"}
-```{julia}
-#| label: s-p01-inplace
-#| echo: true
-
-function incidence_per_100k!(out, cases, populations)
-    out .= incidence_per_100k.(cases, populations)
-    return nothing
-end
-
-out = zeros(length(cases))
-
-incidence_per_100k!(out, cases, populations)
-
-out == per_100k  
-```
-
-- The `!` signals that the function modifies an argument
-- `.=` computes and writes each element directly into the existing `out` array
-- The result is stored in `out`, not returned. Solvers can reuse this array across repeated calls, avoiding a new output array each time
-:::
-::: {.notes}
-The `!` signals that the function modifies an argument, and `.=` computes and writes each element directly into the existing `out` array. The result is stored in `out`, not returned. Solvers can reuse this array across repeated calls, avoiding a new output array each time.
-:::
-
-## A figure from code
-
-```{julia}
-#| label: fig-s-p01-per100k
-#| echo: true
-#| fig-cap: "Reported cases per 100 000 people, three regions."
-using CairoMakie
-fig = Figure(size = (740, 330))
-ax = Axis(fig[1, 1]; ylabel = "cases per 100 000",
-    xticks = (1:3, ["North", "South", "East"]))
-barplot!(ax, 1:3, per_100k)
-fig
-```
-
-## Named tuples and multiple dispatch {.smaller}
-
-::: {style="margin-top: 2.5em;"}
-```{julia}
-#| label: s-p01-dispatch
-#| echo: true
-p = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)   # read by name, never by position
-
-force_of_infection(p, I::Number)         = p.β * p.c * I / p.N
-force_of_infection(p, I::AbstractVector) = p.β .* p.c .* I ./ p.N
-
-(force_of_infection(p, 10), force_of_infection(p, [10, 50, 200]))
-```
-
-::: {style="font-size: 0.6em;"}
-| Call                                   | Method selected     |
-| -------------------------------------- | ------------------- |
-| `force_of_infection(p, 10)`            | `I::Number`         |
-| `force_of_infection(p, [10, 50, 200])` | `I::AbstractVector` |
-:::
-
-- Both definitions are methods of the same function. Julia selects the applicable method from the positional argument types
-- The type of `I` determines whether the scalar or vector method is used
-
-:::
-::: {.notes}
-On the named tuple, the failure worth naming is the quiet one. A positional parameter tuple that someone reorders still runs, and returns wrong numbers with no error. Reading by field cannot fail that way. Part A of the worksheet asks them to think about exactly this.
-
-On dispatch, the example is built so the *second* argument decides, because the habit from other languages is to expect the first argument, or a receiver object, to own the behaviour. It does not here. That is what lets a solver package written by one group and a problem type written by another meet without either importing the other's opinions, which is the second bullet on the "can we do the same in other languages" slide.
-
-Resist teaching the type system. The one consequence they need today is that `solve(prob, Tsit5())` needs no glue code, so handing the same model to a different algorithm, a sensitivity package or an inference package later leaves the model untouched. The ODE session demonstrates it on a real problem, so today it is enough to assert.
-:::
-
-## Reproducible randomness {.smaller}
-
-::: {style="margin-top: 2.5em;"}
-```{julia}
-#| label: s-p01-rng
-#| echo: true
-
-using StableRNGs
-
-seed = 123
-
-draws_a = rand(StableRNG(seed), 1)
-draws_b = rand(StableRNG(seed), 1)
-draws_c = rand(StableRNG(seed + 1), 1)
-
-println("draws_a == draws_b: ", draws_a == draws_b)
-println("draws_a != draws_c: ", draws_a != draws_c)
-println("draws_a: ", draws_a, " draws_b: ", draws_b, " draws_c: ", draws_c)
-```
-
-- A random-number generator produces a sequence
-- The seed determines where that sequence starts 
-- Recreating `StableRNG(123)` reproduces the same draws
-- The generator advances when it is used, so another call using the same generator produces the next values in the sequence
-:::
-
-::: {.notes}
-The contrast worth drawing is with a global seed. `StableRNGs` fixes the stream
-across Julia versions, where the built-in generator may legitimately change
-between releases, which is why every stochastic figure in this course reproduces.
-Passing the generator as an argument also makes the source of randomness visible
-at the call site instead of depending on whatever ran before it.
-:::
-
-## The workflow will feel familiar
-
-::: {style="margin-top: 2.5em;"}
-| In R | Here |
-|---|---|
-| RStudio | Julia for VS Code |
-| `renv` | `Project.toml` + `Manifest.toml` |
-| R Markdown | Quarto, supports several languages |
-| `data.frame` | `DataFrames.jl` |
-| `ggplot2` |  `CairoMakie` |
-:::
-
-::: {.notes}
-R has renv and targets, and Quarto is the same tool in both languages. The next two slides show the argument rather than asserting it, and the ODE session demonstrates it on a real problem.
 :::
 
 ## Next:
