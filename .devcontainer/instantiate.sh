@@ -8,6 +8,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# --no-warmup skips the final load, for the postCreate run where the depot is
+# usually already correct and the extra half minute buys nothing.
+warmup=1
+[ "${1:-}" = "--no-warmup" ] && warmup=0
+
 # Precompilation of this stack is memory-hungry; on a 2-core machine the
 # default one task per core can exhaust the 8 GB image.
 export JULIA_NUM_PRECOMPILE_TASKS="${JULIA_NUM_PRECOMPILE_TASKS:-2}"
@@ -17,4 +22,6 @@ julia --project=environments/ch10 -e 'using Pkg; Pkg.instantiate(); Pkg.precompi
 
 # Load what the early worksheets load, so the first cell a participant runs
 # does not pay for loading these into a fresh session's cache.
-julia --project=. -e 'using EpiModelingCourse, CairoMakie, OrdinaryDiffEq, DataFrames, StableRNGs; println("Course environment ready on Julia ", VERSION)'
+if [ "$warmup" = 1 ]; then
+  julia --project=. -e 'using EpiModelingCourse, CairoMakie, OrdinaryDiffEq, DataFrames, StableRNGs; println("Course environment ready on Julia ", VERSION)'
+fi

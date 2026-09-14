@@ -6,6 +6,13 @@
   // building a prebuild, so with prebuilds on it costs a participant nothing.
   "onCreateCommand": ".devcontainer/instantiate.sh",
 
+  // The same script again, minus the warm-up load. A prebuild bakes the depot
+  // as it stood when the prebuild was built, and a later change to
+  // Manifest.toml does not invalidate it, so without this a participant could
+  // start from a prebuild whose packages no longer match the manifest. When
+  // they do match this costs a few seconds; when they do not it repairs them.
+  "postCreateCommand": ".devcontainer/instantiate.sh --no-warmup",
+
   // Precompiling the full stack needs more than the 2-core default comfortably
   // provides. This raises the floor on the machine a participant can pick; it
   // also burns their Codespaces quota twice as fast as a 2-core machine.
