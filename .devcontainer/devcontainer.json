@@ -1,0 +1,40 @@
+{
+  "name": "Modeling epidemics with Julia",
+  "build": { "dockerfile": "Dockerfile" },
+
+  // Installs and precompiles the course packages. Codespaces runs this when
+  // building a prebuild, so with prebuilds on it costs a participant nothing.
+  "onCreateCommand": ".devcontainer/instantiate.sh",
+
+  // Precompiling the full stack needs more than the 2-core default comfortably
+  // provides. This raises the floor on the machine a participant can pick; it
+  // also burns their Codespaces quota twice as fast as a 2-core machine.
+  "hostRequirements": { "cpus": 4, "memory": "16gb", "storage": "32gb" },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "julialang.language-julia",
+        "quarto.quarto"
+      ],
+      "settings": {
+        "julia.environmentPath": "${containerWorkspaceFolder}",
+        "julia.useRevise": false,
+        "files.watcherExclude": {
+          "**/_freeze/**": true,
+          "**/_site/**": true
+        }
+      }
+    }
+  },
+
+  // Pluto's default port, for the notebook units.
+  "forwardPorts": [1234],
+  "portsAttributes": {
+    "1234": { "label": "Pluto", "onAutoForward": "openPreview" }
+  },
+
+  "remoteEnv": {
+    "JULIA_NUM_THREADS": "auto"
+  }
+}
