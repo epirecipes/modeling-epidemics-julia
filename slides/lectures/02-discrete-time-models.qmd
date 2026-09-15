@@ -966,7 +966,7 @@ It loops, replaying the same hundred runs.
 ::: {.column width="34%"}
 - Spread in $I/N$ shrinks like $1 / \sqrt{N}$
 - Small $N$: fade-out is common
-- Large $N$: runs hug the ODE
+- Large $N$: runs hug the deterministic step with the same $\delta t$
 
 ```{ojs}
 //| echo: false
@@ -1011,16 +1011,23 @@ Plot.plot({
     labelOffset: 55},
   y: {label: "infectious fraction I/N", domain: [0, 0.35],
     ticks: [0, 0.1, 0.2, 0.3], labelAnchor: "top", labelOffset: 40},
+  color: {domain: ["stochastic runs", "deterministic, δt = 1", "ODE"],
+    range: ["#999", "#17242b", colI], legend: true,
+    swatchSize: 22, style: {fontSize: "22px"}},
   marks: [
-    Plot.line(nRows, {x: "t", y: "frac", z: "run", stroke: "#999",
-      strokeWidth: 1.5, strokeOpacity: 0.4}),
-    Plot.line(odeCurve, {x: "t", y: (d) => d.I / base.N, stroke: colI,
-      strokeWidth: 4})
+    Plot.line(nRows.map((d) => ({...d, which: "stochastic runs"})),
+      {x: "t", y: "frac", z: "run", stroke: "which",
+       strokeWidth: 1.5, strokeOpacity: 0.4}),
+    Plot.line(mapBase.map((d) => ({...d, which: "deterministic, δt = 1"})),
+      {x: "t", y: (d) => d.I / base.N, stroke: "which", strokeWidth: 3,
+       strokeDasharray: "8,6"}),
+    Plot.line(odeCurve.map((d) => ({...d, which: "ODE"})),
+      {x: "t", y: (d) => d.I / base.N, stroke: "which", strokeWidth: 4})
   ]
 })
 ```
 ::: {.attribution}
-100 runs of the stochastic model, δt = 1 day, same initial fraction I~0~ = N / 100. N cycles through 100, 1000 and 10000. Red: the ODE.
+100 runs of the stochastic model, δt = 1 day, same initial fraction I~0~ = N / 100. N cycles through 100, 1000 and 10000. The deterministic model and the ODE are the same at every N once scaled by N.
 :::
 :::
 ::::
@@ -1029,7 +1036,7 @@ Plot.plot({
 Demographic stochasticity: chance from moving whole people.
 It cycles through three population sizes.
 At a hundred people the fan is wide and many runs die out.
-At ten thousand the runs hug the ODE.
+At ten thousand the runs hug the deterministic step, not the ODE. The step-size error is still there; only the randomness has gone.
 Tenfold more people, the spread as a fraction falls to about a third.
 :::
 
@@ -1039,8 +1046,7 @@ Tenfold more people, the spread as a fraction falls to about a third.
 ::: {.column width="34%"}
 - ODE: continuous time, the smooth curve
 - Deterministic step: a step-size error that shrinks with $\delta t$
-- Stochastic mean: runs peak on different days, so their average is lower and flatter
-- Randomness shifts the average. It is not just noise on top
+- Stochastic mean at $\delta t = 1$: close to the deterministic step of the same $\delta t$, a little lower
 :::
 ::: {.column width="66%"}
 ```{ojs}
@@ -1102,7 +1108,7 @@ Plot.plot({
 })
 ```
 ::: {.aside}
-True of any compartmental model with a nonlinear term, not just SIR. The stochastic mean and the deterministic model only meet as $N$ grows.
+In general the stochastic mean and the deterministic model differ at finite $N$, most when runs fade out. They meet as $N$ grows.
 :::
 :::
 ::::
@@ -1110,63 +1116,8 @@ True of any compartmental model with a nonlinear term, not just SIR. The stochas
 ::: {.notes}
 Same rates, three answers.
 The deterministic step overshoots by a step-size error. Shrink the step and it closes on the ODE.
-The stochastic mean does not. The infection term is nonlinear in I, so the average over runs of the infections is not the infections computed from the average I. That is Jensen's inequality in plain words.
-Runs crest on different days too, and averaging curves that crest at different times flattens the mean.
+The stochastic mean sits a little below the deterministic step of the same step size. Two reasons can pull it down: the infection term is nonlinear in I, so the average over runs of the infections is not the infections computed from the average I (Jensen's inequality), and runs that fade out drag the mean down. Here, with ten initial cases, both effects are small.
 The ODE is the large-N limit of the stochastic model, the law of large numbers: averages settle down as N grows. It is not its mean at finite N.
-:::
-
-## Three models, one set of rates {.tight-code}
-
-:::: {.columns}
-::: {.column width="34%"}
-ODE
-
-```julia
-function sir_ode!(du, u, p, t)
-    S, I, R = u
-    λ = p.β * p.c * I / p.N
-    du[1] = -λ * S
-    du[2] = λ * S - p.γ * I
-    du[3] = p.γ * I
-    return nothing
-end
-```
-
-- Rates in, derivatives out
-- A solver chooses the steps
-:::
-::: {.column width="66%"}
-Deterministic and stochastic
-
-```julia
-rate_to_proportion(r, δt) = -expm1(-r * δt)
-
-function sir_map_step(state, p, δt)          # deterministic, eq-ch02-map
-    S, I, R = state
-    infection = rate_to_proportion(p.β * p.c * I / p.N, δt) * S
-    recovery  = rate_to_proportion(p.γ, δt) * I
-    return (S - infection, I + infection - recovery, R + recovery)
-end
-
-function sir_chain_step(state, p, δt, rng)   # stochastic, eq-ch02-chain
-    S, I, R = state
-    Y = rand(rng, Binomial(round(Int, S), rate_to_proportion(p.β * p.c * I / p.N, δt)))
-    Z = rand(rng, Binomial(round(Int, I), rate_to_proportion(p.γ, δt)))
-    return (S - Y, I + Y - Z, R + Z)
-end
-```
-
-::: {.sub}
-The chapter calls these the function map and the Markov chain.
-:::
-:::
-::::
-
-::: {.notes}
-Same rates in all three.
-The ODE hands them to a solver.
-The deterministic step converts them to probabilities and multiplies.
-The stochastic step converts them to probabilities and draws. Two lines differ.
 :::
 
 # What the stochastic model approximates
@@ -1298,4 +1249,58 @@ Keep both ideas apart and the rest of the course is easier.
 
 ::: {.notes}
 The worksheet builds both models in Julia and runs the convergence check.
+:::
+
+## Models in code {.tight-code}
+
+:::: {.columns}
+::: {.column width="34%"}
+ODE
+
+```julia
+function sir_ode!(du, u, p, t)
+    S, I, R = u
+    λ = p.β * p.c * I / p.N
+    du[1] = -λ * S
+    du[2] = λ * S - p.γ * I
+    du[3] = p.γ * I
+    return nothing
+end
+```
+
+- Rates in, derivatives out
+- A solver chooses the steps
+:::
+::: {.column width="66%"}
+Deterministic and stochastic
+
+```julia
+rate_to_proportion(r, δt) = -expm1(-r * δt)
+
+function sir_map_step(state, p, δt)          # deterministic, eq-ch02-map
+    S, I, R = state
+    infection = rate_to_proportion(p.β * p.c * I / p.N, δt) * S
+    recovery  = rate_to_proportion(p.γ, δt) * I
+    return (S - infection, I + infection - recovery, R + recovery)
+end
+
+function sir_chain_step(state, p, δt, rng)   # stochastic, eq-ch02-chain
+    S, I, R = state
+    Y = rand(rng, Binomial(round(Int, S), rate_to_proportion(p.β * p.c * I / p.N, δt)))
+    Z = rand(rng, Binomial(round(Int, I), rate_to_proportion(p.γ, δt)))
+    return (S - Y, I + Y - Z, R + Z)
+end
+```
+
+::: {.sub}
+The chapter calls these the function map and the Markov chain.
+:::
+:::
+::::
+
+::: {.notes}
+Same rates in all three.
+The ODE hands them to a solver.
+The deterministic step converts them to probabilities and multiplies.
+The stochastic step converts them to probabilities and draws. Two lines differ.
 :::
