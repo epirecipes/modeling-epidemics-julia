@@ -1017,11 +1017,15 @@ Some runs die out early, with only a few red dots. That is randomness with small
 - Infections per infectious person per day, everyone susceptible: $\beta c$
 - Times the mean infectious duration: $1/\gamma$
 - Baseline: $0.05 \times 10 \times 4 = 2$
-- Later, each case infects $R_0 s$, with $s = S/N$ still susceptible
+- Later, each case infects only $R_0 s$
 
 $$
 R_0 = \beta c \times \frac{1}{\gamma} = \frac{\beta c}{\gamma}
 $$
+
+::: {.sub}
+Lower case means a fraction of $N$: $s = S/N$ is the share still susceptible.
+:::
 :::
 ::: {.column width="58%"}
 ```{ojs}
