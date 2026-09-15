@@ -193,11 +193,11 @@ The point for us. With thousands of people, counts change smoothly enough to tre
 ::: {.column width="36%"}
 - Two kinds of molecule bounce around at random
 - They react when they collide
-- Collisions per second scale with the product of the counts
+- Collisions per second scale with the product of the counts. That is the law of mass action
 - Collisions per second is a rate: the count in a window, divided by the time. $k$ sets it, from speed and size
 
 $$
-\text{rate} = k\,[A]\,[B]
+\text{mass action:}\quad \text{rate} = k\,[A]\,[B]
 $$
 
 ::: {.attribution}
