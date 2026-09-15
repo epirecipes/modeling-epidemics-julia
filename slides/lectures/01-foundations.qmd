@@ -44,7 +44,7 @@ Guldberg and Waage, "Studier over Affiniteten", 1864; English translation in *J.
 ```{ojs}
 //| echo: false
 {
-  const W = 1000, H = 520, r = 10, v = 2.5, win = 5000, hold = 6000;
+  const W = 1000, H = 520, r = 10, v = 1.25, win = 5000, hold = 9000;
   const canvas = DOM.canvas(W, H);
   const ctx = canvas.getContext("2d");
   const red = "#b22222", blue = "#4682b4";
