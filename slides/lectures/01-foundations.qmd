@@ -122,7 +122,6 @@ The animation cuts contacts by 20, 40 then 60 percent. At 60 percent it never ta
 ::: {.column width="40%"}
 - Count people in a few states: susceptible, infectious, recovered
 - Write how fast people move between them: rates of change
-- The hard part is the rate of new infections. Chemistry had the answer first
 :::
 ::: {.column width="60%"}
 ```{ojs}
@@ -1530,6 +1529,40 @@ Euler is the simplest. Big steps overshoot the curve. Shrink the step and it clo
 Runge-Kutta methods sample the rate at several points inside the step and average them, so the step bends with the curve. Tsit5, which the worksheet uses, is fifth order: halve the step and the error falls by about thirty-two. It also chooses its own step size to keep the error under a tolerance you set.
 :::
 
+## The SIR model in code {.tight-code}
+
+:::: {.columns}
+::: {.column width="40%"}
+- The three equations, one line each
+- Hand them to a solver with a start state, a time span and the parameters
+- The solver picks the steps. The worksheet does this next
+:::
+::: {.column width="60%"}
+```julia
+using OrdinaryDiffEq
+
+function sir_ode!(du, u, p, t)
+    S, I, R = u
+    λ = p.β * p.c * I / p.N      # force of infection
+    du[1] = -λ * S
+    du[2] = λ * S - p.γ * I
+    du[3] = p.γ * I
+    return nothing
+end
+
+u0 = [990.0, 10.0, 0.0]         # S(0), I(0), R(0)
+p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
+prob = ODEProblem(sir_ode!, u0, (0.0, 80.0), p)
+sol = solve(prob, Tsit5())
+```
+:::
+::::
+
+::: {.notes}
+This is the chapter's kernel, unchanged. Each du line is one of the three equations.
+The rest is bookkeeping: where to start, how long to run, which numbers to use, and which solver.
+:::
+
 ## Beyond SIR: another box, another arrow
 
 :::: {.columns}
@@ -1627,67 +1660,35 @@ SEIR: infected but not yet infectious. The curve shifts later and flattens a lit
 SIRS: recovered people drift back to S. The epidemic no longer burns out. It settles to an endemic level.
 :::
 
-## A more realistic infectious period
+## More boxes, same code {.tight-code}
 
 :::: {.columns}
-::: {.column width="38%"}
-- Split $I$ into $k$ identical stages
-- Leave each at rate $k\gamma$
-- Mean stays $1/\gamma$, variance shrinks to $1/(k\gamma^2)$
-
-$$
-\frac{\mathrm{d}I_j}{\mathrm{d}t} = k\gamma I_{j-1} - k\gamma I_j
-$$
+::: {.column width="40%"}
+- One more state, $E$, and two more rates, $\sigma$ and $\omega$
+- Set $\omega = 0$ for SEIR. Drop $E$ for SIRS
+- Everything else stays as it was
 :::
-::: {.column width="62%"}
-```{ojs}
-//| echo: false
-kStages = {
-  while (true) {
-    for (const v of [1, 2, 5, 20]) { yield v; await Promises.delay(2500) }
-  }
-}
-erlRows = {
-  const g = 0.25, rate = kStages * g;
-  const lf = (n) => { let s = 0; for (let i = 2; i <= n; i++) s += Math.log(i); return s; };
-  return Array.from({length: 241}, (_, i) => {
-    const x = 0.02 + i * 0.05;
-    const lp = kStages * Math.log(rate) + (kStages - 1) * Math.log(x)
-      - rate * x - lf(kStages - 1);
-    return {x, p: Math.exp(lp)};
-  });
-}
-Plot.plot({
-  ...plotBase,
-  title: `k = ${kStages} stage${kStages > 1 ? "s" : ""}. Same mean, less spread`,
-  x: axisX("infectious period (days)", {domain: [0, 12]}),
-  y: axisY("density", {domain: [0, 0.6]}),
-  marks: [
-    Plot.areaY(erlRows, {x: "x", y: "p", fill: cols.I, fillOpacity: 0.15,
-      clip: true}),
-    Plot.line(erlRows, {x: "x", y: "p", stroke: cols.I, strokeWidth: 4,
-      clip: true}),
-    Plot.ruleX([4], {stroke: "#333", strokeDasharray: "8,6"}),
-    Plot.text([{x: 4.1, y: 0.57}], {x: "x", y: "y", textAnchor: "start",
-      fontSize: 26, text: () => "mean 4 days"}),
-    Plot.text([{x: 8, y: 0.45}], {x: "x", y: "y", fill: cols.I,
-      fontSize: 26, fontWeight: 700,
-      text: () => `k = ${kStages}, sd ${(4 / Math.sqrt(kStages)).toFixed(1)} days`})
-  ]
-})
+::: {.column width="60%"}
+```julia
+function seirs_ode!(du, u, p, t)
+    S, E, I, R = u
+    λ = p.β * p.c * I / p.N
+    du[1] = -λ * S + p.ω * R       # waning immunity refills S
+    du[2] = λ * S - p.σ * E        # latent, not yet infectious
+    du[3] = p.σ * E - p.γ * I
+    du[4] = p.γ * I - p.ω * R
+    return nothing
+end
+
+u0 = [990.0, 0.0, 10.0, 0.0]
+p  = (β = 0.05, c = 10.0, γ = 0.25, σ = 0.5, ω = 1 / 60, N = 1000.0)
+sol = solve(ODEProblem(seirs_ode!, u0, (0.0, 365.0), p), Tsit5())
 ```
-
-::: {.attribution}
-That is an Erlang distribution. Self-study chapter 10.
-:::
 :::
 ::::
 
 ::: {.notes}
-The exponential period was the weak assumption. Fix it without leaving ODEs: chain k stages, each exponential with rate k gamma.
-The animation steps k through 1, 2, 5 and 20. The mean stays at four days, but the spread shrinks and the shape becomes a hump. That is an Erlang distribution.
-The stage equation on the slide is for the later stages, j of two or more. The first stage is fed by new infections instead.
-One line in the model, a much more realistic infectious period.
+Same shape as before. A new state means a new line and a new du entry. A new arrow means a rate that appears twice, out of one box and into the next.
 :::
 
 ## Summary
