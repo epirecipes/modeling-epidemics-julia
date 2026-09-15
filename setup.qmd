@@ -253,7 +253,7 @@ If you are unable to set up the course on your own machine, perhaps because you 
 
 All you need is a [GitHub account](https://github.com/signup) and a stable internet connection.
 
-**Starting it:** Log in to GitHub, navigate to [the course repository](https://github.com/epirecipes/modeling-epidemics-julia), and select *Code* → *Codespaces* → *Create codespace on main*. After a minute or two, a VSCode window will open in the tab, containing the course materials.
+**Starting it:** Log in to GitHub, navigate to [the course repository](https://github.com/epirecipes/modeling-epidemics-julia), and select *Code* → *Codespaces* → *Create codespace on main*. After a few minutes, while the prepared environment is downloaded, a VSCode window will open in the tab, containing the course materials.
 
 **Keeping your work:** A codespace is essentially a computer hosted in the cloud, which means that all your files and projects are stored there instead of on your laptop. If you want to keep any of your work, you need to download it. To do this, right-click on a file in the Explorer panel and select *Download*. 
 

@@ -30,3 +30,17 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends /tmp/quarto.deb; \
     rm -f /tmp/quarto.deb; \
     rm -rf /var/lib/apt/lists/*
+
+# Everything the two environments need in order to resolve and precompile. Only
+# these paths are copied, so an edit to a chapter does not invalidate the layer
+# that costs an hour to rebuild.
+COPY --chown=vscode:vscode Project.toml Manifest.toml /opt/course/
+COPY --chown=vscode:vscode src /opt/course/src
+COPY --chown=vscode:vscode environments/ch10 /opt/course/environments/ch10
+COPY --chown=vscode:vscode .devcontainer/build-depot.sh /opt/course/build-depot.sh
+
+# Build the depot as the user who will be using it, so /home/vscode/.julia is
+# owned correctly and is part of the published image.
+USER vscode
+RUN /opt/course/build-depot.sh
+USER root

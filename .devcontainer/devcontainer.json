@@ -1,21 +1,22 @@
 {
   "name": "Modeling epidemics with Julia",
-  "build": { "dockerfile": "Dockerfile" },
+  // The image is built and published by .github/workflows/devcontainer-image.yml
+  // from the Dockerfile beside this file, with every course package already
+  // compiled into it. A codespace therefore starts by pulling an image rather
+  // than by spending an hour precompiling. Rebuild it whenever Project.toml,
+  // Manifest.toml or the Dockerfile change.
+  "image": "ghcr.io/epirecipes/modeling-epidemics-julia-devcontainer:latest",
+  "remoteUser": "vscode",
 
-  // Installs and precompiles the course packages. Codespaces runs this when
-  // building a prebuild, so with prebuilds on it costs a participant nothing.
-  "onCreateCommand": ".devcontainer/instantiate.sh",
+  // The image already carries the depot, so this only has to notice a manifest
+  // that has moved on since the image was published, and repair it. It costs a
+  // few seconds when the two agree.
+  "postCreateCommand": ".devcontainer/instantiate.sh",
 
-  // The same script again, minus the warm-up load. A prebuild bakes the depot
-  // as it stood when the prebuild was built, and a later change to
-  // Manifest.toml does not invalidate it, so without this a participant could
-  // start from a prebuild whose packages no longer match the manifest. When
-  // they do match this costs a few seconds; when they do not it repairs them.
-  "postCreateCommand": ".devcontainer/instantiate.sh --no-warmup",
-
-  // Precompiling the full stack needs more than the 2-core default comfortably
-  // provides. This raises the floor on the machine a participant can pick; it
-  // also burns their Codespaces quota twice as fast as a 2-core machine.
+  // Loading this stack, and running the agent-based and inference material,
+  // needs more than the 2-core default comfortably provides. This raises the
+  // floor on the machine a participant can pick; it also spends their
+  // Codespaces quota twice as fast as a 2-core machine would.
   "hostRequirements": { "cpus": 4, "memory": "16gb", "storage": "32gb" },
 
   "customizations": {
