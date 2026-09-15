@@ -1264,9 +1264,10 @@ It also means we never need to solve for R. It is whatever is left. The next sli
 
 :::: {.columns}
 ::: {.column width="40%"}
-- Divide the $S$ rate by the $R$ rate. Time drops out
-- Integrate from the start to the end
-- At the end $I = 0$, so $r_\infty = 1 - s_\infty$
+- We want how many are left at the end, not when. So get rid of time
+- Divide the $S$ rate by the $R$ rate: $I$ cancels, and so does time. What is left ties $S$ to $R$ at every moment
+- Integrate from the start to any later point
+- At the end $I = 0$, so $r_\infty = 1 - s_\infty$: one equation, one unknown
 :::
 ::: {.column width="60%"}
 $$
@@ -1298,7 +1299,7 @@ Lower case means a fraction of $N$.
 ::::
 
 ::: {.notes}
-Three steps. First, divide the two rates. I cancels, and so does time. That is why the final size does not depend on how fast the epidemic runs.
+Why divide: both rates have I in them, and I is the thing we do not know at the end. Dividing the two cancels I and time together, and leaves a relation between S and R that holds all the way through. That is why the final size does not depend on how fast the epidemic runs.
 Second, integrate. Left side in s, right side in r. Exponentiate.
 Third, at the end nobody is infectious, so recovered is everyone who is not susceptible. This assumes nobody was immune at the start. That gives one equation in one unknown, s infinity.
 :::
