@@ -1,7 +1,5 @@
 ---
 title: "Discrete-time models"
-subtitle: "Day 1, Session 4"
-author: "Sam Abbott"
 engine: markdown
 format:
   revealjs:

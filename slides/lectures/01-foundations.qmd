@@ -1,7 +1,5 @@
 ---
 title: "Foundations of the SIR model"
-subtitle: "Day 1, Session 2"
-author: "Sam Abbott"
 engine: markdown
 format:
   revealjs:
