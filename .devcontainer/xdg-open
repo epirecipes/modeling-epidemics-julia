@@ -1,0 +1,45 @@
+#!/bin/sh
+# CairoMakie's display() writes the figure to a temporary PNG and then calls
+# xdg-open, which in a container has no desktop to open it on, so it gives up
+# with "Can't find a way to open a browser". Handing the file to the editor
+# instead makes it appear as an image tab.
+#
+# The argument needs tidying first. CairoMakie builds the URL as
+# "file:///" * path, and path is already absolute, so what arrives here is
+# file:////tmp/jl_XXXX/display.png with four slashes. VSCode cannot resolve
+# that and shows "An error occurred while loading the image", so the scheme is
+# stripped and the leading slashes collapsed back to a plain path.
+#
+# Installed into /usr/local/bin at container-creation time rather than baked
+# into the image, so it reaches codespaces started from an image built before
+# this existed.
+
+normalise() {
+    target=$1
+    case "$target" in
+        file://*)
+            target=${target#file://}
+            while [ "${target#/}" != "$target" ]; do
+                target=${target#/}
+            done
+            target="/$target"
+            ;;
+    esac
+    printf '%s' "$target"
+}
+
+count=$#
+index=0
+while [ "$index" -lt "$count" ]; do
+    argument=$1
+    shift
+    set -- "$@" "$(normalise "$argument")"
+    index=$((index + 1))
+done
+
+if command -v code >/dev/null 2>&1; then
+    exec code "$@"
+fi
+
+echo "xdg-open: no editor available; open $* manually" >&2
+exit 1

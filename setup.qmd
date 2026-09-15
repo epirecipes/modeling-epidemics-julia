@@ -255,6 +255,8 @@ All you need is a [GitHub account](https://github.com/signup) and a stable inter
 
 **Starting it:** Log in to GitHub, navigate to [the course repository](https://github.com/epirecipes/modeling-epidemics-julia), and select *Code* → *Codespaces* → *Create codespace on main*. After a few minutes, while the prepared environment is downloaded, a VSCode window will open in the tab, containing the course materials.
 
+**Seeing figures:** In a worksheet, or in the Julia REPL that VSCode starts (*Julia: Start REPL*), figures appear as they do on a laptop. If you instead run `julia` in a terminal, there is no desktop for a plot window to open on, so `display(fig)` opens the figure as an image tab in the editor.
+
 **Keeping your work:** A codespace is essentially a computer hosted in the cloud, which means that all your files and projects are stored there instead of on your laptop. If you want to keep any of your work, you need to download it. To do this, right-click on a file in the Explorer panel and select *Download*. 
 
 Alternatively, if you're using Git, you can push your changes to a branch in your own fork. In this case, you will need to create a fork of the course repository first: open [the course repository](https://github.com/epirecipes/modeling-epidemics-julia) on GitHub and select *Fork*, checking that the owner is your own account. Then open a terminal in the codespace (*Terminal* → *New Terminal*) and tell it where your fork is, replacing `<your-username>`:

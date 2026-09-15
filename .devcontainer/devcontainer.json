@@ -11,7 +11,13 @@
   // The image already carries the depot, so this only has to notice a manifest
   // that has moved on since the image was published, and repair it. It costs a
   // few seconds when the two agree.
-  "postCreateCommand": ".devcontainer/instantiate.sh",
+  // Two independent jobs at creation time: repair the packages if the manifest
+  // has moved on since the image was built, and install an xdg-open that opens
+  // a figure in the editor instead of looking for a desktop that is not there.
+  "postCreateCommand": {
+    "packages": ".devcontainer/instantiate.sh",
+    "figure-display": "sudo install -m 0755 .devcontainer/xdg-open /usr/local/bin/xdg-open"
+  },
 
   // Loading this stack, and running the agent-based and inference material,
   // needs more than the 2-core default comfortably provides. This raises the

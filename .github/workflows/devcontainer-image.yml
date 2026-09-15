@@ -7,13 +7,17 @@ name: Devcontainer image
 on:
   push:
     branches: [main]
+    # Only what actually goes into the image. devcontainer.json, instantiate.sh
+    # and xdg-open are read from the workspace when a codespace is created, so
+    # editing them does not need an hour of rebuilding; use the Run workflow
+    # button if the build itself ever needs re-running by hand.
     paths:
-      - .devcontainer/**
+      - .devcontainer/Dockerfile
+      - .devcontainer/build-depot.sh
       - Project.toml
       - Manifest.toml
       - environments/ch10/**
       - src/**
-      - .github/workflows/devcontainer-image.yml
   schedule:
     - cron: "17 5 * * 1"
   workflow_dispatch:
@@ -24,6 +28,11 @@ concurrency:
 
 jobs:
   build:
+    # Forks of this repository inherit its workflows. Without this, a
+    # participant who forks the course and syncs it gets failing runs they
+    # have no reason to care about, and an hour-long image build they have no
+    # use for.
+    if: github.repository == 'epirecipes/modeling-epidemics-julia'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     permissions:
@@ -59,6 +68,12 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}-devcontainer:latest
             ghcr.io/${{ github.repository }}-devcontainer:${{ github.sha }}
+          # Without a cache every run recompiles the depot from scratch, an
+          # hour even for a one-line change to a later layer. The cache lives
+          # in the registry rather than the 10 GB Actions cache, which these
+          # layers would not fit in.
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}-devcontainer:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}-devcontainer:buildcache,mode=max
 
       - name: Report image size
         run: docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}' | head
