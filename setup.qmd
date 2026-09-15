@@ -2,7 +2,7 @@
 
 Work through this page **before Day 1**. It takes about half an hour, most of which is waiting for downloads. Doing it in advance means Session 1 starts with you writing model code rather than installing software.
 
-You need four things: Julia, a code editor (we suggest VSCode), Quarto, and the course materials themselves. Follow the sections in order.
+You need four things: Julia, a code editor (we suggest VSCode), Quarto, and the course materials themselves. Follow the sections in order. If you cannot install software on the machine you will bring with you — a locked-down work laptop, say — skip instead to [running the course in your browser](#running-the-course-in-your-browser).
 
 ::: {.callout-tip}
 ## If you get stuck, try to keep installing the rest of the software and make a note of where you got stuck. 
@@ -246,6 +246,34 @@ Because `#` starts a comment in Julia, you can label a block by writing after th
 | `?` | help | you want a function's arguments — `?expm1` |
 | `]` | package | a package seems missing — `]st` also names the active project |
 | `;` | shell | you need `ls` or `git status` without leaving Julia |
+
+## Running on Codespaces
+
+If you are unable to set up the course on your own machine, perhaps because you are using a laptop where installing software is not permitted or because the installation process is problematic, you have the option to run the course in a browser tab using GitHub's Codespaces.
+
+All you need is a [GitHub account](https://github.com/signup) and a stable internet connection.
+
+**Starting it:** Log in to GitHub, navigate to [the course repository](https://github.com/epirecipes/modeling-epidemics-julia), and select *Code* → *Codespaces* → *Create codespace on main*. After a minute or two, a VSCode window will open in the tab, containing the course materials.
+
+**Keeping your work:** A codespace is essentially a computer hosted in the cloud, which means that all your files and projects are stored there instead of on your laptop. If you want to keep any of your work, you need to download it. To do this, right-click on a file in the Explorer panel and select *Download*. 
+
+Alternatively, if you're using Git, you can push your changes to a branch in your own fork. In this case, you will need to create a fork of the course repository first: open [the course repository](https://github.com/epirecipes/modeling-epidemics-julia) on GitHub and select *Fork*, checking that the owner is your own account. Then open a terminal in the codespace (*Terminal* → *New Terminal*) and tell it where your fork is, replacing `<your-username>`:
+
+```bash
+git remote add myfork https://github.com/<your-username>/modeling-epidemics-julia.git
+```
+
+That adds your fork as a remote called `myfork`. You only need to do this once. After that, each time you want to save your work, go to the Codespace terminal and run:
+
+```bash
+git switch -c my-answers                    # -c only the first time; later: git switch my-answers
+git add worksheets/                         # everything you want to save
+git commit -m "My worked answers for day 1" # a short note on what you are saving
+git push -u myfork my-answers               # -u only the first time; later: git push
+```
+Your files are then on GitHub, under your account, and they stay there after the codespace is deleted.
+
+**Closing down at the end of a session:** Closing the browser tab will not stop the Codespace from running. To stop it, click the *Stop* button in the top right corner of the VSCode window, or use the command palette and select *Codespaces: Stop Current Codespace*.
 
 ## If something goes wrong
 

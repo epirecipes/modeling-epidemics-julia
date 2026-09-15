@@ -1,0 +1,71 @@
+{
+  "name": "Modeling epidemics with Julia",
+  "build": { "dockerfile": "Dockerfile" },
+
+  // Installs and precompiles the course packages. Codespaces runs this when
+  // building a prebuild, so with prebuilds on it costs a participant nothing.
+  "onCreateCommand": ".devcontainer/instantiate.sh",
+
+  // The same script again, minus the warm-up load. A prebuild bakes the depot
+  // as it stood when the prebuild was built, and a later change to
+  // Manifest.toml does not invalidate it, so without this a participant could
+  // start from a prebuild whose packages no longer match the manifest. When
+  // they do match this costs a few seconds; when they do not it repairs them.
+  "postCreateCommand": ".devcontainer/instantiate.sh --no-warmup",
+
+  // Precompiling the full stack needs more than the 2-core default comfortably
+  // provides. This raises the floor on the machine a participant can pick; it
+  // also burns their Codespaces quota twice as fast as a 2-core machine.
+  "hostRequirements": { "cpus": 4, "memory": "16gb", "storage": "32gb" },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "julialang.language-julia",
+        "quarto.quarto"
+      ],
+      "settings": {
+        "julia.environmentPath": "${containerWorkspaceFolder}",
+        "julia.useRevise": false,
+
+        // Julia is installed from the tarball in the Dockerfile, not through
+        // juliaup. The extension resolves the REPL from PATH and so finds it,
+        // but the language server's precedence is
+        // languageServerExecutablePath > languageServerJuliaupChannel >
+        // `julia +release`, so without the second setting it hunts for juliaup,
+        // fails, and shows a modal offering to install it. Naming the binary
+        // for both stops the prompt and keeps the language server running.
+        // These belong here rather than in a tracked .vscode/settings.json:
+        // the path only exists inside this container.
+        "julia.executablePath": "/usr/local/bin/julia",
+        "julia.languageServerExecutablePath": "/usr/local/bin/julia",
+        "julia.juliaup.install.hint": false,
+        "files.watcherExclude": {
+          "**/_freeze/**": true,
+          "**/_site/**": true
+        }
+      }
+    }
+  },
+
+  // Pluto's default port, for the notebook units. openBrowser rather than
+  // openPreview: GitHub serves forwarded ports with frame-blocking headers, so
+  // VS Code's embedded Simple Browser cannot display Pluto and shows a refusal
+  // about the page being embedded by another site. A real tab works.
+  "forwardPorts": [1234],
+  "portsAttributes": {
+    "1234": { "label": "Pluto", "onAutoForward": "openBrowser" }
+  },
+
+  // JULIA_PROJECT="@." makes a bare `julia` in the terminal activate the nearest
+  // Project.toml, walking up from the working directory, so the REPL, `julia`
+  // scripts and Pluto all see the course packages without --project=. and
+  // participants cannot land in the default environment by accident. Explicit
+  // --project flags still win, so `julia --project=environments/ch10` and the
+  // exeflags in _quarto.yml behave as they always have. containerEnv rather
+  // than remoteEnv so it applies to every process, not only VS Code terminals.
+  "containerEnv": {
+    "JULIA_PROJECT": "@.",
+    "JULIA_NUM_THREADS": "auto"
+  }
+}
