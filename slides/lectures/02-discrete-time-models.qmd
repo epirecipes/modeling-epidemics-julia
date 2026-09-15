@@ -32,8 +32,6 @@ Fifteen minutes. Two discrete models with the same rates, and two different limi
 ::: {.column width="36%"}
 - Case counts come daily or weekly
 - Computers advance in fixed steps
-- Most forecasting models step by day
-- The ODE is the smooth curve underneath
 :::
 ::: {.column width="64%"}
 ```{ojs}
@@ -168,18 +166,84 @@ Today we ask what stepping does to the ODE we met this morning, and what changes
   </g>
 </svg>
 
-::: {.aside}
-Stepping is older than the epidemic models. The chain binomial gave epidemics their first stochastic form.
+::: {.attribution}
+Euler, *Institutionum calculi integralis*, vol. 1, 1768 ([Euler Archive E342](https://scholarlycommons.pacific.edu/euler-works/342/)).
+Abbey, "An examination of the Reed-Frost theory of epidemics", *Human Biology* 24, 1952 ([PubMed](https://pubmed.ncbi.nlm.nih.gov/12990130/)).
+Greenwood, "On the statistical measure of infectiousness", *Journal of Hygiene* 31, 1931 ([doi](https://doi.org/10.1017/s002217240001086x)).
+Bailey, *The Mathematical Theory of Epidemics*, Griffin, 1957.
 :::
 
 ::: {.notes}
+Stepping is older than the epidemic models. The chain binomial gave epidemics their first stochastic form.
 Euler wrote the step rule in 1768.
 Reed and Frost taught the chain binomial at Johns Hopkins in 1928 but never published it. Helen Abbey wrote it up in 1952.
 Greenwood's 1931 version has a fixed risk per step, whatever the number infectious.
 Bailey's 1957 book gathered the stochastic theory in one place.
 :::
 
-# The map approximates the ODE
+# A discrete-time model: the map
+
+## What a time step is
+
+:::: {.columns}
+::: {.column width="34%"}
+- A discrete-time model moves everyone once per step
+- Take the state at day $t$
+- Move people, all together
+- Land at day $t + \delta t$. Repeat
+
+```{ojs}
+//| echo: false
+tick = {
+  while (true) {
+    for (let k = 0; k <= 40; k++) {
+      yield k
+      await Promises.delay(k === 40 ? 2500 : 180)
+    }
+  }
+}
+```
+
+```{ojs}
+//| echo: false
+tickState = mapBase[tick]
+md`Day ${tick}: S = ${tickState.S.toFixed(1)}, I = ${tickState.I.toFixed(1)}, R = ${tickState.R.toFixed(1)}`
+```
+:::
+::: {.column width="66%"}
+```{ojs}
+//| echo: false
+tickRows = longRows(mapBase.slice(0, tick + 1), "map")
+Plot.plot({
+  width: 1050, height: 600, marginLeft: 90, marginBottom: 70, marginTop: 30,
+  style: {fontSize: "24px"},
+  x: {label: "time (days)", domain: [0, 40], labelAnchor: "center",
+    labelOffset: 55},
+  y: {label: "people", domain: [0, 1000], ticks: [0, 200, 400, 600, 800, 1000],
+    labelAnchor: "top", labelOffset: 40},
+  color: {domain: ["S", "I", "R"], range: [colS, colI, colR], legend: true,
+    swatchSize: 22, style: {fontSize: "22px"}},
+  marks: [
+    Plot.line(longRows(odeCurve, "ode"), {x: "t", y: "value", stroke: "comp",
+      strokeWidth: 2, strokeOpacity: 0.3}),
+    ...(tick > 0 ? [Plot.line(tickRows, {x: "t", y: "value", stroke: "comp",
+      strokeWidth: 3})] : []),
+    Plot.dot(tickRows, {x: "t", y: "value", fill: "comp", r: 6}),
+    Plot.ruleX([tick], {stroke: "#888", strokeDasharray: "6,4"})
+  ]
+})
+```
+::: {.attribution}
+Dots: the map, one step per day, playing on a loop. Faint lines: the ODE.
+:::
+:::
+::::
+
+::: {.notes}
+Watch it tick.
+Each step takes the whole population from one day to the next in one go.
+Notice the dots do not sit exactly on the faint ODE curve. We come back to that.
+:::
 
 ## Why a rate becomes a probability
 
@@ -345,67 +409,7 @@ The counts have decimals. The map moves fractions of people.
 Nothing is random yet.
 :::
 
-## What a time step is
-
-:::: {.columns}
-::: {.column width="34%"}
-- Take the state at day $t$
-- Move people once, all together
-- Land at day $t + \delta t$
-- Repeat
-
-```{ojs}
-//| echo: false
-tick = {
-  while (true) {
-    for (let k = 0; k <= 40; k++) {
-      yield k
-      await Promises.delay(k === 40 ? 2500 : 180)
-    }
-  }
-}
-```
-
-```{ojs}
-//| echo: false
-tickState = mapBase[tick]
-md`Day ${tick}: S = ${tickState.S.toFixed(1)}, I = ${tickState.I.toFixed(1)}, R = ${tickState.R.toFixed(1)}`
-```
-:::
-::: {.column width="66%"}
-```{ojs}
-//| echo: false
-tickRows = longRows(mapBase.slice(0, tick + 1), "map")
-Plot.plot({
-  width: 1050, height: 600, marginLeft: 90, marginBottom: 70, marginTop: 30,
-  style: {fontSize: "24px"},
-  x: {label: "time (days)", domain: [0, 40], labelAnchor: "center",
-    labelOffset: 55},
-  y: {label: "people", domain: [0, 1000], ticks: [0, 200, 400, 600, 800, 1000],
-    labelAnchor: "top", labelOffset: 40},
-  color: {domain: ["S", "I", "R"], range: [colS, colI, colR], legend: true,
-    swatchSize: 22, style: {fontSize: "22px"}},
-  marks: [
-    Plot.line(longRows(odeCurve, "ode"), {x: "t", y: "value", stroke: "comp",
-      strokeWidth: 2, strokeOpacity: 0.3}),
-    ...(tick > 0 ? [Plot.line(tickRows, {x: "t", y: "value", stroke: "comp",
-      strokeWidth: 3})] : []),
-    Plot.dot(tickRows, {x: "t", y: "value", fill: "comp", r: 6}),
-    Plot.ruleX([tick], {stroke: "#888", strokeDasharray: "6,4"})
-  ]
-})
-```
-::: {.attribution}
-Dots: the map, one step per day, playing on a loop. Faint lines: the ODE.
-:::
-:::
-::::
-
-::: {.notes}
-Watch it tick.
-Each step takes the whole population from one day to the next in one go.
-Notice the dots do not sit exactly on the faint ODE curve. That is the next slide.
-:::
+# The map approximates the ODE
 
 ## Shrink the step
 
@@ -717,6 +721,10 @@ The same, with the per-step infection probability $p_I = 1 - e^{-\beta c I_t \de
 $(1 - p)^{I} \approx e^{-pI}$ for small $p$, so with $p = \beta c\,\delta t / N$ they agree
 :::
 
+::: {.attribution}
+Abbey, "An examination of the Reed-Frost theory of epidemics", *Human Biology* 24, 1952 ([PubMed](https://pubmed.ncbi.nlm.nih.gov/12990130/)).
+:::
+
 ::: {.notes}
 Reed and Frost wrote the escape probability as a product over infectious contacts.
 We wrote it as an exponential of the total hazard.
@@ -730,7 +738,6 @@ For small per-contact probability the two are the same chain.
 - Grey: single runs of the chain
 - Red: their mean
 - Black dashed: the map
-- Runs pile up into a fan
 
 ```{ojs}
 //| echo: false

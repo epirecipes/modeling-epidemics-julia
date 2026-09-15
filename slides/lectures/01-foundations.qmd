@@ -40,8 +40,8 @@ $$
 $$
 
 ::: {.attribution}
-Guldberg and Waage, 1864. Speed stands in for the contact rate $c$.
-$\beta$ is the chance a contact transmits.
+Speed stands in for the contact rate $c$. $\beta$ is the chance a contact transmits.
+Guldberg and Waage, "Studier over Affiniteten", 1864; English translation in *J. Chem. Educ.* 63, 1986 ([doi](https://doi.org/10.1021/ed063p1044)).
 :::
 :::
 ::: {.column width="64%"}
@@ -226,6 +226,8 @@ timeline(epiEvents, 1740, 1940, [1760, 1906])
 
 ::: {.attribution}
 Chemistry's mass action (1864) sits in the middle.
+Bernoulli, 1760, read to the Paris Academy; English translation in *Rev. Med. Virol.* 14, 2004 ([doi](https://doi.org/10.1002/rmv.443)).
+Hamer, "Epidemic disease in England", Milroy Lectures, *Lancet* 167, 1906 ([doi](https://doi.org/10.1016/S0140-6736(01)80187-2)).
 :::
 :::
 ::::
@@ -250,6 +252,8 @@ timeline(epiEvents, 1740, 1940, [1911, 1927])
 
 ::: {.attribution}
 Ross called it the "a priori" method. Write the mechanism down, then see what follows.
+Ross, *The Prevention of Malaria*, 2nd ed., Murray, 1911; "A priori pathometry, Part I", *Proc. R. Soc. A* 92, 1916 ([doi](https://doi.org/10.1098/rspa.1916.0007)).
+Kermack and McKendrick, "A contribution to the mathematical theory of epidemics", *Proc. R. Soc. A* 115, 1927 ([doi](https://doi.org/10.1098/rspa.1927.0118)).
 :::
 :::
 ::::
@@ -374,6 +378,10 @@ timeline(odeEvents, 1650, 1950, [1678, 1798, 1838, 1925])
 
 ::: {.attribution}
 Large populations change smoothly, so a rate of change is enough.
+Newton, *Principia*, 1687. Leibniz, "Nova methodus pro maximis et minimis", *Acta Eruditorum*, 1684.
+Malthus, *An Essay on the Principle of Population*, 1798 ([Gutenberg](https://www.gutenberg.org/ebooks/4239)).
+Verhulst, "Notice sur la loi que la population suit dans son accroissement", *Corr. Math. Phys.* 10, 1838.
+Lotka, *Elements of Physical Biology*, 1925 ([archive.org](https://archive.org/details/elementsofphysic017171mbp)). Volterra, *Nature* 118, 1926 ([doi](https://doi.org/10.1038/118558a0)).
 :::
 :::
 ::::
