@@ -1325,8 +1325,8 @@ Third, at the end nobody is infectious, so recovered is everyone who is not susc
 ::: {.column width="38%"}
 - $s_\infty$ sits alone and inside the exponential, so no rearranging isolates it
 - Write everything on one side as $f(s)$. The answer is where $f = 0$, its root
-- Newton's method: from a guess, draw the tangent to the curve and go to where that line hits zero
-- That is the next guess. Repeat; each step lands far closer
+- Newton's method: at a guess $s_k$, draw the straight line that touches the curve there, its tangent
+- Follow that line down to the axis. Where it crosses $f = 0$ is the next guess $s_{k+1}$. Repeat
 
 $$
 f(s) = s - s_0\, e^{-R_0 (1 - s)},
@@ -1382,12 +1382,22 @@ newtonPlot = ({R0, path, rows, root}, k) => Plot.plot({
       }), {x: "s", y: "y", stroke: cols.I, strokeWidth: 2.5,
         strokeDasharray: "8,6", clip: true}),
       Plot.ruleX([path[k]], {stroke: cols.I, strokeDasharray: "4,4",
-        clip: true})
+        clip: true}),
+      Plot.dot([{x: path[k - 1], y: fs(path[k - 1], R0)}], {x: "x", y: "y",
+        r: 10, fill: "none", stroke: cols.I, strokeWidth: 3, clip: true}),
+      Plot.text([{x: path[k - 1], y: fs(path[k - 1], R0)}], {x: "x", y: "y",
+        dx: 14, dy: 22, fill: cols.I, fontSize: 22, textAnchor: "start",
+        text: () => `guess s${k}`, clip: true}),
+      Plot.dot([{x: path[k], y: 0}], {x: "x", y: "y", r: 8, fill: "white",
+        stroke: cols.I, strokeWidth: 3, clip: true}),
+      Plot.text([{x: path[k], y: 0}], {x: "x", y: "y", dy: -22, dx: 10,
+        fill: cols.I, fontSize: 22, textAnchor: "start",
+        text: () => "tangent hits zero: next guess", clip: true})
     ] : []),
     Plot.text([{x: path[k], y: 0.26}], {x: "x", y: "y",
       fill: cols.I, fontSize: 26, textAnchor: "start", dx: 10,
-      text: () => k === 0 ? `start at s = ${sStart}`
-        : `step ${k}: s = ${path[k].toFixed(3)}`})
+      text: () => k === 0 ? `start: guess s = ${sStart}`
+        : `step ${k}: the tangent's crossing, s = ${path[k].toFixed(3)}`})
   ]
 })
 {
