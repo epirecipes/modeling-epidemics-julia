@@ -54,7 +54,15 @@
     "1234": { "label": "Pluto", "onAutoForward": "openPreview" }
   },
 
-  "remoteEnv": {
+  // JULIA_PROJECT="@." makes a bare `julia` in the terminal activate the nearest
+  // Project.toml, walking up from the working directory, so the REPL, `julia`
+  // scripts and Pluto all see the course packages without --project=. and
+  // participants cannot land in the default environment by accident. Explicit
+  // --project flags still win, so `julia --project=environments/ch10` and the
+  // exeflags in _quarto.yml behave as they always have. containerEnv rather
+  // than remoteEnv so it applies to every process, not only VS Code terminals.
+  "containerEnv": {
+    "JULIA_PROJECT": "@.",
     "JULIA_NUM_THREADS": "auto"
   }
 }
