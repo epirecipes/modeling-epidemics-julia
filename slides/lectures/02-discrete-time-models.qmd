@@ -17,7 +17,7 @@ format:
 - Why step through time at all
 - A deterministic step from the ODE
 - A stochastic step: whole people, moved at random
-- What each becomes as the step shrinks
+- What they approximate
 - Beyond SIR, same recipe
 
 ::: {.notes}
@@ -32,8 +32,8 @@ Fifteen minutes. Two discrete models with the same rates, and two different limi
 ::: {.column width="36%"}
 - Case counts come daily or weekly
 - Computers advance in fixed steps
-- Deterministic model: moves the expected numbers
-- Stochastic model: draws whole people at random
+- Easier to write and adapt: one update rule, no solver
+- Often cheaper to run
 :::
 ::: {.column width="64%"}
 ```{ojs}
@@ -247,15 +247,15 @@ Each step takes the whole population from one day to the next in one go.
 Notice the dots do not sit exactly on the faint ODE curve. We come back to that.
 :::
 
-## Why slivers?
+## From rates to probabilities
 
 :::: {.columns}
 ::: {.column width="38%"}
+- The ODE gives rates. A step needs a probability
 - A rate is a chance per tiny moment, for someone it has not happened to yet (a hazard)
 - chance $\approx r\,\mathrm{d}t$ only when $\mathrm{d}t$ is tiny
-- A whole step is not tiny
-- So cut the step into $n$ slivers small enough for the rule to hold
-- Each sliver: chance $r\,\delta t / n$
+- A whole step is not tiny enough
+- So cut the step into $n$ slivers, each with chance $r\,\delta t / n$
 
 ```{ojs}
 //| echo: false
@@ -273,10 +273,10 @@ nSliver = {
 ::: {style="display: flex; flex-direction: column; justify-content: center; min-height: 560px;"}
 ```{ojs}
 //| echo: false
-sliverBar = {
+sliverBarSvg = (n, caption) => {
   const barX = 210, barW = 840, barY = 8, barH = 90
-  const sw = barW / nSliver
-  const boxes = d3.range(nSliver).map((i) => htl.svg`<rect
+  const sw = barW / n
+  const boxes = d3.range(n).map((i) => htl.svg`<rect
     x=${barX + i * sw} y=${barY} width=${sw} height=${barH}
     fill="#e8eef2" stroke="#17242b" stroke-width="1.5"/>`)
   return htl.svg`<svg viewBox="0 0 1050 150" width="1050" height="150"
@@ -284,9 +284,11 @@ sliverBar = {
     font-size="26" fill="#17242b">
     <text x="0" y=${barY + barH / 2 + 9}>one step, δt</text>
     ${boxes}
-    <text x=${barX + barW / 2} y=${barY + barH + 40} text-anchor="middle">each sliver: chance r δt / ${nSliver} (= ${(1 / nSliver).toFixed(3)} at r δt = 1)</text>
+    <text x=${barX + barW / 2} y=${barY + barH + 40} text-anchor="middle">${caption}</text>
   </svg>`
 }
+sliverBar = sliverBarSvg(nSliver,
+  `each sliver: chance r δt / ${nSliver} (= ${(1 / nSliver).toFixed(3)} at r δt = 1)`)
 ```
 ::: {.attribution}
 One step cut into n slivers. n cycles through 1, 2, 4, 8, 16 and 64.
@@ -329,13 +331,19 @@ the limit that defines $e$ (compound interest), the survival function of a const
 ::: {.column width="62%"}
 ```{ojs}
 //| echo: false
+sliverBar2 = sliverBarSvg(nSliver,
+  `each sliver survived with chance 1 − r δt / ${nSliver} (= ${(1 - 1 / nSliver).toFixed(3)} at r δt = 1)`)
+```
+
+```{ojs}
+//| echo: false
 sliverRows = Array.from({length: 121}, (_, i) => i * 0.025).flatMap((x) => [
   {x, y: Math.pow(Math.max(0, 1 - x / nSliver), nSliver),
     which: `${nSliver} sliver${nSliver > 1 ? "s" : ""}`},
   {x, y: Math.exp(-x), which: "exp(−r δt)"}
 ])
 Plot.plot({
-  width: 1050, height: 500, marginLeft: 90, marginBottom: 70, marginTop: 30,
+  width: 1050, height: 400, marginLeft: 90, marginBottom: 70, marginTop: 30,
   style: {fontSize: "24px"},
   title: `${nSliver} sliver${nSliver > 1 ? "s" : ""}: the chance of surviving the whole step`,
   x: {label: "r δt (rate × step, dimensionless)", domain: [0, 3],
@@ -383,7 +391,7 @@ Let the slivers shrink. The limit is the same as compound interest, which is why
 That exponential is the survival function of a constant hazard.
 :::
 
-## From a rate to a probability
+## From surviving the step to the event happening
 
 :::: {.columns}
 ::: {.column width="34%"}
@@ -1221,7 +1229,6 @@ The two right-hand boxes are different objects. The ODE is a mean-field descript
 
 :::: {.columns}
 ::: {.column width="34%"}
-- A rate becomes a probability per step
 - SEIR: a latent stage $E$
 - SIRS: immunity wanes, $R \to S$
 - Erlang stages: several $I$ boxes in a row, for a less spread-out infectious period (Chapter 10)
