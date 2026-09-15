@@ -29,7 +29,7 @@ Fifteen minutes. History first, then the model built slowly, then the three numb
 - Two kinds of molecule bounce around at random
 - They react when they collide
 - Collisions per second scale with the product of the counts
-- Infections work the same way. Back to this in a few slides
+- Infections work the same way
 
 $$
 \text{rate} = k\,[A]\,[B]
@@ -151,12 +151,11 @@ Guldberg and Waage, "Studier over Affiniteten", 1864; English translation in *J.
 ::: {.notes}
 Start here with no maths. Red dots and blue dots. A flash is a red-blue collision.
 The animation runs with 10 red, then 20, then 40, blue fixed at 40. Each doubling of red doubles the collision rate. That is the product rule.
-Speed is the contact rate. Double it and collisions double.
 The last phase redraws the same dots as people, and nothing has changed except the labels.
 Say that infections are a collision between a susceptible and an infectious person. We build the equation slowly in a few slides.
 :::
 
-## Where the idea came from
+## Mass action reaches epidemics
 
 :::: {.columns}
 ::: {.column width="42%"}
@@ -212,7 +211,6 @@ timeline(epiEvents, 1740, 1940, [1760, 1906])
 ```
 
 ::: {.attribution}
-Chemistry's mass action (1864) sits in the middle.
 Bernoulli, 1760, read to the Paris Academy; English translation in *Rev. Med. Virol.* 14, 2004 ([doi](https://doi.org/10.1002/rmv.443)).
 Hamer, "Epidemic disease in England", Milroy Lectures, *Lancet* 167, 1906 ([doi](https://doi.org/10.1016/S0140-6736(01)80187-2)).
 :::
@@ -238,7 +236,6 @@ timeline(epiEvents, 1740, 1940, [1911, 1927])
 ```
 
 ::: {.attribution}
-Ross called it the "a priori" method. Write the mechanism down, then see what follows.
 Ross, *The Prevention of Malaria*, 2nd ed., Murray, 1911; "A priori pathometry, Part I", *Proc. R. Soc. A* 92, 1916 ([doi](https://doi.org/10.1098/rspa.1916.0007)).
 Kermack and McKendrick, "A contribution to the mathematical theory of epidemics", *Proc. R. Soc. A* 115, 1927 ([doi](https://doi.org/10.1098/rspa.1927.0118)).
 :::
@@ -332,7 +329,7 @@ Plot.plot({
 ```
 
 ::: {.attribution}
-A peek ahead. The SIR model we build next, with contacts reduced from day zero.
+The model we build next, with contacts cut from day zero.
 :::
 :::
 ::::
@@ -437,7 +434,7 @@ Three boxes, two arrows. The whole job is to say how fast people move along each
 Say the assumptions once. Nobody is born, nobody dies, nobody comes back from R. Everyone mixes with everyone.
 :::
 
-## Force of infection
+## How fast one susceptible gets infected
 
 :::: {.columns}
 ::: {.column width="38%"}
@@ -446,7 +443,7 @@ Say the assumptions once. Nobody is born, nobody dies, nobody comes back from R.
 - Each of those transmits with probability $\beta$
 
 ::: {.sub}
-The rate at which one susceptible gets infected: a chance per day.
+The force of infection $\lambda$: the rate at which one susceptible gets infected, a chance per day.
 :::
 
 $$
@@ -503,7 +500,6 @@ Lambda is the product of the three. It is a rate per susceptible per day. It cha
 ::: {.column width="38%"}
 - Each susceptible is infected at rate $\lambda$
 - There are $S$ of them
-- $S$ only ever falls
 
 $$
 \frac{\mathrm{d}S}{\mathrm{d}t} = -\lambda S = -\beta c \,\frac{I}{N}\, S
@@ -549,7 +545,7 @@ The curve comes from the whole model; we are only reading the S part.
 :::: {.columns}
 ::: {.column width="38%"}
 - Each infectious person recovers at rate $\gamma$
-- So the infectious period is exponential
+- So the time infectious is exponential: most short, a few long
 - Mean $1/\gamma$ days
 
 $$
@@ -645,7 +641,7 @@ Add the two flows into I and out of I. R just collects.
 The animation shows the baseline, then twice the contacts, then twice the recovery rate. More contacts make it faster and bigger. A shorter infectious period shrinks it.
 :::
 
-## The basic reproduction number
+## $R_0$: how many one case infects
 
 :::: {.columns}
 ::: {.column width="42%"}
@@ -710,7 +706,7 @@ The "everyone susceptible" part matters. Later in the epidemic each case infects
 ::: {.column width="42%"}
 - With $I = 0$ nothing changes, whatever $S$ is
 - Stable means a small outbreak dies out
-- While $I$ is small, $S$ barely moves, so the $I$ equation is linear
+- While $I$ is small, $S$ barely moves, so $I$ grows or shrinks at a fixed rate $g$
 - It grows if and only if $R_0 s > 1$
 
 $$
@@ -750,7 +746,7 @@ html`<p style="font-size:28px;color:#b22222;margin:0.2em 0 0 90px">
 ```
 
 ::: {.attribution}
-$\gamma = 0.25$, $I(0) = 10$. The linear approximation, so it ignores $S$ falling.
+$\gamma = 0.25$, $I(0) = 10$. Ignores $S$ falling.
 :::
 :::
 ::::
@@ -846,7 +842,7 @@ The curves draw themselves in time, then repeat with R nought at 1.5, 2 and 3. A
 Note the peak is not the end. There are still lots of infectious people, and they keep infecting. That overshoot is the next few slides.
 :::
 
-## Conservation
+## The population is conserved
 
 :::: {.columns}
 ::: {.column width="38%"}
@@ -939,14 +935,14 @@ Second, integrate. Left side in s, right side in r. Exponentiate.
 Third, at the end nobody is infectious, so recovered is everyone who is not susceptible. This assumes nobody was immune at the start. That gives one equation in one unknown, s infinity.
 :::
 
-## Finding the root
+## Solving the final size equation
 
 :::: {.columns}
 ::: {.column width="38%"}
 - $s_\infty$ appears alone and inside the exponential
 - No rearrangement isolates it. That is "transcendental"
-- Move everything to one side and find where $f = 0$
-- Newton: follow the tangent to zero, repeat
+- Move everything to one side. The answer is where $f = 0$, its root
+- Newton's method: follow the tangent to zero, repeat
 
 $$
 f(s) = s - s_0\, e^{-R_0 (1 - s)}
@@ -1031,7 +1027,7 @@ Transcendental just means no algebra gets s out on its own. So we solve numerica
 f has a second root just above s = 1, the "no epidemic" solution, which is why the starting guess matters.
 :::
 
-## Attack rate and herd immunity
+## Attack rate versus herd immunity threshold
 
 :::: {.columns}
 ::: {.column width="38%"}
@@ -1091,8 +1087,7 @@ The threshold is what vaccination aims for. An unmitigated epidemic goes well pa
 ::: {.column width="38%"}
 - Nothing so far gave a formula for $S(t)$. A computer steps instead
 - Euler: take the current slope, step forward, repeat
-- Runge–Kutta: several slopes per step. Tsit5, in the worksheet, also picks the step size
-- Newton: for roots, follow the tangent
+- Runge–Kutta: several slopes per step. Tsit5, the worksheet's solver, is one and picks its own step size
 :::
 ::: {.column width="62%"}
 ```{ojs}
@@ -1143,14 +1138,14 @@ eulerPlot = (dtE) => Plot.plot({
 ::: {.notes}
 Nothing on the previous slides had a formula for S of t. A computer steps through time instead.
 Euler is the simplest. Big steps overshoot the curve. Shrink the step and it closes in.
-Runge-Kutta methods take a few trial slopes per step and do far better. Tsit5, which the worksheet uses, also chooses its own step size. Newton is the same idea for roots.
+Runge-Kutta methods take a few trial slopes per step and do far better. Tsit5, which the worksheet uses, also chooses its own step size.
 :::
 
-## Beyond SIR
+## Beyond SIR: another box, another arrow
 
 :::: {.columns}
 ::: {.column width="38%"}
-- SEIR adds a latent stage before infectiousness
+- SEIR adds a latent stage: infected, not yet infectious
 - SIRS lets immunity wane, so $S$ refills
 
 ::: {.sub}
@@ -1243,7 +1238,7 @@ SEIR: infected but not yet infectious. The curve shifts later and flattens a lit
 SIRS: recovered people drift back to S. The epidemic no longer burns out. It settles to an endemic level.
 :::
 
-## Non-exponential infectious periods
+## A more realistic infectious period
 
 :::: {.columns}
 ::: {.column width="38%"}
