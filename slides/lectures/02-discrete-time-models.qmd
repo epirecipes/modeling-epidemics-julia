@@ -15,8 +15,8 @@ format:
 ## Talk plan
 
 - Why step through time at all
-- The map: stepping the ODE
-- The chain: whole people, moved at random
+- A deterministic step from the ODE
+- A stochastic step: whole people, moved at random
 - What each becomes as the step shrinks
 - Beyond SIR, same recipe
 
@@ -32,6 +32,8 @@ Fifteen minutes. Two discrete models with the same rates, and two different limi
 ::: {.column width="36%"}
 - Case counts come daily or weekly
 - Computers advance in fixed steps
+- Two discrete-time models today: deterministic, moving expected numbers
+- and stochastic, drawing whole people
 :::
 ::: {.column width="64%"}
 ```{ojs}
@@ -124,7 +126,7 @@ Plot.plot({
 })
 ```
 ::: {.attribution}
-Bars: daily counts from the baseline SIR scenario, N = 1000, R~0~ = 2. Line: the ODE's rate of new infections.
+Bars: daily counts from the baseline SIR scenario, N = 1000, R~0~ = 2. Line: the rate of new infections from the ODE, the continuous-time model from this morning.
 :::
 :::
 ::::
@@ -181,7 +183,7 @@ Greenwood's 1931 version has a fixed risk per step, whatever the number infectio
 Bailey's 1957 book gathered the stochastic theory in one place.
 :::
 
-# A discrete-time model: the map
+# The deterministic model
 
 ## What a time step is
 
@@ -234,7 +236,7 @@ Plot.plot({
 })
 ```
 ::: {.attribution}
-Dots: the map, one step per day, playing on a loop. Faint lines: the ODE.
+Dots: the deterministic model, one step per day, playing on a loop. Faint lines: the ODE.
 :::
 :::
 ::::
@@ -245,18 +247,14 @@ Each step takes the whole population from one day to the next in one go.
 Notice the dots do not sit exactly on the faint ODE curve. We come back to that.
 :::
 
-## Why a rate becomes a probability
+## Why slivers?
 
 :::: {.columns}
-::: {.column width="34%"}
-- The ODE moves people at rate $r$ per day
-- Slice the step into $n$ slivers
-- In one sliver the chance is $r\,\delta t / n$
-- Survive all $n$, then let $n \to \infty$
-
-$$
-\Bigl(1 - \frac{r\,\delta t}{n}\Bigr)^{n} \longrightarrow e^{-r\,\delta t}
-$$
+::: {.column width="38%"}
+- A rate is a chance per tiny moment for someone it has not happened to yet (a hazard): chance $\approx r\,\mathrm{d}t$ only when $\mathrm{d}t$ is tiny
+- A whole step is not tiny. $r\,\delta t$ can pass one
+- So cut the step into $n$ slivers small enough for the rule to hold
+- Each sliver: chance $r\,\delta t / n$
 
 ```{ojs}
 //| echo: false
@@ -268,10 +266,67 @@ nSliver = {
     }
   }
 }
-md`At r δt = 1: (1 − 1/${nSliver})<sup>${nSliver}</sup> = **${Math.pow(1 - 1 / nSliver, nSliver).toFixed(3)}**, and e<sup>−1</sup> = ${Math.exp(-1).toFixed(3)}`
+md`n = **${nSliver}**: each sliver has chance r δt / ${nSliver}, which is **${(1 / nSliver).toFixed(3)}** at r δt = 1`
 ```
 :::
-::: {.column width="66%"}
+::: {.column width="62%"}
+```{ojs}
+//| echo: false
+sliverBar = {
+  const barX = 210, barW = 840, barY = 8, barH = 90
+  const sw = barW / nSliver
+  const boxes = d3.range(nSliver).map((i) => htl.svg`<rect
+    x=${barX + i * sw} y=${barY} width=${sw} height=${barH}
+    fill="#e8eef2" stroke="#17242b" stroke-width="1.5"/>`)
+  return htl.svg`<svg viewBox="0 0 1050 150" width="1050" height="150"
+    font-family="Avenir Next, Helvetica Neue, Arial, sans-serif"
+    font-size="26" fill="#17242b">
+    <text x="0" y=${barY + barH / 2 + 9}>one step, δt</text>
+    ${boxes}
+    <text x=${barX + barW / 2} y=${barY + barH + 40} text-anchor="middle">each sliver: chance r δt / ${nSliver} (= ${(1 / nSliver).toFixed(3)} at r δt = 1)</text>
+  </svg>`
+}
+```
+::: {.attribution}
+One step cut into n slivers. n cycles through 1, 2, 4, 8, 16 and 64.
+:::
+:::
+::::
+
+::: {.notes}
+The rate comes from the ODE, which lives in the limit of tiny intervals.
+A day-long step is far from that limit. r delta t can pass one, and a chance cannot.
+So rebuild the day out of intervals that are tiny. Each sliver gets a share r delta t over n.
+:::
+
+## Survive every sliver
+
+:::: {.columns}
+::: {.column width="38%"}
+::: {.fragment}
+No event in the step means no event in sliver 1, and in sliver 2, and so on
+:::
+
+::: {.fragment}
+$$
+\Bigl(1 - \tfrac{r\delta t}{n}\Bigr)\Bigl(1 - \tfrac{r\delta t}{n}\Bigr)\cdots
+= \Bigl(1 - \tfrac{r\delta t}{n}\Bigr)^{n}
+$$
+:::
+
+::: {.fragment}
+Let $n \to \infty$:
+$$
+\Bigl(1 - \tfrac{r\delta t}{n}\Bigr)^{n} \to e^{-r\delta t}
+$$
+the limit that defines $e$ (compound interest), the survival function of a constant hazard, an exponential waiting time
+:::
+
+::: {.sub}
+Survival here just means no event yet.
+:::
+:::
+::: {.column width="62%"}
 ```{ojs}
 //| echo: false
 sliverRows = Array.from({length: 121}, (_, i) => i * 0.025).flatMap((x) => [
@@ -280,7 +335,7 @@ sliverRows = Array.from({length: 121}, (_, i) => i * 0.025).flatMap((x) => [
   {x, y: Math.exp(-x), which: "exp(−r δt)"}
 ])
 Plot.plot({
-  width: 1050, height: 600, marginLeft: 90, marginBottom: 70, marginTop: 30,
+  width: 1050, height: 500, marginLeft: 90, marginBottom: 70, marginTop: 30,
   style: {fontSize: "24px"},
   title: `${nSliver} sliver${nSliver > 1 ? "s" : ""}: the chance of surviving the whole step`,
   x: {label: "r δt (rate × step, dimensionless)", domain: [0, 3],
@@ -299,31 +354,54 @@ Plot.plot({
   ]
 })
 ```
+
+```{ojs}
+//| echo: false
+sliverTable = {
+  const ns = [1, 2, 4, 8, 16, 64]
+  const cell = (txt, bold) => htl.html`<td style="padding: 2px 18px; text-align: center; font-weight: ${bold ? 700 : 400}; ${bold ? "color: #17242b" : ""}">${txt}</td>`
+  return htl.html`<table style="font-size: 0.6em; border-collapse: collapse; margin: 0 auto;">
+    <tr><td style="padding: 2px 18px; text-align: left;">n</td>
+      ${ns.map((n) => cell(String(n), n === nSliver))}
+      <td style="padding: 2px 18px; text-align: center;">∞</td></tr>
+    <tr><td style="padding: 2px 18px; text-align: left;">(1 − 1/n)<sup>n</sup></td>
+      ${ns.map((n) => cell(Math.pow(1 - 1 / n, n).toFixed(3), n === nSliver))}
+      <td style="padding: 2px 18px; text-align: center; color: ${colI}; font-weight: 700;">${Math.exp(-1).toFixed(3)}</td></tr>
+  </table>`
+}
+```
 ::: {.attribution}
-The slivers multiply. More slivers, and the product settles on the exponential.
+Values at r δt = 1. The limit e^−1^ is in red.
 :::
 :::
 ::::
 
 ::: {.notes}
-The ODE speaks in rates. A rate is a chance per tiny sliver of time.
-Cut the step into n slivers. Each is survived with chance one minus r delta t over n. Survive the step means survive every sliver, so multiply.
-Let the slivers shrink. The product tends to the exponential. That is the definition of e, the same limit as compound interest.
-So a constant rate over a step gives an exponential survival, and the rest follows.
+Surviving the step means surviving every sliver, so the chances multiply. Survival here just means no event yet.
+Multiplying needs the slivers to be independent, which a constant rate gives.
+Let the slivers shrink. The limit is the same as compound interest, which is why the exponential appears.
+That exponential is the survival function of a constant hazard.
 :::
 
 ## From a rate to a probability
 
 :::: {.columns}
 ::: {.column width="34%"}
-- Chance of no event in $\delta t$: $e^{-r\delta t}$
-- So $p = 1 - e^{-r\delta t}$
-- $r\delta t$ is the expected number of events, not a chance
+- Survival to the end of the step: $e^{-r\delta t}$
+- So the event has happened by then with $p = 1 - e^{-r\delta t}$
+- $r\delta t$ is the expected number of events
 - It can exceed one. $p$ cannot
 
 ```{ojs}
 //| echo: false
-viewof rdt = Inputs.range([0, 3], {value: 1, step: 0.05, label: "r δt"})
+rdt = {
+  while (true) {
+    for (let k = 0; k <= 60; k++) {
+      yield k * 0.05
+      await Promises.delay(k === 60 ? 2500 : 60)
+    }
+  }
+}
 ```
 
 ```{ojs}
@@ -364,27 +442,80 @@ Plot.plot({
 ::::
 
 ::: {.notes}
-One minus the survival chance is the chance the event happens at least once.
+One minus the survival chance is the chance the event has happened by the end of the step.
+It is the same exponential as the infectious period in the foundations deck, seen from the other side: there it was how long someone stays, here it is whether they have left by the end of the step.
 r delta t is the expected number of events in the step. For a small step that is nearly the same as the probability, so the two lines agree at the left.
 For a large step the expected count goes past one, but a person can only leave once. The exponential form keeps p between zero and one.
 :::
 
-## The deterministic map
+## From flows to a step
 
 :::: {.columns}
-::: {.column width="46%"}
-Per person, per step
-
-::: {.bigmath}
-$$
-p_I = 1 - e^{-\beta c I_t \delta t / N}, \qquad
-p_R = 1 - e^{-\gamma \delta t}
-$$
+::: {.column width="40%"}
+- The ODE has two flows: infection at rate $\lambda = \beta c I / N$ per susceptible, recovery at rate $\gamma$ per infectious
+- Over one step, each susceptible is infected with $p_I = 1 - e^{-\lambda \delta t}$
+- Each infectious person recovers with $p_R = 1 - e^{-\gamma \delta t}$
+- $\lambda$ uses $I_t$, held fixed for the step
 :::
+::: {.column width="60%"}
+<svg viewBox="0 0 1200 420" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Avenir Next, Helvetica Neue, Arial, sans-serif">
+  <defs>
+    <marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#17242b"/>
+    </marker>
+  </defs>
+  <text x="600" y="50" text-anchor="middle" font-size="28" fill="#17242b">per step: a probability</text>
+  <g stroke-width="4" fill="#fbfcfd">
+    <rect x="40" y="150" width="200" height="130" rx="16" stroke="#4682b4"/>
+    <rect x="500" y="150" width="200" height="130" rx="16" stroke="#b22222"/>
+    <rect x="960" y="150" width="200" height="130" rx="16" stroke="#2e8b57"/>
+  </g>
+  <g text-anchor="middle" font-size="60" font-weight="700">
+    <text x="140" y="235" fill="#4682b4">S</text>
+    <text x="600" y="235" fill="#b22222">I</text>
+    <text x="1060" y="235" fill="#2e8b57">R</text>
+  </g>
+  <g stroke="#17242b" stroke-width="4" fill="none" marker-end="url(#flow-arrow)">
+    <line x1="250" y1="215" x2="490" y2="215"/>
+    <line x1="710" y1="215" x2="950" y2="215"/>
+  </g>
+  <g text-anchor="middle" font-size="30" fill="#17242b">
+    <text x="370" y="125">p<tspan font-size="22" dy="8">I</tspan><tspan dy="-8"> = 1 − e</tspan><tspan font-size="22" dy="-14">−λ δt</tspan></text>
+    <text x="830" y="125">p<tspan font-size="22" dy="8">R</tspan><tspan dy="-8"> = 1 − e</tspan><tspan font-size="22" dy="-14">−γ δt</tspan></text>
+  </g>
+  <g text-anchor="middle" font-size="28" fill="#999">
+    <text x="370" y="330">rate λ = β c I<tspan font-size="20" dy="8">t</tspan><tspan dy="-8"> / N</tspan></text>
+    <text x="830" y="330">rate γ</text>
+    <text x="600" y="395">in the ODE: a rate per day</text>
+  </g>
+</svg>
 :::
-::: {.column width="54%"}
-Move the expected numbers
+::::
 
+::: {.notes}
+Same two flows as the ODE.
+On each arrow the rate per day becomes a probability per step.
+The force of infection uses the number infectious at the start of the step and holds it there.
+:::
+
+## The deterministic step
+
+:::: {.columns}
+::: {.column width="40%"}
+- Move the expected number along each arrow
+- Add up what each box gains and loses
+- Sum the lines: the population is conserved
+:::
+::: {.column width="60%"}
+::: {.fragment}
+Expected infections in the step: $p_I S_t$
+:::
+
+::: {.fragment}
+Expected recoveries in the step: $p_R I_t$
+:::
+
+::: {.fragment}
 ::: {.bigmath}
 $$
 \begin{aligned}
@@ -395,27 +526,86 @@ R_{t+1} &= R_t + p_R I_t
 $$
 :::
 :::
+:::
 ::::
 
 ::: {.aside}
-Same ingredients as the ODE: force of infection $\lambda = \beta c I / N$ and recovery rate $\gamma$. The state stays continuous.
+The state stays continuous. The deterministic model moves fractions of people.
 :::
 
 ::: {.notes}
-Two probabilities from two rates.
-Then move the expected number of people in each flow.
+Two expected flows, then bookkeeping.
 Sum the three lines: the population is conserved.
-The counts have decimals. The map moves fractions of people.
+The counts have decimals. The deterministic model moves fractions of people.
 Nothing is random yet.
 :::
 
-# The map approximates the ODE
+# The deterministic model approximates the ODE
+
+## This is Euler's step in disguise
+
+:::: {.columns}
+::: {.column width="40%"}
+- Hold the current rate for the whole step (Euler, 1768)
+- $u_{t+\delta t} = u_t + \delta t\, f(u_t)$
+- For a small step, $p_I = 1 - e^{-\lambda \delta t} \approx \lambda\,\delta t$
+- So $S_{t+1} \approx S_t - \lambda S_t\,\delta t$: Euler's step for $\mathrm{d}S/\mathrm{d}t = -\lambda S$
+:::
+::: {.column width="60%"}
+```{ojs}
+//| echo: false
+eulerSlope = sirRhs([base.S0, base.I0, 0], base)[0]
+eulerEnd = base.S0 + 2 * eulerSlope
+eulerTrue = ode[200].S
+eulerCurve = ode.filter((d) => d.t <= 3.0001)
+Plot.plot({
+  width: 1050, height: 600, marginLeft: 100, marginBottom: 70, marginTop: 30,
+  marginRight: 40, style: {fontSize: "24px"},
+  x: {label: "time (days)", domain: [0, 3], ticks: [0, 1, 2, 3],
+    labelAnchor: "center", labelOffset: 55},
+  y: {label: "susceptible S (people)", domain: [972, 992],
+    ticks: [975, 980, 985, 990], labelAnchor: "top", labelOffset: 40},
+  marks: [
+    Plot.line(eulerCurve, {x: "t", y: "S", stroke: colS, strokeWidth: 4}),
+    Plot.line([{t: 0, S: base.S0}, {t: 2, S: eulerEnd}],
+      {x: "t", y: "S", stroke: "#17242b", strokeWidth: 3,
+       strokeDasharray: "8,6"}),
+    Plot.link([{x1: 2, y1: eulerEnd, x2: 2, y2: eulerTrue}],
+      {x1: "x1", y1: "y1", x2: "x2", y2: "y2", stroke: colI, strokeWidth: 4}),
+    Plot.dot([{t: 2, S: eulerEnd}], {x: "t", y: "S", fill: "#17242b", r: 9}),
+    Plot.dot([{t: 2, S: eulerTrue}], {x: "t", y: "S", fill: colS, r: 9}),
+    Plot.text([{t: 1.15, S: 988.6,
+      label: "rate at t = 0, held for δt = 2 days"}],
+      {x: "t", y: "S", text: "label", textAnchor: "start", fill: "#17242b"}),
+    Plot.text([{t: 2, S: eulerEnd, label: "Euler point"}],
+      {x: "t", y: "S", text: "label", dx: 16, dy: -22, textAnchor: "start",
+       fill: "#17242b"}),
+    Plot.text([{t: 2, S: eulerTrue, label: "true S(2), the ODE"}],
+      {x: "t", y: "S", text: "label", dx: 16, dy: 30, textAnchor: "start",
+       fill: colS}),
+    Plot.text([{t: 2, S: (eulerEnd + eulerTrue) / 2, label: "error of one step"}],
+      {x: "t", y: "S", text: "label", dx: 16, dy: 4, textAnchor: "start",
+       fill: colI})
+  ]
+})
+```
+::: {.attribution}
+Baseline scenario, first three days. The rate grows during the step, so holding it fixed overestimates S.
+:::
+:::
+::::
+
+::: {.notes}
+Euler's idea: take the rate now and hold it for the whole step.
+For a small step the probability is close to lambda delta t, so the deterministic step is Euler's step. That is why it tracks the ODE and why its error shrinks with the step.
+The exponential wrapper only keeps p below one.
+:::
 
 ## Shrink the step
 
 :::: {.columns}
 ::: {.column width="34%"}
-- Compare the map with the ODE
+- Compare the deterministic model with the ODE
 - Large steps overshoot the peak
 - Small steps sit on the curve
 
@@ -431,7 +621,7 @@ dtChoice = {
 }
 mapDt = iterate(mapStep, base, dtChoice, Math.round(40 / dtChoice))
 md`δt = **${dtChoice}** ${dtChoice === 1 ? "day" : "days"}<br>
-Peak I: map **${Math.max(...mapDt.map((d) => d.I)).toFixed(0)}**, ODE ${Math.max(...ode.map((d) => d.I)).toFixed(0)}`
+Peak I: deterministic **${Math.max(...mapDt.map((d) => d.I)).toFixed(0)}**, ODE ${Math.max(...ode.map((d) => d.I)).toFixed(0)}`
 ```
 :::
 ::: {.column width="66%"}
@@ -444,12 +634,13 @@ Plot.plot({
     labelOffset: 55},
   y: {label: "infectious I (people)", domain: [0, 320],
     ticks: [0, 100, 200, 300], labelAnchor: "top", labelOffset: 40},
-  color: {domain: ["ODE", "map"], range: [colI, "#17242b"], legend: true,
+  color: {domain: ["ODE", "deterministic"], range: [colI, "#17242b"],
+    legend: true,
     swatchSize: 22, style: {fontSize: "22px"}},
   marks: [
     Plot.line(odeCurve.map((d) => ({...d, which: "ODE"})),
       {x: "t", y: "I", stroke: "which", strokeWidth: 4}),
-    Plot.line(mapDt.map((d) => ({...d, which: "map"})),
+    Plot.line(mapDt.map((d) => ({...d, which: "deterministic"})),
       {x: "t", y: "I", stroke: "which", strokeWidth: 3, strokeDasharray: "8,6"}),
     Plot.dot(mapDt, {x: "t", y: "I", fill: "#17242b", r: 4})
   ]
@@ -460,8 +651,8 @@ Plot.plot({
 
 ::: {.notes}
 It cycles from four days down to a tenth of a day.
-At four days the map is crude. By a tenth of a day the dashed line is on the ODE.
-The map is a first-order method. It is Euler's step with the rate wrapped in an exponential.
+At four days the deterministic model is crude. By a tenth of a day the dashed line is on the ODE.
+The deterministic step is a first-order method. It is Euler's step with the rate wrapped in an exponential.
 :::
 
 ## Halve the step, halve the error
@@ -471,7 +662,7 @@ The map is a first-order method. It is Euler's step with the rate wrapped in an 
 - Error at day 40 against the ODE
 - Log axes, slope one guide
 - First order: error $\propto \delta t$
-- The map converges to the ODE
+- The deterministic model converges to the ODE
 :::
 ::: {.column width="66%"}
 ```{ojs}
@@ -487,22 +678,14 @@ errRows = dtList.map((dt) => {
 guideRows = dtList.map((dt) => ({
   dt, err: errRows[errRows.length - 1].err * dt / dtList[dtList.length - 1]
 }))
-errShown = {
-  while (true) {
-    for (let k = 1; k <= dtList.length; k++) {
-      yield k
-      await Promises.delay(k === dtList.length ? 3000 : 600)
-    }
-  }
-}
-errNow = errRows[errShown - 1]
 Plot.plot({
   width: 1050, height: 600, marginLeft: 100, marginBottom: 70, marginTop: 30,
   style: {fontSize: "24px"},
   x: {type: "log", label: "step δt (days)", labelAnchor: "center",
-    labelOffset: 55, ticks: [0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 4],
+    labelOffset: 55, domain: [0.012, 5],
+    ticks: [0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 4],
     tickFormat: (d) => String(d)},
-  y: {type: "log", label: "max |map − ODE| at day 40 (people)",
+  y: {type: "log", label: "max |deterministic − ODE| at day 40 (people)",
     labelAnchor: "top", labelOffset: 40,
     ticks: [1, 2, 5, 10, 20, 50, 100, 200], tickFormat: (d) => String(d)},
   color: {domain: ["measured", "slope 1"], range: [colS, "#17242b"],
@@ -512,16 +695,13 @@ Plot.plot({
     Plot.line(guideRows.map((d) => ({...d, which: "slope 1"})),
       {x: "dt", y: "err", stroke: "which", strokeDasharray: "8,6",
        strokeWidth: 2}),
-    Plot.dot(errRows.slice(0, errShown).map((d) => ({...d, which: "measured"})),
-      {x: "dt", y: "err", fill: "which", r: 8}),
-    Plot.text([errNow], {x: "dt", y: "err",
-      text: (d) => `${d.err.toFixed(1)} people`,
-      dx: 16, dy: -18, textAnchor: "start", fill: colS})
+    Plot.dot(errRows.map((d) => ({...d, which: "measured"})),
+      {x: "dt", y: "err", fill: "which", r: 8})
   ]
 })
 ```
 ::: {.attribution}
-Largest absolute difference across S, I and R at day 40, computed live against a fine Runge-Kutta solution. The step halves each beat.
+Largest absolute difference across S, I and R at day 40, computed live against a fine Runge-Kutta solution, a high-accuracy solver.
 :::
 :::
 ::::
@@ -530,69 +710,140 @@ Largest absolute difference across S, I and R at day 40, computed live against a
 Both axes are logarithmic.
 The points run parallel to the guide with slope one.
 Halve the step and the error halves. That is what first order means.
-This is the first limit: the map tends to the ODE.
+This is the first limit: the deterministic model tends to the ODE.
 :::
 
-# The chain adds randomness
+# The stochastic model
+
+## Why draw at random?
+
+:::: {.columns}
+::: {.column width="40%"}
+- People are whole. Nobody is 0.4 infected
+- Whether one person is infected this step is chance
+- Small outbreaks can fizzle out. No two look the same
+- So keep the same $p_I$ and $p_R$, and draw who moves
+:::
+::: {.column width="60%"}
+<svg viewBox="0 0 1200 540" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Avenir Next, Helvetica Neue, Arial, sans-serif">
+  <defs>
+    <marker id="draw-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#17242b"/>
+    </marker>
+  </defs>
+  <text x="640" y="50" text-anchor="middle" font-size="28" fill="#999">ODE: infections flow at rate λ S<tspan font-size="20" dy="8">t</tspan><tspan dy="-8"> per day</tspan></text>
+  <g stroke-width="4" fill="#fbfcfd">
+    <rect x="200" y="120" width="160" height="110" rx="16" stroke="#4682b4"/>
+    <rect x="920" y="120" width="160" height="110" rx="16" stroke="#b22222"/>
+    <rect x="200" y="360" width="160" height="110" rx="16" stroke="#4682b4"/>
+    <rect x="920" y="360" width="160" height="110" rx="16" stroke="#b22222"/>
+  </g>
+  <g text-anchor="middle" font-size="54" font-weight="700">
+    <text x="280" y="194" fill="#4682b4">S</text>
+    <text x="1000" y="194" fill="#b22222">I</text>
+    <text x="280" y="434" fill="#4682b4">S</text>
+    <text x="1000" y="434" fill="#b22222">I</text>
+  </g>
+  <g text-anchor="end" font-size="26" font-weight="600" fill="#17242b">
+    <text x="185" y="185">deterministic</text>
+    <text x="185" y="425">stochastic</text>
+  </g>
+  <g stroke="#17242b" stroke-width="4" fill="none" marker-end="url(#draw-arrow)">
+    <line x1="370" y1="175" x2="910" y2="175"/>
+    <line x1="370" y1="415" x2="910" y2="415"/>
+  </g>
+  <g fill="#b22222" stroke="#b22222" stroke-width="2">
+    <rect x="440" y="200" width="60" height="44"/>
+    <rect x="510" y="200" width="60" height="44"/>
+    <rect x="580" y="200" width="60" height="44"/>
+    <rect x="650" y="200" width="60" height="44"/>
+    <rect x="720" y="200" width="42" height="44"/>
+    <rect x="720" y="200" width="60" height="44" fill="none" stroke-dasharray="4,3"/>
+  </g>
+  <g fill="#b22222">
+    <circle cx="470" cy="462" r="20"/>
+    <circle cx="540" cy="462" r="20"/>
+    <circle cx="610" cy="462" r="20"/>
+    <circle cx="680" cy="462" r="20"/>
+    <circle cx="750" cy="462" r="20"/>
+  </g>
+  <g text-anchor="middle" font-size="28" fill="#17242b">
+    <text x="640" y="150">p<tspan font-size="20" dy="8">I</tspan><tspan dy="-8"> S</tspan><tspan font-size="20" dy="8">t</tspan><tspan dy="-8"> = 4.7 people, a fraction</tspan></text>
+    <text x="640" y="390">Y<tspan font-size="20" dy="8">t</tspan><tspan dy="-8"> = 5 people, a draw</tspan></text>
+  </g>
+</svg>
+:::
+::::
+
+::: {.notes}
+This is a discrete-time Markov chain, the chain binomial. The next state depends only on the current one, through binomial draws with the same probabilities as the deterministic model.
+We use it because the deterministic model cannot fade out, cannot vary run to run, and moves fractions of people.
+Those things matter when counts are small.
+:::
 
 ## Each person flips a coin
 
 :::: {.columns}
-::: {.column width="40%"}
-- $S$ susceptibles, each infected with probability $p_I$
-- Independent coins
-- The count of heads is Binomial($S$, $p_I$)
-- Whole people, and a different answer each draw
+::: {.column width="44%"}
+- $S$ people, each infected this step with the same chance $p_I$, independently
+- Count how many were: that count is Binomial($S$, $p_I$)
+- Mean $S p_I$, the number the deterministic model moves
+- Spread: standard deviation $\sqrt{S p_I (1 - p_I)}$, so about 4 here
+
+::: {.sub}
+$\Pr(Y = k) = \binom{S}{k} p_I^{\,k} (1 - p_I)^{S - k}$, the chance that exactly $k$ of the $S$ coins come up heads
+:::
 
 ```{ojs}
 //| echo: false
-viewof pFlip = Inputs.range([0.02, 0.5], {value: 0.2, step: 0.01,
-  label: htl.html`p<sub>I</sub>`})
-```
-
-```{ojs}
-//| echo: false
+pFlip = 0.2
 coinAnim = {
   let seed = 0
+  const counts = []
   while (true) {
     seed += 1
     const rng = mulberry32(100 + seed)
-    yield Array.from({length: 100}, () => rng() < pFlip)
+    const hits = Array.from({length: 100}, () => rng() < pFlip)
+    counts.push(hits.filter(Boolean).length)
+    if (counts.length > 8) counts.shift()
+    yield {hits, counts: counts.slice()}
     await Promises.delay(1500)
   }
 }
-flips = coinAnim.map((hit, i) => ({
+flips = coinAnim.hits.map((hit, i) => ({
   x: i % 10, y: Math.floor(i / 10), state: hit ? "I" : "S"
 }))
-md`Infected: **${flips.filter((d) => d.state === "I").length}** of 100.
-Expected: **${(100 * pFlip).toFixed(0)}**`
+md`Infected: **${coinAnim.counts[coinAnim.counts.length - 1]}** of 100.
+Expected: **${(100 * pFlip).toFixed(0)}**<br>
+Counts so far: ${coinAnim.counts.join(", ")} (expected ${(100 * pFlip).toFixed(0)})`
 ```
 :::
-::: {.column width="60%"}
+::: {.column width="56%"}
 ```{ojs}
 //| echo: false
 Plot.plot({
-  width: 640, height: 600, inset: 30, style: {fontSize: "24px"},
+  width: 600, height: 560, inset: 30, style: {fontSize: "24px"},
   x: {axis: null}, y: {axis: null},
   color: {domain: ["S", "I"], range: [colS, colI]},
   marks: [
-    Plot.dot(flips, {x: "x", y: "y", fill: "state", r: 22})
+    Plot.dot(flips, {x: "x", y: "y", fill: "state", r: 20})
   ]
 })
 ```
 ::: {.attribution}
-100 susceptibles. A fresh set of coins every 1.5 seconds.
+100 susceptibles, p~I~ = 0.2, a fresh set of coins every 1.5 seconds.
 :::
 :::
 ::::
 
 ::: {.notes}
-Same probability as before. Now each susceptible flips a coin.
-Watch the count. Each redraw lands somewhere around the expected value.
-That count is a binomial draw. This is the whole difference between the map and the chain.
+A binomial is the count of successes in a fixed number of independent trials with the same probability.
+It is the right distribution here because each susceptible is one trial with the same probability this step.
+Its mean is what the deterministic model moves, so the deterministic model is the stochastic model's expectation.
+Its spread is the randomness the deterministic model lacks. Watch the counts land around twenty.
 :::
 
-## The stochastic chain
+## The stochastic step
 
 :::: {.columns}
 ::: {.column width="46%"}
@@ -623,13 +874,13 @@ $$
 ::::
 
 ::: {.aside}
-Given the state at $t$, the map moves exactly what the chain expects: $\mathbb{E}[Y_t] = p_I S_t$ and $\mathbb{E}[Z_t] = p_R I_t$. The state is now integer.
+Given the state at $t$, the deterministic step moves exactly what the stochastic step expects: $\mathbb{E}[Y_t] = p_I S_t$ and $\mathbb{E}[Z_t] = p_R I_t$. The state is now integer.
 :::
 
 ::: {.notes}
 Same two probabilities.
 Replace the expected numbers with binomial draws.
-The map is the one-step expectation of the chain. That is the link. It is also where the link ends.
+The deterministic step is the one-step expectation of the stochastic step. That is the link. It is also where the link ends.
 :::
 
 ## Three models, one set of rates {.tight-code}
@@ -653,7 +904,7 @@ end
 - A solver chooses the steps
 :::
 ::: {.column width="66%"}
-Map and chain
+Deterministic and stochastic
 
 ```julia
 rate_to_proportion(r, δt) = -expm1(-r * δt)
@@ -672,77 +923,28 @@ function sir_chain_step(state, p, δt, rng)   # stochastic, eq-ch02-chain
     return (S - Y, I + Y - Z, R + Z)
 end
 ```
+
+::: {.sub}
+The chapter calls these the function map and the Markov chain.
+:::
 :::
 ::::
-
-::: {.attribution}
-The kernels from the chapters, unchanged. `-expm1(-x)` is `1 - exp(-x)` computed accurately for small `x`.
-:::
 
 ::: {.notes}
 Same rates in all three.
 The ODE hands them to a solver.
-The map converts them to probabilities and multiplies.
-The chain converts them to probabilities and draws. Two lines differ.
-:::
-
-## Reed and Frost, 1928
-
-:::: {.columns}
-::: {.column width="50%"}
-Reed-Frost
-
-::: {.bigmath}
-$$
-S_{t+1} = S_t\,(1 - p)^{I_t}
-$$
-:::
-
-::: {.sub}
-Expected survivors, each infectious contact infects with probability $p$.
-:::
-:::
-::: {.column width="50%"}
-Our chain
-
-::: {.bigmath}
-$$
-\mathbb{E}[S_{t+1}] = S_t\,e^{-\beta c I_t \delta t / N}
-$$
-:::
-
-::: {.sub}
-The same, with the per-step infection probability $p_I = 1 - e^{-\beta c I_t \delta t / N}$.
-:::
-:::
-::::
-
-::: {.big}
-$(1 - p)^{I} \approx e^{-pI}$ for small $p$, so with $p = \beta c\,\delta t / N$ they agree
-:::
-
-::: {.attribution}
-Abbey, "An examination of the Reed-Frost theory of epidemics", *Human Biology* 24, 1952 ([PubMed](https://pubmed.ncbi.nlm.nih.gov/12990130/)).
-:::
-
-::: {.notes}
-Reed and Frost wrote the escape probability as a product over infectious contacts.
-We wrote it as an exponential of the total hazard.
-For small per-contact probability the two are the same chain.
+The deterministic step converts them to probabilities and multiplies.
+The stochastic step converts them to probabilities and draws. Two lines differ.
 :::
 
 ## Many runs
 
 :::: {.columns}
 ::: {.column width="34%"}
-- Grey: single runs of the chain
-- Red: their mean
-- Black dashed: the map
-
-```{ojs}
-//| echo: false
-viewof seedChoice = Inputs.range([1, 50], {value: 1, step: 1, label: "seed"})
-```
+- Grey: single runs of the stochastic model
+- Amber: their mean
+- Black dashed: the deterministic model
+- Red: the ODE
 
 ```{ojs}
 //| echo: false
@@ -750,7 +952,7 @@ ensAnim = {
   while (true) {
     const runs = []
     for (let j = 0; j < 100; j++) {
-      const rng = mulberry32(seedChoice * 1000 + j)
+      const rng = mulberry32(1000 + j)
       runs.push(iterate((u, p, dt) => chainStep(u, p, dt, rng), base, 1, 40))
       yield runs.slice()
       await Promises.delay(80)
@@ -768,10 +970,10 @@ md`Extinct by day 40: **${extinct} of ${ensemble.length}** runs
 ```{ojs}
 //| echo: false
 ensRows = ensemble.flatMap((traj, j) => traj.map((d) => ({
-  t: d.t, I: d.I, run: j, which: "chain runs"
+  t: d.t, I: d.I, run: j, which: "stochastic runs"
 })))
 ensMean = Array.from({length: 41}, (_, k) => ({
-  t: k, I: d3.mean(ensemble, (traj) => traj[k].I), which: "chain mean"
+  t: k, I: d3.mean(ensemble, (traj) => traj[k].I), which: "stochastic mean"
 }))
 Plot.plot({
   width: 1050, height: 600, marginLeft: 90, marginBottom: 70, marginTop: 30,
@@ -780,17 +982,19 @@ Plot.plot({
     labelOffset: 55},
   y: {label: "infectious I (people)", domain: [0, 320],
     ticks: [0, 100, 200, 300], labelAnchor: "top", labelOffset: 40},
-  color: {domain: ["chain runs", "chain mean", "map"],
-    range: ["#999", colI, "#17242b"], legend: true,
+  color: {domain: ["stochastic runs", "stochastic mean", "deterministic", "ODE"],
+    range: ["#999", "#e0a020", "#17242b", colI], legend: true,
     swatchSize: 22, style: {fontSize: "22px"}},
   marks: [
     Plot.line(ensRows, {x: "t", y: "I", z: "run", stroke: "which",
       strokeWidth: 1.5, strokeOpacity: 0.4}),
     ...(ensemble.length >= 10 ? [
       Plot.line(ensMean, {x: "t", y: "I", stroke: "which", strokeWidth: 4}),
-      Plot.line(mapBase.map((d) => ({...d, which: "map"})),
+      Plot.line(mapBase.map((d) => ({...d, which: "deterministic"})),
         {x: "t", y: "I", stroke: "which", strokeWidth: 3,
-         strokeDasharray: "8,6"})
+         strokeDasharray: "8,6"}),
+      Plot.line(odeCurve.map((d) => ({...d, which: "ODE"})),
+        {x: "t", y: "I", stroke: "which", strokeWidth: 4})
     ] : [])
   ]
 })
@@ -800,95 +1004,46 @@ Plot.plot({
 
 ::: {.notes}
 One run is one possible epidemic.
-Runs pile up to a hundred. Once ten are in, the mean appears and settles. The map runs close to it but peaks higher.
-Some runs never take off. The map cannot do that.
-It loops. The seed slider gives a different set of runs if you want one.
+Runs pile up to a hundred. Once ten are in, the mean appears and settles. The deterministic model and the ODE run close to it but peak higher.
+Some runs never take off. The deterministic model cannot do that.
+It loops, replaying the same hundred runs.
 :::
 
-## The map is not the mean of the chain
-
-:::: {.columns}
-::: {.column width="34%"}
-- New infections per step bend over as $I$ grows
-- The map steps from the average $I$
-- The chain steps each run, then averages: lower
-:::
-::: {.column width="66%"}
-```{ojs}
-//| echo: false
-fInf = (I) => base.S0 * rateToProb(base.beta * base.c * I / base.N, 2)
-jCurve = Array.from({length: 101}, (_, i) => ({I: i * 10, f: fInf(i * 10)}))
-jA = 100
-jB = 900
-jMid = (jA + jB) / 2
-jMeanF = (fInf(jA) + fInf(jB)) / 2
-Plot.plot({
-  width: 1050, height: 600, marginLeft: 100, marginBottom: 70, marginTop: 30,
-  marginRight: 50, style: {fontSize: "24px"},
-  x: {label: "infectious now, I (people)", domain: [0, 1000],
-    labelAnchor: "center", labelOffset: 55},
-  y: {label: "new infections in one step (people)", domain: [0, 700],
-    ticks: [0, 200, 400, 600], labelAnchor: "top", labelOffset: 40},
-  marks: [
-    Plot.line(jCurve, {x: "I", y: "f", stroke: "#17242b", strokeWidth: 3}),
-    Plot.line([{I: jA, f: fInf(jA)}, {I: jB, f: fInf(jB)}],
-      {x: "I", y: "f", stroke: "#999", strokeWidth: 2, strokeDasharray: "8,6"}),
-    Plot.ruleX([jMid], {stroke: "#999", strokeDasharray: "4,4"}),
-    Plot.dot([{I: jA, f: fInf(jA)}, {I: jB, f: fInf(jB)}],
-      {x: "I", y: "f", fill: "#999", r: 8}),
-    Plot.dot([{I: jMid, f: fInf(jMid)}], {x: "I", y: "f", fill: colI, r: 10}),
-    Plot.dot([{I: jMid, f: jMeanF}], {x: "I", y: "f", fill: "#555", r: 10}),
-    Plot.text([{I: jMid, f: fInf(jMid), label: "map: f(mean of I)"}],
-      {x: "I", y: "f", text: "label", dx: 14, dy: -22, textAnchor: "start",
-       fill: colI}),
-    Plot.text([{I: jMid, f: jMeanF, label: "chain: mean of f(I)"}],
-      {x: "I", y: "f", text: "label", dx: 14, dy: 26, textAnchor: "start",
-       fill: "#555"}),
-    Plot.text([{I: jA, f: fInf(jA), label: "run A"}, {I: jB, f: fInf(jB),
-      label: "run B"}], {x: "I", y: "f", text: "label", dy: 30, fill: "#555"})
-  ]
-})
-```
-::: {.attribution}
-Two runs, A and B, with the same S. Drawn with δt = 2 days so the gap is visible.
-:::
-:::
-::::
-
-::: {.notes}
-Take two runs with different numbers infectious.
-The map steps from their average. The chain steps each and then averages.
-The curve bends, so the two answers differ. Jensen's inequality.
-Peaks that land on different days flatten the mean further.
-:::
-
-## Bigger populations, smaller wobbles
+## Bigger populations: stochastic variation matters less
 
 :::: {.columns}
 ::: {.column width="34%"}
 - Same initial fraction, $I_0 = N / 100$
 - Spread in $I/N$ shrinks like $1 / \sqrt{N}$
-- Small $N$: extinction is common
-- Large $N$: runs look like the ODE
+- Small $N$: fade-out is common
+- Large $N$: runs hug the ODE
 
 ```{ojs}
 //| echo: false
-viewof Nchoice = Inputs.radio([100, 1000, 10000], {value: 1000, label: "N"})
+Nchoice = {
+  while (true) {
+    for (const N of [100, 1000, 10000]) {
+      yield N
+      await Promises.delay(3000)
+    }
+  }
+}
 ```
 
 ```{ojs}
 //| echo: false
-nEns = {
-  const p = {...base, N: Nchoice, S0: Nchoice - Nchoice / 100,
-    I0: Nchoice / 100}
-  return Array.from({length: 100}, (_, j) => {
+nEnsAll = new Map([100, 1000, 10000].map((N) => {
+  const p = {...base, N, S0: N - N / 100, I0: N / 100}
+  return [N, Array.from({length: 100}, (_, j) => {
     const rng = mulberry32(7 + j)
     return iterate((u, pp, dt) => chainStep(u, pp, dt, rng), p, 1, 40)
-  })
-}
+  })]
+}))
+nEns = nEnsAll.get(Nchoice)
 nSpread = d3.max(d3.range(41), (k) => d3.deviation(nEns,
   (traj) => traj[k].I / Nchoice))
-md`Largest run-to-run sd of I/N: **${nSpread.toFixed(3)}**.
+md`N = **${Nchoice.toLocaleString("en-GB")}**<br>
+Largest run-to-run sd of I/N: **${nSpread.toFixed(3)}**.
 Extinct: **${nEns.filter((traj) => traj[40].I === 0).length}** of 100`
 ```
 :::
@@ -901,6 +1056,7 @@ nRows = nEns.flatMap((traj, j) => traj.map((d) => ({
 Plot.plot({
   width: 1050, height: 600, marginLeft: 100, marginBottom: 70, marginTop: 30,
   style: {fontSize: "24px"},
+  title: `N = ${Nchoice.toLocaleString("en-GB")}: 100 runs of the stochastic model`,
   x: {label: "time (days)", domain: [0, 40], labelAnchor: "center",
     labelOffset: 55},
   y: {label: "infectious fraction I/N", domain: [0, 0.35],
@@ -914,19 +1070,102 @@ Plot.plot({
 })
 ```
 ::: {.attribution}
-100 runs of the chain, δt = 1 day, at each N. Red: the ODE.
+100 runs of the stochastic model, δt = 1 day. N cycles through 100, 1000 and 10000. Red: the ODE.
 :::
 :::
 ::::
 
 ::: {.notes}
 Demographic stochasticity: chance from moving whole people.
+It cycles through three population sizes.
 At a hundred people the fan is wide and many runs die out.
 At ten thousand the runs hug the ODE.
 Tenfold more people, the spread as a fraction falls to about a third.
 :::
 
-# What the chain approximates
+## Three answers for the same rates
+
+:::: {.columns}
+::: {.column width="34%"}
+- ODE: continuous time, the smooth curve
+- Deterministic step: a step-size error that shrinks with $\delta t$
+- Stochastic mean: runs peak on different days, so their average is lower and flatter
+- Randomness shifts the average. It is not just noise on top
+:::
+::: {.column width="66%"}
+```{ojs}
+//| echo: false
+ensAll = Array.from({length: 100}, (_, j) => {
+  const rng = mulberry32(1000 + j)
+  return iterate((u, p, dt) => chainStep(u, p, dt, rng), base, 1, 40)
+})
+ensAllRows = ensAll.flatMap((traj, j) => traj.map((d) => ({
+  t: d.t, I: d.I, run: j, which: "stochastic runs, δt = 1"
+})))
+ensAllMean = Array.from({length: 41}, (_, k) => ({
+  t: k, I: d3.mean(ensAll, (traj) => traj[k].I), which: "stochastic mean, δt = 1"
+}))
+mapFine = iterate(mapStep, base, 0.1, 400)
+peakOf = (rows) => rows.reduce((a, b) => (b.I > a.I ? b : a))
+threeSeries = [
+  {rows: odeCurve, which: "ODE"},
+  {rows: mapBase, which: "deterministic, δt = 1"},
+  {rows: mapFine, which: "deterministic, δt = 0.1"},
+  {rows: ensAllMean, which: "stochastic mean, δt = 1"}
+]
+threeNames = ["stochastic runs, δt = 1", "ODE", "deterministic, δt = 1",
+  "deterministic, δt = 0.1", "stochastic mean, δt = 1"]
+threeColours = ["#999", colI, "#17242b", "#7a8a94", "#e0a020"]
+peakLabels = [
+  {...peakOf(mapBase), label: `deterministic, δt = 1: peak ${peakOf(mapBase).I.toFixed(0)}`,
+    fill: "#17242b", ly: 305},
+  {...peakOf(ensAllMean), label: `stochastic mean, δt = 1: peak ${peakOf(ensAllMean).I.toFixed(0)}`,
+    fill: "#b8860b", ly: 283},
+  {...peakOf(mapFine), label: `deterministic, δt = 0.1: peak ${peakOf(mapFine).I.toFixed(0)}`,
+    fill: "#7a8a94", ly: 261},
+  {...peakOf(odeCurve), label: `ODE: peak ${peakOf(odeCurve).I.toFixed(0)}`,
+    fill: colI, ly: 239}
+]
+Plot.plot({
+  width: 1050, height: 560, marginLeft: 90, marginBottom: 70, marginTop: 30,
+  style: {fontSize: "24px"},
+  x: {label: "time (days)", domain: [0, 40], labelAnchor: "center",
+    labelOffset: 55},
+  y: {label: "infectious I (people)", domain: [0, 320],
+    ticks: [0, 100, 200, 300], labelAnchor: "top", labelOffset: 40},
+  color: {domain: threeNames, range: threeColours, legend: true,
+    swatchSize: 22, style: {fontSize: "22px"}},
+  marks: [
+    Plot.line(ensAllRows, {x: "t", y: "I", z: "run", stroke: "which",
+      strokeWidth: 1.2, strokeOpacity: 0.25}),
+    Plot.line(mapBase.map((d) => ({...d, which: "deterministic, δt = 1"})),
+      {x: "t", y: "I", stroke: "which", strokeWidth: 3.5, strokeDasharray: "8,6"}),
+    Plot.line(mapFine.map((d) => ({...d, which: "deterministic, δt = 0.1"})),
+      {x: "t", y: "I", stroke: "which", strokeWidth: 2.5, strokeDasharray: "8,6"}),
+    Plot.line(odeCurve.map((d) => ({...d, which: "ODE"})),
+      {x: "t", y: "I", stroke: "which", strokeWidth: 4}),
+    Plot.line(ensAllMean, {x: "t", y: "I", stroke: "which", strokeWidth: 4}),
+    Plot.dot(peakLabels, {x: "t", y: "I", fill: "fill", r: 7}),
+    Plot.text(peakLabels, {x: () => 0.5, y: "ly", text: "label",
+      textAnchor: "start", fill: "fill", fontWeight: 600})
+  ]
+})
+```
+::: {.aside}
+True of any compartmental model with a nonlinear term, not just SIR. The stochastic mean and the deterministic model only meet as $N$ grows.
+:::
+:::
+::::
+
+::: {.notes}
+Same rates, three answers.
+The deterministic step overshoots by a step-size error. Shrink the step and it closes on the ODE.
+The stochastic mean does not. The infection term is nonlinear in I, so the average over runs of the infections is not the infections computed from the average I. That is Jensen's inequality in plain words.
+Runs crest on different days too, and averaging curves that crest at different times flattens the mean.
+The ODE is the large-N limit of the stochastic model, the law of large numbers: averages settle down as N grows. It is not its mean at finite N.
+:::
+
+# What the stochastic model approximates
 
 ## Two limits as the step shrinks
 
@@ -943,11 +1182,11 @@ Tenfold more people, the spread as a fraction falls to about a third.
     <rect x="900" y="400" width="640" height="150" rx="16" stroke="#b22222"/>
   </g>
   <g fill="#17242b" text-anchor="middle">
-    <text x="300" y="140" font-size="40" font-weight="700">Map</text>
+    <text x="300" y="140" font-size="40" font-weight="700">Deterministic</text>
     <text x="300" y="190" font-size="26" opacity="0.8">discrete time, deterministic</text>
     <text x="1220" y="140" font-size="40" font-weight="700">ODE</text>
     <text x="1220" y="190" font-size="26" opacity="0.8">continuous time, deterministic</text>
-    <text x="300" y="460" font-size="40" font-weight="700" fill="#b22222">Chain</text>
+    <text x="300" y="460" font-size="40" font-weight="700" fill="#b22222">Stochastic</text>
     <text x="300" y="510" font-size="26" opacity="0.8">discrete time, stochastic</text>
     <text x="1220" y="460" font-size="40" font-weight="700" fill="#b22222">Continuous-time Markov chain</text>
     <text x="1220" y="510" font-size="26" opacity="0.8">continuous time, stochastic (Day 2, Session 1)</text>
@@ -972,9 +1211,9 @@ Shrinking the step does not remove the randomness.
 
 ::: {.notes}
 Two rows, two limits.
-Top: the map tends to the ODE. We measured it.
-Bottom: the chain tends to the continuous-time Markov chain, which is the next session.
-The two right-hand boxes are different objects. The ODE is a mean-field description, not the mean of the chain.
+Top: the deterministic model tends to the ODE. We measured it.
+Bottom: the stochastic model tends to the continuous-time Markov chain, which is the next session.
+The two right-hand boxes are different objects. The ODE is a mean-field description, the behaviour of averages in a large population, not the mean of the stochastic model at finite N.
 :::
 
 ## One step, one move
@@ -1085,14 +1324,14 @@ Erlang stages make the infectious period less spread out than exponential. Chapt
 
 ## Summary
 
-- The map is an Euler-like step. Shrink $\delta t$ and it becomes the ODE
-- The chain moves whole people at random. Shrink $\delta t$ and it becomes a continuous-time Markov chain
-- The map is the chain's one-step expectation, not its mean trajectory
+- The deterministic model is an Euler-like step. Shrink $\delta t$ and it becomes the ODE
+- The stochastic model moves whole people at random. Shrink $\delta t$ and it becomes a continuous-time Markov chain
+- The deterministic model is the stochastic model's one-step expectation, not its mean trajectory
 - Randomness matters most when counts are small
 
 ::: {.notes}
 Two discrete models, two different limits.
-The map approximates the ODE. The chain approximates the continuous-time Markov chain, also called a jump process.
+The deterministic model approximates the ODE. The stochastic model approximates the continuous-time Markov chain, also called a jump process.
 Keep both ideas apart and the rest of the course is easier.
 :::
 
@@ -1105,5 +1344,5 @@ Keep both ideas apart and the rest of the course is easier.
 :::
 
 ::: {.notes}
-The worksheet builds the map and the chain in Julia and runs the convergence check.
+The worksheet builds both models in Julia and runs the convergence check.
 :::
