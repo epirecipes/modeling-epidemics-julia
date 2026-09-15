@@ -1,0 +1,58 @@
+/* Shared styles for the Day 1 lecture decks. */
+
+.reveal .slides section h2 {
+  margin-bottom: 0.8em;
+}
+
+.reveal .slides section pre {
+  max-height: none;
+}
+
+/* Small source or attribution captions under figures. */
+.reveal .slides .attribution {
+  font-size: 0.5em;
+  opacity: 0.75;
+}
+
+.reveal .slides a {
+  text-decoration: none;
+}
+
+/* One big statement in the middle of a slide. */
+.reveal .slides .big {
+  font-size: 1.6em;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
+  margin: 0.4em 0;
+}
+
+/* A large displayed equation. */
+.reveal .slides .bigmath {
+  font-size: 1.35em;
+  text-align: center;
+  margin: 0.3em 0;
+}
+
+/* Muted aside under an equation or figure. */
+.reveal .slides .aside {
+  font-size: 0.7em;
+  opacity: 0.8;
+}
+
+/* Keep OJS inputs readable at 1920x1080. */
+.reveal .slides form.oi-ec2a1e {
+  font-size: 0.6em;
+}
+.reveal .slides .ojs-in-a-box-waiting-for-module-import {
+  min-height: 2em;
+}
+.reveal .slides label {
+  font-size: 0.6em;
+}
+
+/* Compartment colours. */
+.reveal .slides .col-S { color: #4682b4; }
+.reveal .slides .col-I { color: #b22222; }
+.reveal .slides .col-R { color: #2e8b57; }
+.reveal .slides .col-E { color: #e0a020; }

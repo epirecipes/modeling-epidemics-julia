@@ -5,6 +5,9 @@ project:
     - prerequisites/*.qmd
     - chapters/*.qmd
     - appendices/*.qmd
+    - lectures/*.qmd
+  resources:
+    - lectures/*.css
 
 bibliography: ../references.bib
 
