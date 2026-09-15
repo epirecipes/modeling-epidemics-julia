@@ -1409,10 +1409,10 @@ f has a second root just above s = 1, the "no epidemic" solution, which is why t
 
 :::: {.columns}
 ::: {.column width="38%"}
-- Attack rate: fraction ever infected, $1 - s_\infty$
-- Herd immunity threshold: where growth stops, $1 - 1/R_0$
-- The gap is the overshoot
-- At $R_0 = 2$: threshold at 50%, attack rate 80%
+- Attack rate: the fraction infected by the end, $1 - s_\infty$
+- Herd immunity threshold: the immune fraction at which each case infects fewer than one other, $1 - 1/R_0$. That is the peak
+- At the peak $I$ is at its largest, and those people keep infecting while they recover
+- So the epidemic runs on past the threshold. The gap is the overshoot: at $R_0 = 2$, threshold 50%, attack rate 80%
 :::
 ::: {.column width="62%"}
 ```{ojs}
