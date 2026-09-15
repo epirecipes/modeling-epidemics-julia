@@ -47,114 +47,106 @@ Guldberg and Waage, "Studier over Affiniteten", 1864; English translation in *J.
 ::: {.column width="64%"}
 ```{ojs}
 //| echo: false
-viewof nRed = Inputs.range([5, 40], {
-  value: 20, step: 1, label: "red dots"
-})
-viewof nBlue = Inputs.range([5, 40], {
-  value: 40, step: 1, label: "blue dots"
-})
-viewof speed = Inputs.range([0.5, 4], {
-  value: 1, step: 0.5, label: "speed"
-})
-viewof look = Inputs.radio(["molecules", "people"], {
-  value: "molecules", label: "draw as"
-})
-```
-
-```{ojs}
-//| echo: false
 {
-  const W = 1000, H = 520, r = 10, n = nRed + nBlue;
+  const W = 1000, H = 520, r = 10, v = 2.5, win = 5000, hold = 6000;
   const canvas = DOM.canvas(W, H);
   const ctx = canvas.getContext("2d");
-  const people = look === "people";
   const red = "#b22222", blue = "#4682b4";
-  const dots = Array.from({length: n}, (_, i) => {
-    const th = Math.random() * 2 * Math.PI;
-    return {
-      x: r + Math.random() * (W - 2 * r),
-      y: r + Math.random() * (H - 2 * r),
-      vx: Math.cos(th), vy: Math.sin(th), red: i < nRed
-    };
-  });
-  const touching = new Set();
-  const hits = [];
-  const flashes = [];
-  const win = 5000;
-  const t0 = performance.now();
+  const phases = [
+    {nRed: 10, nBlue: 40, people: false},
+    {nRed: 20, nBlue: 40, people: false},
+    {nRed: 40, nBlue: 40, people: false},
+    {nRed: 20, nBlue: 40, people: true}
+  ];
   while (true) {
-    const now = performance.now();
-    const v = 2.5 * speed;
-    for (const d of dots) {
-      d.x += d.vx * v;
-      d.y += d.vy * v;
-      if (d.x < r) { d.x = r; d.vx = -d.vx; }
-      if (d.x > W - r) { d.x = W - r; d.vx = -d.vx; }
-      if (d.y < r) { d.y = r; d.vy = -d.vy; }
-      if (d.y > H - r) { d.y = H - r; d.vy = -d.vy; }
-    }
-    for (let i = 0; i < n; i++) {
-      for (let j = i + 1; j < n; j++) {
-        if (dots[i].red === dots[j].red) continue;
-        const dx = dots[i].x - dots[j].x, dy = dots[i].y - dots[j].y;
-        const close = dx * dx + dy * dy < 4 * r * r;
-        const key = i * n + j;
-        if (close && !touching.has(key)) {
-          touching.add(key);
-          hits.push(now);
-          flashes.push({
-            x: (dots[i].x + dots[j].x) / 2,
-            y: (dots[i].y + dots[j].y) / 2, t: now
-          });
-        } else if (!close) {
-          touching.delete(key);
+    for (const {nRed, nBlue, people} of phases) {
+      const n = nRed + nBlue;
+      const dots = Array.from({length: n}, (_, i) => {
+        const th = Math.random() * 2 * Math.PI;
+        return {
+          x: r + Math.random() * (W - 2 * r),
+          y: r + Math.random() * (H - 2 * r),
+          vx: Math.cos(th), vy: Math.sin(th), red: i < nRed
+        };
+      });
+      const touching = new Set();
+      const hits = [];
+      const flashes = [];
+      const t0 = performance.now();
+      while (performance.now() - t0 < hold) {
+        const now = performance.now();
+        for (const d of dots) {
+          d.x += d.vx * v;
+          d.y += d.vy * v;
+          if (d.x < r) { d.x = r; d.vx = -d.vx; }
+          if (d.x > W - r) { d.x = W - r; d.vx = -d.vx; }
+          if (d.y < r) { d.y = r; d.vy = -d.vy; }
+          if (d.y > H - r) { d.y = H - r; d.vy = -d.vy; }
         }
+        for (let i = 0; i < n; i++) {
+          for (let j = i + 1; j < n; j++) {
+            if (dots[i].red === dots[j].red) continue;
+            const dx = dots[i].x - dots[j].x, dy = dots[i].y - dots[j].y;
+            const close = dx * dx + dy * dy < 4 * r * r;
+            const key = i * n + j;
+            if (close && !touching.has(key)) {
+              touching.add(key);
+              hits.push(now);
+              flashes.push({
+                x: (dots[i].x + dots[j].x) / 2,
+                y: (dots[i].y + dots[j].y) / 2, t: now
+              });
+            } else if (!close) {
+              touching.delete(key);
+            }
+          }
+        }
+        while (hits.length && now - hits[0] > win) hits.shift();
+        while (flashes.length && now - flashes[0].t > 400) flashes.shift();
+        ctx.fillStyle = "#f4f6f8";
+        ctx.fillRect(0, 0, W, H);
+        ctx.strokeStyle = "#999";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "#e0a020";
+        for (const f of flashes) {
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, 2 * r + (now - f.t) / 25, 0, 2 * Math.PI);
+          ctx.stroke();
+        }
+        ctx.font = "bold 12px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        for (const d of dots) {
+          ctx.beginPath();
+          ctx.arc(d.x, d.y, r, 0, 2 * Math.PI);
+          ctx.fillStyle = d.red ? red : blue;
+          ctx.fill();
+          if (people) {
+            ctx.fillStyle = "white";
+            ctx.fillText(d.red ? "I" : "S", d.x, d.y + 1);
+          }
+        }
+        const secs = Math.max(0.5, Math.min(win, now - t0) / 1000);
+        ctx.fillStyle = "rgba(255,255,255,0.85)";
+        ctx.fillRect(1, 1, W - 2, 46);
+        ctx.fillStyle = "#17242b";
+        ctx.font = "26px sans-serif";
+        ctx.textBaseline = "top";
+        ctx.textAlign = "left";
+        ctx.fillText(
+          `${(hits.length / secs).toFixed(1)} red-blue collisions per second`,
+          16, 12
+        );
+        ctx.textAlign = "right";
+        const lab = people ? "S × I" : "A × B";
+        ctx.fillText(
+          `${lab} = ${nBlue} × ${nRed} = ${nBlue * nRed}`, W - 16, 12
+        );
+        yield canvas;
       }
     }
-    while (hits.length && now - hits[0] > win) hits.shift();
-    while (flashes.length && now - flashes[0].t > 400) flashes.shift();
-    ctx.fillStyle = "#f4f6f8";
-    ctx.fillRect(0, 0, W, H);
-    ctx.strokeStyle = "#999";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "#e0a020";
-    for (const f of flashes) {
-      ctx.beginPath();
-      ctx.arc(f.x, f.y, 2 * r + (now - f.t) / 25, 0, 2 * Math.PI);
-      ctx.stroke();
-    }
-    ctx.font = "bold 12px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    for (const d of dots) {
-      ctx.beginPath();
-      ctx.arc(d.x, d.y, r, 0, 2 * Math.PI);
-      ctx.fillStyle = d.red ? red : blue;
-      ctx.fill();
-      if (people) {
-        ctx.fillStyle = "white";
-        ctx.fillText(d.red ? "I" : "S", d.x, d.y + 1);
-      }
-    }
-    const secs = Math.max(0.5, Math.min(win, now - t0) / 1000);
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
-    ctx.fillRect(1, 1, W - 2, 46);
-    ctx.fillStyle = "#17242b";
-    ctx.font = "26px sans-serif";
-    ctx.textBaseline = "top";
-    ctx.textAlign = "left";
-    ctx.fillText(
-      `${(hits.length / secs).toFixed(1)} red-blue collisions per second`,
-      16, 12
-    );
-    ctx.textAlign = "right";
-    const lab = people ? "S × I" : "A × B";
-    ctx.fillText(
-      `${lab} = ${nBlue} × ${nRed} = ${nBlue * nRed}`, W - 16, 12
-    );
-    yield canvas;
   }
 }
 ```
@@ -163,9 +155,9 @@ viewof look = Inputs.radio(["molecules", "people"], {
 
 ::: {.notes}
 Start here with no maths. Red dots and blue dots. A flash is a red-blue collision.
-Halve red and the rate halves. Halve blue and it halves again. That is the product rule.
+The animation runs with 10 red, then 20, then 40, blue fixed at 40. Each doubling of red doubles the collision rate. That is the product rule.
 Speed is the contact rate. Double it and collisions double.
-Then flip "draw as" to people and say nothing has changed except the labels.
+The last phase redraws the same dots as people, and nothing has changed except the labels.
 Point at each symbol in the second equation once. Contacts a day, chance a contact passes it on, chance the contact is infectious, how many people are at risk. We build it again slowly in a few slides.
 :::
 
@@ -317,19 +309,23 @@ plotBase = ({
 
 ```{ojs}
 //| echo: false
-viewof cut = Inputs.range([0, 60], {
-  value: 30, step: 5, label: "contacts cut by (%)"
-})
+cut = {
+  while (true) {
+    for (const v of [0, 20, 40, 60]) { yield v; await Promises.delay(2500) }
+  }
+}
 cfRows = [
   ...sirRun(base, 100).map((d) => ({t: d.t, I: d.I, k: "no change"})),
-  ...sirRun({...base, c: base.c * (1 - cut / 100)}, 100)
-    .map((d) => ({t: d.t, I: d.I, k: `contacts cut by ${cut}%`}))
+  ...(cut === 0 ? [] : sirRun({...base, c: base.c * (1 - cut / 100)}, 100)
+    .map((d) => ({t: d.t, I: d.I, k: `contacts cut by ${cut}%`})))
 ]
 Plot.plot({
   ...plotBase,
-  title: `Cut contacts and the peak is lower and later`,
-  x: axisX("time (days)"),
-  y: axisY("infectious (people)"),
+  title: cut === 0 ? "No change. The epidemic runs its course"
+    : cut >= 50 ? `Contacts cut by ${cut}%. It never takes off`
+    : `Contacts cut by ${cut}%. The peak is lower and later`,
+  x: axisX("time (days)", {domain: [0, 100]}),
+  y: axisY("infectious (people)", {domain: [0, 175]}),
   color: {domain: ["no change", `contacts cut by ${cut}%`],
     range: ["#888", cols.I]},
   marks: [
@@ -348,7 +344,7 @@ A peek ahead. The SIR model we build next, with contacts reduced from day zero.
 
 ::: {.notes}
 This is why. The grey curve is what the model says happens. The red one is the same model with fewer contacts. We cannot run the real epidemic twice, but the model can.
-Drag the slider. Somewhere near 50 percent the epidemic stops growing at all. That is a threshold, and the rest of the lecture is about where it comes from.
+The animation cuts contacts by 20, 40 then 60 percent. Somewhere near 50 percent the epidemic stops growing at all. That is a threshold, and the rest of the lecture is about where it comes from.
 :::
 
 ## Why rates of change?
@@ -465,12 +461,14 @@ The rate at which one susceptible gets infected.
 ::: {.column width="62%"}
 ```{ojs}
 //| echo: false
-viewof prevF = Inputs.range([0, 1], {
-  value: 0.3, step: 0.1, label: "prevalence I/N"
-})
-viewof betaF = Inputs.range([0, 1], {
-  value: 0.5, step: 0.1, label: "β, chance a contact transmits"
-})
+foi = {
+  const steps = [[0.1, 0.5], [0.3, 0.5], [0.6, 0.5], [0.6, 0.9]];
+  while (true) {
+    for (const v of steps) { yield v; await Promises.delay(2500) }
+  }
+}
+prevF = foi[0]
+betaF = foi[1]
 {
   const c = 10, W = 1050, H = 520, cx = 525, cy = 240, R = 180;
   const nI = Math.round(prevF * c);
@@ -500,7 +498,7 @@ viewof betaF = Inputs.range([0, 1], {
 ::::
 
 ::: {.notes}
-One blue person, ten contacts today. Slide prevalence and watch how many of the contacts are red. Slide beta and watch how strong each red line is.
+One blue person, ten contacts today. The animation raises prevalence first, so more of the contacts turn red. Then it raises beta, so each red line gets stronger.
 Lambda is the product of the three. It is a rate per susceptible per day. It changes over time because I changes.
 :::
 
@@ -519,16 +517,15 @@ $$
 ::: {.column width="62%"}
 ```{ojs}
 //| echo: false
-viewof betaS = Inputs.range([0.01, 0.15], {
-  value: 0.05, step: 0.01, label: "β"
-})
-viewof cS = Inputs.range([2, 20], {
-  value: 10, step: 1, label: "c, contacts a day"
-})
-sRows = sirRun({...base, beta: betaS, c: cS}, 80)
+cS = {
+  while (true) {
+    for (const v of [5, 10, 20]) { yield v; await Promises.delay(2500) }
+  }
+}
+sRows = sirRun({...base, c: cS}, 80)
 Plot.plot({
   ...plotBase,
-  title: "S only ever falls, faster with more contacts",
+  title: `S only ever falls, faster with more contacts. c = ${cS} a day`,
   x: axisX("time (days)"),
   y: axisY("susceptible (people)", {domain: [0, 1000]}),
   marks: [
@@ -548,7 +545,7 @@ $N = 1000$, $S(0) = 990$, $I(0) = 10$, $\gamma = 0.25$ per day.
 
 ::: {.notes}
 Rate per person times number of people. That is the first equation.
-It has a minus sign and nothing feeding in, so S can only fall. Push beta or c up and it falls faster and further.
+It has a minus sign and nothing feeding in, so S can only fall. The animation steps c through 5, 10 and 20 contacts a day. More contacts and it falls faster and further.
 The curve comes from the whole model; we are only reading the S part.
 :::
 
@@ -568,16 +565,18 @@ $$
 ::: {.column width="62%"}
 ```{ojs}
 //| echo: false
-viewof gammaR = Inputs.range([0.05, 1], {
-  value: 0.25, step: 0.05, label: "γ, recovery rate per day"
-})
+gammaR = {
+  while (true) {
+    for (const v of [0.25, 0.5, 1]) { yield v; await Promises.delay(2500) }
+  }
+}
 survRows = Array.from({length: 201}, (_, i) => {
   const t = i * 0.1;
   return {t, p: Math.exp(-gammaR * t)};
 })
 Plot.plot({
   ...plotBase,
-  title: "Most recover early, a few stay infectious a long time",
+  title: `γ = ${gammaR} per day. Most recover early, a few stay a long time`,
   x: axisX("days since infection", {domain: [0, 20]}),
   y: axisY("still infectious (fraction)", {domain: [0, 1]}),
   marks: [
@@ -595,7 +594,7 @@ Plot.plot({
 
 ::: {.notes}
 The simplest possible assumption. Every infectious person has the same chance of recovering today, whatever day they are on.
-That gives an exponential infectious period with mean one over gamma. Baseline is four days.
+That gives an exponential infectious period with mean one over gamma. Baseline is four days. The animation raises gamma to 0.5 then 1, so the mean drops to two days then one.
 It is not realistic. Most people recover around some typical time. We come back to that at the end.
 :::
 
@@ -617,20 +616,20 @@ $$
 ::: {.column width="62%"}
 ```{ojs}
 //| echo: false
-viewof betaM = Inputs.range([0.01, 0.15], {
-  value: 0.05, step: 0.01, label: "β"
-})
-viewof cM = Inputs.range([2, 20], {
-  value: 10, step: 1, label: "c, contacts a day"
-})
-viewof gammaM = Inputs.range([0.05, 0.6], {
-  value: 0.25, step: 0.05, label: "γ, recovery rate per day"
-})
-sirRows = sirLong(sirRun({...base, beta: betaM, c: cM, gamma: gammaM}, 80))
+mScen = {
+  const steps = [
+    {lab: "baseline, c = 10, γ = 0.25"},
+    {lab: "twice the contacts, c = 20", c: 20},
+    {lab: "half the infectious period, γ = 0.5", gamma: 0.5}
+  ];
+  while (true) {
+    for (const v of steps) { yield v; await Promises.delay(2500) }
+  }
+}
+sirRows = sirLong(sirRun({...base, ...mScen}, 80))
 Plot.plot({
   ...plotBase,
-  height: 520,
-  title: "I rises then falls. R only ever rises",
+  title: `I rises then falls. R only ever rises. ${mScen.lab}`,
   x: axisX("time (days)"),
   y: axisY("people", {domain: [0, 1000]}),
   color: {domain: ["S", "I", "R"], range: [cols.S, cols.I, cols.R]},
@@ -650,7 +649,7 @@ Plot.plot({
 
 ::: {.notes}
 Add the two flows into I and out of I. R just collects.
-Push the sliders. Beta and c make it faster and bigger, gamma shortens the infectious period and shrinks it.
+The animation shows the baseline, then twice the contacts, then twice the recovery rate. More contacts make it faster and bigger. A shorter infectious period shrinks it.
 :::
 
 ## Conservation
@@ -778,16 +777,21 @@ $$
 ::: {.column width="58%"}
 ```{ojs}
 //| echo: false
-viewof r0s = Inputs.range([0.5, 2], {
-  value: 1.5, step: 0.1, label: "R₀ s"
-})
+r0s = {
+  while (true) {
+    for (const v of [0.6, 0.9, 1.1, 1.5, 2]) {
+      yield v; await Promises.delay(2500)
+    }
+  }
+}
 linRows = Array.from({length: 301}, (_, i) => {
   const t = i * 0.1;
   return {t, I: 10 * Math.exp(0.25 * (r0s - 1) * t)};
 })
 Plot.plot({
   ...plotBase,
-  title: r0s > 1 ? "R₀ s above 1: the outbreak grows" : "R₀ s below 1: the outbreak dies out",
+  title: r0s > 1 ? `R₀ s = ${r0s}, above 1: the outbreak grows`
+    : `R₀ s = ${r0s}, below 1: the outbreak dies out`,
   x: axisX("time (days)", {domain: [0, 30]}),
   y: axisY("infectious (people)", {domain: [0, 150]}),
   marks: [
@@ -810,7 +814,7 @@ $\gamma = 0.25$, $I(0) = 10$. The linear approximation, so it ignores $S$ fallin
 ::: {.notes}
 Equilibrium just means a state the model would sit in for ever. No infectious people is one, for any S. Are those states stable.
 Write the I equation as gamma I times R nought s minus one. Near I equals zero that is exponential growth or decay with rate r.
-Slide R nought s through one. Below it the outbreak dies, above it grows. Stable if and only if R nought s is below one.
+The animation steps R nought s from 0.6 up to 2, through one. Below it the outbreak dies, above it grows. Stable if and only if R nought s is below one.
 :::
 
 ## The peak
@@ -830,56 +834,63 @@ $$
 ::: {.column width="62%"}
 ```{ojs}
 //| echo: false
-viewof r0P = Inputs.range([1.2, 5], {
-  value: 2, step: 0.1, label: "R₀"
-})
-peakRun = sirRun({...base, c: r0P * base.gamma / base.beta}, 80)
-peakRows = peakRun.flatMap((d) => [
-  {t: d.t, f: d.S / base.N, k: "S/N"}, {t: d.t, f: d.I / base.N, k: "I/N"}
-])
-peakAt = peakRun.reduce((a, b) => (b.I > a.I ? b : a))
-peakPlot = (tNow) => {
-  const rows = peakRows.filter((d) => d.t <= tNow + 1e-9);
+peakData = (R0) => {
+  const run = sirRun({...base, c: R0 * base.gamma / base.beta}, 80);
+  const rows = run.flatMap((d) => [
+    {t: d.t, f: d.S / base.N, k: "S/N"}, {t: d.t, f: d.I / base.N, k: "I/N"}
+  ]);
+  const at = run.reduce((a, b) => (b.I > a.I ? b : a));
+  return {R0, rows, at};
+}
+peakPlot = ({R0, rows: all, at: peakAt}, tNow) => {
+  const rows = all.filter((d) => d.t <= tNow + 1e-9);
   const past = tNow >= peakAt.t;
+  const iNow = rows.filter((d) => d.k === "I/N").slice(-1)[0].f;
+  const sNow = rows.filter((d) => d.k === "S/N").slice(-1)[0].f;
   return Plot.plot({
     ...plotBase,
-    title: "I peaks exactly when s crosses 1 / R₀",
+    title: `R₀ = ${R0}. I peaks exactly when s crosses 1 / R₀`,
     x: axisX("time (days)", {domain: [0, 80]}),
     y: axisY("fraction of population", {domain: [0, 1]}),
     color: {domain: ["S/N", "I/N"], range: [cols.S, cols.I]},
     marks: [
-      Plot.ruleY([1 / r0P], {stroke: "#333", strokeDasharray: "8,6"}),
-      Plot.text([{x: 79, y: 1 / r0P}], {x: "x", y: "y", dy: -18,
+      Plot.ruleY([1 / R0], {stroke: "#333", strokeDasharray: "8,6"}),
+      Plot.text([{x: 79, y: 1 / R0}], {x: "x", y: "y", dy: -18,
         textAnchor: "end", fontSize: 26,
-        text: () => `1 / R₀ = ${(1 / r0P).toFixed(2)}`}),
+        text: () => `1 / R₀ = ${(1 / R0).toFixed(2)}`}),
       Plot.line(rows, {x: "t", y: "f", stroke: "k", strokeWidth: 4}),
       Plot.dot(rows.filter((d) => d.k === "S/N").slice(-1), {x: "t", y: "f",
         r: 11, fill: cols.S, stroke: "white", strokeWidth: 2}),
       Plot.text(rows.filter((d) => d.k === "S/N"),
         Plot.selectLast({x: "t", y: "f", text: "k", fill: "k", dx: 18,
-          dy: -18, fontSize: 26, fontWeight: 700})),
+          dy: sNow - iNow < 0.1 ? -34 : -18, fontSize: 26,
+          fontWeight: 700})),
       Plot.text(rows.filter((d) => d.k === "I/N"),
         Plot.selectLast({x: "t", y: "f", text: "k", fill: "k", dx: 18,
-          dy: 18, fontSize: 26, fontWeight: 700})),
+          dy: iNow > 0.05 ? 18 : 0, fontSize: 26, fontWeight: 700})),
       ...(past ? [
         Plot.ruleX([peakAt.t], {stroke: "#999", strokeDasharray: "4,4"}),
         Plot.dot([peakAt], {x: "t", y: (d) => d.S / base.N, r: 9,
           fill: "#333"}),
         Plot.text([peakAt], {x: "t", y: (d) => d.I / base.N, dy: -22,
-          fontSize: 24, fill: cols.I, text: () => "peak"})
+          dx: -14, textAnchor: "end", fontSize: 24, fill: cols.I,
+          text: () => "peak"})
       ] : [])
     ]
   });
 }
 {
+  const sets = [1.5, 2, 3].map(peakData);
   while (true) {
-    for (let f = 1; f <= 40; f++) {
-      const tNow = f * 2;
-      yield peakPlot(tNow);
-      const crossing = tNow >= peakAt.t && tNow - 2 < peakAt.t;
-      await Promises.delay(crossing ? 1600 : 70);
+    for (const pd of sets) {
+      for (let f = 1; f <= 40; f++) {
+        const tNow = f * 2;
+        yield peakPlot(pd, tNow);
+        const crossing = tNow >= pd.at.t && tNow - 2 < pd.at.t;
+        await Promises.delay(crossing ? 1600 : 70);
+      }
+      await Promises.delay(2500);
     }
-    await Promises.delay(2500);
   }
 }
 ```
@@ -888,7 +899,7 @@ peakPlot = (tNow) => {
 
 ::: {.notes}
 Now let S move. The growth condition is s above one over R nought. S only falls, so it crosses that line at most once. That crossing is the peak of I.
-The curves draw themselves in time. Slide R nought, the dashed line drops and the peak moves earlier and higher.
+The curves draw themselves in time, then repeat with R nought at 1.5, 2 and 3. As R nought rises the dashed line drops and the peak moves earlier and higher.
 Note the peak is not the end. There are still lots of infectious people, and they keep infecting. That overshoot is the next few slides.
 :::
 
@@ -951,10 +962,8 @@ $$
 ::: {.column width="62%"}
 ```{ojs}
 //| echo: false
-viewof r0F = Inputs.range([1.1, 5], {
-  value: 2, step: 0.1, label: "R₀"
-})
 s0 = base.S0 / base.N
+sStart = 0.3
 fs = (s, R0) => s - s0 * Math.exp(-R0 * (1 - s))
 dfs = (s, R0) => 1 - s0 * R0 * Math.exp(-R0 * (1 - s))
 rootOf = (R0) => {
@@ -965,53 +974,57 @@ rootOf = (R0) => {
   }
   return (lo + hi) / 2;
 }
-newtonPath = {
-  const xs = [0.5];
+newtonData = (R0) => {
+  const path = [sStart];
   for (let i = 0; i < 6; i++) {
-    const x = xs[xs.length - 1];
-    xs.push(x - fs(x, r0F) / dfs(x, r0F));
+    const x = path[path.length - 1];
+    path.push(x - fs(x, R0) / dfs(x, R0));
   }
-  return xs;
+  const rows = Array.from({length: 201}, (_, i) => {
+    const s = i / 200;
+    return {s, f: fs(s, R0)};
+  });
+  return {R0, path, rows, root: rootOf(R0)};
 }
-fRows = Array.from({length: 201}, (_, i) => {
-  const s = i / 200;
-  return {s, f: fs(s, r0F)};
-})
-newtonPlot = (k) => Plot.plot({
+newtonPlot = ({R0, path, rows, root}, k) => Plot.plot({
   ...plotBase,
-  title: "The root is where f crosses zero. Newton walks there",
+  title: `R₀ = ${R0}. The root is where f crosses zero. Newton walks there`,
   x: axisX("s, susceptible fraction at the end", {domain: [0, 1]}),
   y: axisY("f(s)", {domain: [-0.3, 0.3]}),
   marks: [
     Plot.ruleY([0], {stroke: "#333"}),
-    Plot.line(fRows, {x: "s", y: "f", stroke: "#333", strokeWidth: 4}),
-    Plot.dot([rootOf(r0F)], {x: (d) => d, y: 0, r: 11, fill: cols.R}),
-    Plot.text([rootOf(r0F)], {x: (d) => d, y: 0, dy: 40, dx: 40, fill: cols.R,
+    Plot.line(rows, {x: "s", y: "f", stroke: "#333", strokeWidth: 4}),
+    Plot.dot([root], {x: (d) => d, y: 0, r: 11, fill: cols.R}),
+    Plot.text([root], {x: (d) => d, y: 0, dy: 40, dx: 40, fill: cols.R,
       fontSize: 26, fontWeight: 700, textAnchor: "start",
       text: (d) => `root s∞ = ${d.toFixed(3)}`}),
-    Plot.dot(newtonPath.slice(0, k + 1), {x: (d) => d,
-      y: (d) => fs(d, r0F), r: 8, fill: cols.I}),
+    Plot.dot(path.slice(0, k + 1), {x: (d) => d,
+      y: (d) => fs(d, R0), r: 8, fill: cols.I, clip: true}),
     ...(k > 0 ? [
       Plot.line([-0.2, 1.2].map((s) => {
-        const x = newtonPath[k - 1];
-        return {s, y: fs(x, r0F) + dfs(x, r0F) * (s - x)};
+        const x = path[k - 1];
+        return {s, y: fs(x, R0) + dfs(x, R0) * (s - x)};
       }), {x: "s", y: "y", stroke: cols.I, strokeWidth: 2.5,
         strokeDasharray: "8,6", clip: true}),
-      Plot.ruleX([newtonPath[k]], {stroke: cols.I, strokeDasharray: "4,4"})
+      Plot.ruleX([path[k]], {stroke: cols.I, strokeDasharray: "4,4",
+        clip: true})
     ] : []),
-    Plot.text([{x: newtonPath[k], y: 0.26}], {x: "x", y: "y",
+    Plot.text([{x: path[k], y: 0.26}], {x: "x", y: "y",
       fill: cols.I, fontSize: 26, textAnchor: "start", dx: 10,
-      text: () => k === 0 ? "start at s = 0.5"
-        : `step ${k}: s = ${newtonPath[k].toFixed(3)}`})
+      text: () => k === 0 ? `start at s = ${sStart}`
+        : `step ${k}: s = ${path[k].toFixed(3)}`})
   ]
 })
 {
+  const sets = [1.5, 2, 3].map(newtonData);
   while (true) {
-    for (let k = 0; k <= 5; k++) {
-      yield newtonPlot(k);
-      await Promises.delay(k === 0 ? 1000 : 1400);
+    for (const nd of sets) {
+      for (let k = 0; k <= 5; k++) {
+        yield newtonPlot(nd, k);
+        await Promises.delay(k === 0 ? 1000 : 1400);
+      }
+      await Promises.delay(2200);
     }
-    await Promises.delay(2200);
   }
 }
 ```
@@ -1020,7 +1033,7 @@ newtonPlot = (k) => Plot.plot({
 
 ::: {.notes}
 Root finding is just this. Draw the function, ask where it crosses zero.
-Watch the steps play. Start at a half. Take the tangent, follow it to the axis, evaluate there, repeat. Three steps and it has converged.
+Watch the steps play. Start at 0.3. Take the tangent, follow it to the axis, evaluate there, repeat. Three steps and it has converged. It then repeats for R nought 1.5, 2 and 3, and the root moves left as R nought rises.
 Transcendental just means no algebra gets s out on its own. So we solve numerically, every time.
 f has a second root just above s = 1, the "no epidemic" solution, which is why the starting guess matters.
 :::
@@ -1167,11 +1180,8 @@ $$
 ::: {.column width="62%"}
 ```{ojs}
 //| echo: false
-viewof model = Inputs.radio(["SIR", "SEIR", "SIRS"], {
-  value: "SIR", label: "model"
-})
-extTmax = model === "SIRS" ? 365 : 100
-extRows = {
+extData = (model) => {
+  const tmax = model === "SIRS" ? 365 : 100;
   const p = {...base, sigma: 0.5, omega: 1 / 60};
   const f = ([S, E, I, R]) => {
     const lam = p.beta * p.c * I / p.N;
@@ -1183,20 +1193,21 @@ extRows = {
     return [-lam * S + wane, 0, lam * S - p.gamma * I, p.gamma * I - wane];
   };
   const keys = model === "SEIR" ? ["S", "E", "I", "R"] : ["S", "I", "R"];
-  return rk4(f, [p.S0, 0, p.I0, 0], extTmax, 0.1).flatMap(({t, u}) =>
+  const rows = rk4(f, [p.S0, 0, p.I0, 0], tmax, 0.1).flatMap(({t, u}) =>
     keys.map((k) => ({t, n: u[["S", "E", "I", "R"].indexOf(k)], k})));
+  const title = ({
+    SIR: "SIR: one wave, then it burns out",
+    SEIR: "SEIR: the same wave, later and a little flatter",
+    SIRS: "SIRS: immunity wanes and the disease settles in"
+  })[model];
+  return {model, tmax, rows, title};
 }
-extTitle = ({
-  SIR: "SIR: one wave, then it burns out",
-  SEIR: "SEIR: the same wave, later and a little flatter",
-  SIRS: "SIRS: immunity wanes and the disease settles in"
-})[model]
-extPlot = (tNow) => {
-  const rows = extRows.filter((d) => d.t <= tNow + 1e-9);
+extPlot = ({tmax, rows: all, title}, tNow) => {
+  const rows = all.filter((d) => d.t <= tNow + 1e-9);
   return Plot.plot({
     ...plotBase,
-    title: extTitle,
-    x: axisX("time (days)", {domain: [0, extTmax]}),
+    title,
+    x: axisX("time (days)", {domain: [0, tmax]}),
     y: axisY("people", {domain: [0, 1000]}),
     color: {domain: ["S", "E", "I", "R"],
       range: [cols.S, cols.E, cols.I, cols.R]},
@@ -1215,12 +1226,15 @@ extPlot = (tNow) => {
   });
 }
 {
+  const sets = ["SIR", "SEIR", "SIRS"].map(extData);
   while (true) {
-    for (let f = 1; f <= 50; f++) {
-      yield extPlot(f * extTmax / 50);
-      await Promises.delay(60);
+    for (const ed of sets) {
+      for (let f = 1; f <= 50; f++) {
+        yield extPlot(ed, f * ed.tmax / 50);
+        await Promises.delay(60);
+      }
+      await Promises.delay(2500);
     }
-    await Promises.delay(2500);
   }
 }
 ```
@@ -1232,7 +1246,7 @@ Latent period $1/\sigma = 2$ days. Immunity lasts $1/\omega = 60$ days on averag
 ::::
 
 ::: {.notes}
-Every extension in this course is another box or another arrow.
+Every extension in this course is another box or another arrow. The animation draws SIR, then SEIR, then SIRS.
 SEIR: infected but not yet infectious. The curve shifts later and flattens a little. Same final size.
 SIRS: recovered people drift back to S. The epidemic no longer burns out. It settles to an endemic level.
 :::
@@ -1252,9 +1266,11 @@ $$
 ::: {.column width="62%"}
 ```{ojs}
 //| echo: false
-viewof kStages = Inputs.range([1, 20], {
-  value: 1, step: 1, label: "k, number of stages"
-})
+kStages = {
+  while (true) {
+    for (const v of [1, 2, 5, 20]) { yield v; await Promises.delay(2500) }
+  }
+}
 erlRows = {
   const g = 0.25, rate = kStages * g;
   const lf = (n) => { let s = 0; for (let i = 2; i <= n; i++) s += Math.log(i); return s; };
@@ -1267,7 +1283,7 @@ erlRows = {
 }
 Plot.plot({
   ...plotBase,
-  title: "More stages: same mean, less spread",
+  title: `k = ${kStages} stage${kStages > 1 ? "s" : ""}. Same mean, less spread`,
   x: axisX("infectious period (days)", {domain: [0, 12]}),
   y: axisY("density", {domain: [0, 0.6]}),
   marks: [
@@ -1293,7 +1309,7 @@ Self-study chapter 10.
 
 ::: {.notes}
 The exponential period was the weak assumption. Fix it without leaving ODEs: chain k stages, each exponential with rate k gamma.
-Slide k up. The mean stays at four days, but the spread shrinks and the shape becomes a hump. That is an Erlang distribution.
+The animation steps k through 1, 2, 5 and 20. The mean stays at four days, but the spread shrinks and the shape becomes a hump. That is an Erlang distribution.
 The stage equation on the slide is for the later stages, j of two or more. The first stage is fed by new infections instead.
 One line in the model, a much more realistic infectious period.
 :::
