@@ -8,6 +8,8 @@ format:
     center: true
     css: lectures.css
     link-external-newwindow: true
+    code-copy: false
+    code-line-numbers: false
 ---
 
 ## Talk plan
