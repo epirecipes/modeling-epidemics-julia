@@ -1085,8 +1085,8 @@ The "everyone susceptible" part matters. Later in the epidemic each case infects
 ::: {.column width="42%"}
 - No infections, $I = 0$, is an equilibrium: nothing changes, whatever $S$ is
 - Add a few. Each infects $\beta c\, s$ others a day and recovers at rate $\gamma$
-- While $I$ is small, $S$ barely moves, so that net rate $g$ is fixed
-- $g > 0$ exactly when $R_0 s > 1$: each case more than replaces itself
+- Call the difference $g$: the net growth rate per infectious person. While $I$ is small, $s$ barely moves, so $g$ is fixed
+- $g > 0$, and the outbreak takes off, exactly when $R_0 s > 1$: each case more than replaces itself
 
 $$
 \frac{\mathrm{d}I}{\mathrm{d}t} = \beta c\, s\, I - \gamma I
