@@ -1128,12 +1128,13 @@ The animation steps R nought s from 0.6 up to 2, through one. Below it the outbr
 
 :::: {.columns}
 ::: {.column width="38%"}
-- $I$ grows while $s > 1/R_0$
-- The peak is where $s$ crosses $1/R_0$
-- Then $I$ falls, but the epidemic is not over
+- The last slide's rate holds at every moment, not just early on
+- $S$ only falls, so $R_0 s$ falls with it
+- $I$ rises while $R_0 s > 1$, that is while $s > 1/R_0$
+- $s$ crosses $1/R_0$ once: that is the peak. Then $I$ falls, but the epidemic is not over
 
 $$
-\frac{\mathrm{d}I}{\mathrm{d}t} > 0
+\frac{\mathrm{d}I}{\mathrm{d}t} = \gamma\,(R_0 s - 1)\, I > 0
 \iff s > \frac{1}{R_0}
 $$
 :::
