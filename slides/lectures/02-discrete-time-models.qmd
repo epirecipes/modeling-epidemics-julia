@@ -303,7 +303,7 @@ A day-long step is far from that limit. r delta t can pass one, and a chance can
 So rebuild the day out of intervals that are tiny. Each sliver gets a share r delta t over n.
 :::
 
-## Survive every sliver
+## Survive every sliver of the step
 
 :::: {.columns}
 ::: {.column width="38%"}
@@ -456,7 +456,7 @@ r delta t is the expected number of events in the step. For a small step that is
 For a large step the expected count goes past one, but a person can only leave once. The exponential form keeps p between zero and one.
 :::
 
-## From flows to a step
+## From the ODE's flows to one step
 
 :::: {.columns}
 ::: {.column width="40%"}
@@ -606,7 +606,7 @@ For a small step the probability is close to lambda delta t, so the deterministi
 The exponential wrapper only keeps p below one.
 :::
 
-## Shrink the step
+## Shrink the step: the deterministic model closes on the ODE
 
 :::: {.columns}
 ::: {.column width="34%"}
@@ -888,7 +888,7 @@ The deterministic step is the one-step expectation of the stochastic step. That 
 Both draws use the state at t, so nobody is infected and recovers in the same step. That is an artefact of the step, not of the disease, and it fades as delta t shrinks.
 :::
 
-## Many runs
+## Many runs of the stochastic model
 
 :::: {.columns}
 ::: {.column width="34%"}
@@ -1120,7 +1120,7 @@ The stochastic mean sits a little below the deterministic step of the same step 
 The ODE is the large-N limit of the stochastic model, the law of large numbers: averages settle down as N grows. It is not its mean at finite N.
 :::
 
-## Two limits as the step shrinks
+## Two limits as the step shrinks: the ODE and the continuous-time Markov chain
 
 <svg viewBox="0 0 1600 640" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Avenir Next, Helvetica Neue, Arial, sans-serif">
   <defs>

@@ -14,7 +14,7 @@ format:
 
 - Where mass action and the SIR model came from
 - The model, one term at a time
-- $R_0$, the threshold and the peak
+- $R_0$, the epidemic threshold and the peak
 - The final size and the attack rate
 - Solving it
 - Extending the model
@@ -223,7 +223,7 @@ Bernoulli asked whether inoculating against smallpox was worth the risk of the p
 Hamer wanted to know why measles came in waves. His answer was that new cases depend on susceptibles times infectious. That is mass action, forty years after the chemists.
 :::
 
-## The threshold arrives
+## The epidemic threshold: too few susceptibles and it dies out
 
 :::: {.columns}
 ::: {.column width="42%"}
@@ -541,7 +541,7 @@ It has a minus sign and nothing feeding in, so S can only fall. The animation st
 The curve comes from the whole model; we are only reading the S part.
 :::
 
-## Recovery at a constant rate
+## Recovery at a constant rate: the exponential infectious period
 
 :::: {.columns}
 ::: {.column width="38%"}
@@ -758,7 +758,7 @@ Write the I equation as gamma I times R nought s minus one. Near I equals zero t
 The animation steps R nought s from 0.6 up to 2, through one. Below it the outbreak dies, above it grows. Stable if and only if R nought s is below one.
 :::
 
-## The peak
+## The peak of infections: when $s$ falls to $1/R_0$
 
 :::: {.columns}
 ::: {.column width="38%"}
@@ -893,7 +893,7 @@ Stack the three and the top edge is flat. That is the check the worksheet runs.
 It also means we never need to solve for R. It is whatever is left. The next slide uses exactly that.
 :::
 
-## How big does it get?
+## How big does the epidemic get? The final size
 
 :::: {.columns}
 ::: {.column width="40%"}
@@ -1082,7 +1082,7 @@ The shaded gap is the overshoot. At the peak there are more infectious people th
 The threshold is what vaccination aims for. An unmitigated epidemic goes well past it.
 :::
 
-## Solving it on a computer
+## Solving the equations on a computer
 
 :::: {.columns}
 ::: {.column width="38%"}
