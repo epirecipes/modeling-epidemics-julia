@@ -109,12 +109,13 @@ Plot.plot({
 
 ::: {.attribution}
 The model we build next, with contacts cut from day zero.
+The first such argument: Bernoulli, 1760, weighed smallpox inoculation against its risk with a model, read to the Paris Academy; English translation in *Rev. Med. Virol.* 14, 2004 ([doi](https://doi.org/10.1002/rmv.443)).
 :::
 :::
 ::::
 
 ::: {.notes}
-This is why. The grey curve is what the model says happens. The red one is the same model with fewer contacts. We cannot run the real epidemic twice, but the model can.
+This is why. Bernoulli did the first version of this in 1760, a life table with and without smallpox inoculation, to argue for inoculating. The grey curve is what the model says happens. The red one is the same model with fewer contacts. We cannot run the real epidemic twice, but the model can.
 The animation cuts contacts by 20, 40 then 60 percent. At 60 percent it never takes off. Where that line sits is what the rest of the lecture works out.
 :::
 
@@ -320,12 +321,12 @@ The last phase redraws the same dots as people, and nothing has changed except t
 Say that infections are a collision between a susceptible and an infectious person. We build the equation slowly in a few slides.
 :::
 
-## Mass action reaches epidemics
+## Mass action in infectious disease modelling
 
 :::: {.columns}
 ::: {.column width="42%"}
-- **Bernoulli, 1760.** A model to weigh smallpox inoculation against its risk
 - **Hamer, 1906.** Measles waves explained by susceptibles meeting infectious people
+- New cases scale with the product, as collisions did: mass action, forty years after the chemists
 
 $$
 \text{new cases} \propto S \times I
@@ -376,18 +377,16 @@ epiEvents = [
   {year: 1911, label: "1911", who: "Ross"},
   {year: 1927, label: "1927", who: "Kermack, McKendrick", tier: 1}
 ]
-timeline(epiEvents, 1740, 1940, [1760, 1906])
+timeline(epiEvents, 1740, 1940, [1906])
 ```
 
 ::: {.attribution}
-Bernoulli, 1760, read to the Paris Academy; English translation in *Rev. Med. Virol.* 14, 2004 ([doi](https://doi.org/10.1002/rmv.443)).
 Hamer, "Epidemic disease in England", Milroy Lectures, *Lancet* 167, 1906 ([doi](https://doi.org/10.1016/S0140-6736(01)80187-2)).
 :::
 :::
 ::::
 
 ::: {.notes}
-Bernoulli asked whether inoculating against smallpox was worth the risk of the procedure. He built a life table with and without it. First model used to argue for an intervention.
 Hamer wanted to know why measles came in waves. His answer was that new cases depend on susceptibles times infectious. That is mass action, forty years after the chemists.
 :::
 
