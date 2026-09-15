@@ -28,12 +28,35 @@ normalise() {
     printf '%s' "$target"
 }
 
+# CairoMakie writes the figure into a directory made by mktempdir(), which
+# Julia deletes when the process exits. From `julia -e` that happens the moment
+# display() returns, so the file is gone before the editor has opened it and the
+# tab reports "An error occurred while loading the image". Taking a copy first
+# makes the figure outlive the process that drew it. Only paths under the
+# temporary directory are copied, so opening a file from the workspace still
+# opens that file rather than a copy of it.
+keep() {
+    source_path=$1
+    case "$source_path" in
+        /tmp/*|"${TMPDIR:-/tmp}"/*)
+            [ -f "$source_path" ] || { printf '%s' "$source_path"; return; }
+            keep_dir="$HOME/.cache/julia-figures"
+            mkdir -p "$keep_dir" || { printf '%s' "$source_path"; return; }
+            # Yesterday's figures are of no further interest.
+            find "$keep_dir" -type f -mtime +1 -delete 2>/dev/null
+            kept="$keep_dir/$(date +%Y%m%d-%H%M%S)-$$-$(basename "$source_path")"
+            cp "$source_path" "$kept" 2>/dev/null && source_path=$kept
+            ;;
+    esac
+    printf '%s' "$source_path"
+}
+
 count=$#
 index=0
 while [ "$index" -lt "$count" ]; do
     argument=$1
     shift
-    set -- "$@" "$(normalise "$argument")"
+    set -- "$@" "$(keep "$(normalise "$argument")")"
     index=$((index + 1))
 done
 
