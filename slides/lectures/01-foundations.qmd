@@ -194,7 +194,7 @@ The point for us. With thousands of people, counts change smoothly enough to tre
 - Two kinds of molecule bounce around at random
 - They react when they collide
 - Collisions per second scale with the product of the counts
-- Infections work the same way
+- Collisions per second is a rate: the count in a window, divided by the time. $k$ sets it, from speed and size
 
 $$
 \text{rate} = k\,[A]\,[B]
