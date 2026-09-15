@@ -1284,9 +1284,12 @@ $$
 
 ::: {.fragment}
 $$
+\begin{aligned}
+\int_{s_0}^{s} \frac{\mathrm{d}y}{y} &= -R_0 \int_{0}^{r} \mathrm{d}x \\
 \ln \frac{s}{s_0} = -R_0\, r
-\qquad\Longrightarrow\qquad
+\quad&\Longrightarrow\quad
 s = s_0\, e^{-R_0 r}
+\end{aligned}
 $$
 :::
 
@@ -1304,7 +1307,7 @@ Lower case means a fraction of $N$.
 
 ::: {.notes}
 Why divide: both rates have I in them, and I is the thing we do not know at the end. Dividing the two cancels I and time together, and leaves a relation between S and R that holds all the way through. That is why the final size does not depend on how fast the epidemic runs.
-Second, integrate. Left side in s, right side in r. Exponentiate.
+Second, separate and integrate: ds over s on the left, from s nought to s; minus R nought dr on the right, from zero to r, since nobody has recovered at the start. That gives the log, then exponentiate.
 Third, at the end nobody is infectious, so recovered is everyone who is not susceptible. This assumes nobody was immune at the start. That gives one equation in one unknown, s infinity.
 :::
 
