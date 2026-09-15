@@ -464,7 +464,7 @@ For a large step the expected count goes past one, but a person can only leave o
 - recovery at rate $\gamma$ per infectious
 - Over one step, each susceptible is infected with $p_I = 1 - e^{-\lambda \delta t}$
 - Each infectious person recovers with $p_R = 1 - e^{-\gamma \delta t}$
-- $\lambda$ uses $I_t$, held fixed for the step
+- Within a step, use the number infectious at its start, $I_t$
 :::
 ::: {.column width="60%"}
 <svg viewBox="0 0 1200 420" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Avenir Next, Helvetica Neue, Arial, sans-serif">
@@ -516,13 +516,9 @@ The force of infection uses the number infectious at the start of the step and h
 - Sum the lines: the population is conserved
 :::
 ::: {.column width="60%"}
-::: {.fragment}
 Expected infections in the step: $p_I S_t$
-:::
 
-::: {.fragment}
 Expected recoveries in the step: $p_R I_t$
-:::
 
 ::: {.fragment}
 ::: {.bigmath}
