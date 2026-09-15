@@ -131,7 +131,7 @@ flowDiagram([
   {k: "S", name: "susceptible", col: cols.S},
   {k: "I", name: "infectious", col: cols.I},
   {k: "R", name: "recovered", col: cols.R}
-], ["new infections: ?", "recovery"])
+], ["infection: ?", "recovery"])
 ```
 :::
 ::::
@@ -629,11 +629,10 @@ $$
         ctx.textBaseline = "top";
         ctx.textAlign = "left";
         ctx.fillText(
-          `the blue dot: ${(hitsI.length / secs).toFixed(2)} bumps with red per s, ` +
-          `${(hitsOther.length / secs).toFixed(2)} with others`, 16, 12);
+          `outlined dot: ${(hitsI.length / secs).toFixed(2)} red bumps/s, ` +
+          `${(hitsOther.length / secs).toFixed(2)} other`, 16, 12);
         ctx.textAlign = "right";
-        ctx.fillText(`red share I/N = ${nI} / ${n - 1} = ${share.toFixed(2)}`,
-          W - 16, 12);
+        ctx.fillText(`I/N = ${share.toFixed(2)}`, W - 16, 12);
         yield canvas;
       }
     }
@@ -703,13 +702,179 @@ It has a minus sign and nothing feeding in, so S can only fall. The animation st
 The curve comes from the whole model; we are only reading the S part.
 :::
 
+## The S equation in the box
+
+:::: {.columns}
+::: {.column width="36%"}
+- Blue bumps red, and with chance $\beta$ turns red
+- Every bump takes one from $S$
+- More red, more bumps that count: $S$ falls faster
+- Nothing comes back into $S$
+:::
+::: {.column width="64%"}
+```{ojs}
+//| echo: false
+boxEpidemic = async function* ({nS, nI, beta, gammaFrame, hold, label}) {
+  const W = 1000, H = 400, r = 10, v = 1.25, CH = 250, gap = 40;
+  const canvas = DOM.canvas(W, H + gap + CH);
+  const ctx = canvas.getContext("2d");
+  const col = {S: cols.S, I: cols.I, R: cols.R};
+  while (true) {
+    const kinds = [...Array(nS).fill("S"), ...Array(nI).fill("I")];
+    const n = kinds.length;
+    const dots = kinds.map((k) => {
+      const th = Math.random() * 2 * Math.PI;
+      return {x: r + Math.random() * (W - 2 * r),
+        y: r + Math.random() * (H - 2 * r),
+        vx: Math.cos(th), vy: Math.sin(th), k};
+    });
+    const touching = new Set();
+    const flashes = [];
+    const hist = [];
+    const t0 = performance.now();
+    let frame = 0;
+    while (performance.now() - t0 < hold) {
+      const now = performance.now();
+      frame += 1;
+      for (const d of dots) {
+        d.x += d.vx * v;
+        d.y += d.vy * v;
+        if (d.x < r) { d.x = r; d.vx = -d.vx; }
+        if (d.x > W - r) { d.x = W - r; d.vx = -d.vx; }
+        if (d.y < r) { d.y = r; d.vy = -d.vy; }
+        if (d.y > H - r) { d.y = H - r; d.vy = -d.vy; }
+        if (d.k === "I" && gammaFrame > 0 && Math.random() < gammaFrame) {
+          d.k = "R";
+        }
+      }
+      for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+          const a = dots[i], b = dots[j];
+          const pair = (a.k === "S" && b.k === "I") || (a.k === "I" && b.k === "S");
+          const dx = a.x - b.x, dy = a.y - b.y;
+          const close = dx * dx + dy * dy < 4 * r * r;
+          const key = i * n + j;
+          if (close && !touching.has(key)) {
+            touching.add(key);
+            if (pair && Math.random() < beta) {
+              (a.k === "S" ? a : b).k = "I";
+              flashes.push({x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, t: now});
+            }
+          } else if (!close) {
+            touching.delete(key);
+          }
+        }
+      }
+      while (flashes.length && now - flashes[0].t > 400) flashes.shift();
+      const count = {S: 0, I: 0, R: 0};
+      for (const d of dots) count[d.k] += 1;
+      if (hist.length === 0 || frame % 6 === 0) hist.push({t: now - t0, ...count});
+      ctx.fillStyle = "#fbfcfd";
+      ctx.fillRect(0, 0, W, H + gap + CH);
+      ctx.fillStyle = "#f4f6f8";
+      ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = "#999";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "#e0a020";
+      for (const f of flashes) {
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, 2 * r + (now - f.t) / 25, 0, 2 * Math.PI);
+        ctx.stroke();
+      }
+      for (const d of dots) {
+        ctx.beginPath();
+        ctx.arc(d.x, d.y, r, 0, 2 * Math.PI);
+        ctx.fillStyle = col[d.k];
+        ctx.fill();
+      }
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.fillRect(1, 1, W - 2, 46);
+      ctx.font = "26px sans-serif";
+      ctx.textBaseline = "top";
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#17242b";
+      ctx.fillText(label, 16, 12);
+      ctx.textAlign = "right";
+      const parts = [["S", count.S], ["I", count.I]];
+      if (gammaFrame > 0) parts.push(["R", count.R]);
+      let x = W - 16;
+      for (const [k, c] of parts.reverse()) {
+        const txt = `${k} = ${c}`;
+        ctx.fillStyle = col[k];
+        ctx.fillText(txt, x, 12);
+        x -= ctx.measureText(txt).width + 36;
+      }
+      // Time series of the counts, building up below the box.
+      const cx0 = 70, cx1 = W - 20, cy0 = H + gap + 10, cy1 = H + gap + CH - 40;
+      const tmax = hold;
+      ctx.strokeStyle = "#999"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(cx0, cy0); ctx.lineTo(cx0, cy1); ctx.lineTo(cx1, cy1); ctx.stroke();
+      ctx.fillStyle = "#333"; ctx.font = "20px sans-serif";
+      ctx.textAlign = "left"; ctx.textBaseline = "top";
+      ctx.fillText("people", cx0 + 6, cy0 - 4);
+      ctx.textAlign = "right";
+      ctx.fillText("time →", cx1, cy1 + 8);
+      ctx.textAlign = "right"; ctx.textBaseline = "middle";
+      ctx.fillText(String(n), cx0 - 8, cy0);
+      ctx.fillText("0", cx0 - 8, cy1);
+      const series = gammaFrame > 0 ? ["S", "I", "R"] : ["S", "I"];
+      for (const k of series) {
+        ctx.strokeStyle = col[k]; ctx.lineWidth = 3;
+        ctx.beginPath();
+        hist.forEach((h, idx) => {
+          const px = cx0 + (h.t / tmax) * (cx1 - cx0);
+          const py = cy1 - (h[k] / n) * (cy1 - cy0);
+          if (idx === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        });
+        ctx.stroke();
+        const last = hist[hist.length - 1];
+        ctx.fillStyle = col[k]; ctx.font = "bold 22px sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillText(k, cx0 + (last.t / tmax) * (cx1 - cx0) + 8,
+          cy1 - (last[k] / n) * (cy1 - cy0));
+      }
+      yield canvas;
+      if (count.I === 0 && gammaFrame > 0) {
+        await Promises.delay(2000);
+        break;
+      }
+      if (count.S === 0) {
+        await Promises.delay(2000);
+        break;
+      }
+    }
+  }
+}
+```
+
+```{ojs}
+//| echo: false
+boxEpidemic({nS: 60, nI: 5, beta: 0.5, gammaFrame: 0, hold: 30000,
+  label: "blue turns red on a bump, with chance β = 0.5"})
+```
+
+::: {.attribution}
+60 susceptibles and 5 infectious, no recovery yet. The plot below the box is the count of each colour over time. It restarts once every blue dot has turned.
+:::
+:::
+::::
+
+::: {.notes}
+The S equation, as dots. Each flash is a bump that passed the infection on.
+Early on there are few red dots, so S falls slowly. As red builds up, blue disappears faster. That is minus lambda S with lambda growing.
+No arrow points back into S, so the blue count only ever falls.
+:::
+
 ## Recovery at a constant rate: the exponential infectious period
 
 :::: {.columns}
 ::: {.column width="38%"}
-- Each infectious person recovers at rate $\gamma$: over a tiny $\mathrm{d}t$, chance $\gamma\,\mathrm{d}t$
-- So the time infectious is exponential: most short, a few long
-- Mean $1/\gamma$ days
+- Cut time since infection into tiny slivers $\mathrm{d}t$
+- Every sliver carries the same chance $\gamma\,\mathrm{d}t$ of recovering, however long you have been ill
+- So the chance of still being infectious falls by the same fraction each sliver: $e^{-\gamma t}$
+- Mean time infectious $1/\gamma$ days
 
 $$
 \text{recoveries per day} = \gamma I
@@ -727,8 +892,22 @@ survRows = Array.from({length: 201}, (_, i) => {
   const t = i * 0.1;
   return {t, p: Math.exp(-gammaR * t)};
 })
+{
+  const W = 1050, H = 110, n = 20, x0 = 90, x1 = 950, y = 30, h = 44;
+  const w = (x1 - x0) / n;
+  return htl.svg`<svg width=${W} height=${H} viewBox="0 0 ${W} ${H}"
+      style="max-width:100%;height:auto;font-family:Georgia,'Times New Roman',serif">
+    ${Array.from({length: n}, (_, i) => htl.svg`<rect x=${x0 + i * w} y=${y}
+      width=${w} height=${h} fill=${cols.I} fill-opacity="0.15"
+      stroke=${cols.I} stroke-width="1.5" />`)}
+    <text x=${x0} y=${y - 8} font-size="22" fill="#333">time since infection, in slivers dt</text>
+    <text x=${x1} y=${y + h + 26} font-size="22" fill=${cols.I}
+      text-anchor="end">each sliver: the same chance γ dt of recovering</text>
+  </svg>`;
+}
 Plot.plot({
   ...plotBase,
+  height: 470,
   title: `γ = ${gammaR} per day. Most recover early, a few stay a long time`,
   x: axisX("days since infection", {domain: [0, 20]}),
   y: axisY("still infectious (fraction)", {domain: [0, 1]}),
@@ -804,6 +983,33 @@ Add the two flows into I and out of I. R just collects.
 The animation shows the baseline, then twice the contacts, then twice the recovery rate. More contacts make it faster and bigger. A shorter infectious period shrinks it.
 :::
 
+## The whole model in the box
+
+:::: {.columns}
+::: {.column width="36%"}
+- Blue turns red on a bump, with chance $\beta$
+- Red turns green at a constant rate $\gamma$
+- Watch $I$ rise, peak and fall as $S$ runs out
+- $R$ only ever rises
+:::
+::: {.column width="64%"}
+```{ojs}
+//| echo: false
+boxEpidemic({nS: 60, nI: 3, beta: 0.5, gammaFrame: 1 / 480, hold: 45000,
+  label: "blue → red on a bump (β = 0.5), red → green at rate γ"})
+```
+
+::: {.attribution}
+60 susceptibles and 3 infectious. Each red dot recovers with the same small chance every frame, about 8 seconds on average. The plot below builds up as it runs. It restarts when the red dots are gone.
+:::
+:::
+::::
+
+::: {.notes}
+Both rules at once. Red builds while there are plenty of blue to bump, then runs out of blue and drains into green.
+Some runs die out early, with only a few red dots. That is randomness with small numbers, which the ODE does not have. Sam's afternoon session picks that up.
+:::
+
 ## $R_0$: how many one case infects
 
 :::: {.columns}
@@ -846,11 +1052,9 @@ $$
     <text x=${W / 2} y=${H - 10} font-size="28" fill="#333"
       text-anchor="middle">generation ${upto}: ${gens[upto]} case${gens[upto] > 1 ? "s" : ""}. Each infects R₀ = 2 others</text>
   </svg>`;
-  while (true) {
-    for (let g = 0; g < gens.length; g++) {
-      yield draw(g);
-      await Promises.delay(g === gens.length - 1 ? 1600 : 800);
-    }
+  for (let g = 0; g < gens.length; g++) {
+    yield draw(g);
+    await Promises.delay(900);
   }
 }
 ```
@@ -867,14 +1071,14 @@ The "everyone susceptible" part matters. Later in the epidemic each case infects
 
 :::: {.columns}
 ::: {.column width="42%"}
-- With $I = 0$ nothing changes, whatever $S$ is
-- Stable means a small outbreak dies out
-- While $I$ is small, $S$ barely moves, so $I$ grows or shrinks at a fixed rate $g$
-- It grows if and only if $R_0 s > 1$
+- No infections, $I = 0$, is an equilibrium: nothing changes, whatever $S$ is
+- Add a few. Each infects $\beta c\, s$ others a day and recovers at rate $\gamma$
+- While $I$ is small, $S$ barely moves, so that net rate $g$ is fixed
+- $g > 0$ exactly when $R_0 s > 1$: each case more than replaces itself
 
 $$
-\frac{\mathrm{d}I}{\mathrm{d}t} \approx g I,
-\qquad g = \gamma \,(R_0 s - 1)
+\frac{\mathrm{d}I}{\mathrm{d}t} = \beta c\, s\, I - \gamma I
+= \underbrace{\gamma\,(R_0 s - 1)}_{g}\, I
 $$
 :::
 ::: {.column width="58%"}
