@@ -546,7 +546,7 @@ Nothing is random yet.
 
 :::: {.columns}
 ::: {.column width="40%"}
-- Hold the current rate for the whole step (Euler, 1768)
+- Hold the current rate for the whole step. That is Euler's method, 1768
 - $u_{t+\delta t} = u_t + \delta t\, f(u_t)$
 - For a small step, $p_I = 1 - e^{-\lambda \delta t} \approx \lambda\,\delta t$
 - So $S_{t+1} \approx S_t - \lambda S_t\,\delta t$: Euler's step for $\mathrm{d}S/\mathrm{d}t = -\lambda S$
@@ -580,12 +580,12 @@ Plot.plot({
     Plot.text([{t: 2, S: eulerEnd, label: "Euler point"}],
       {x: "t", y: "S", text: "label", dx: 16, dy: -22, textAnchor: "start",
        fill: "#17242b"}),
-    Plot.text([{t: 2, S: eulerTrue, label: "true S(2), the ODE"}],
-      {x: "t", y: "S", text: "label", dx: 16, dy: 30, textAnchor: "start",
-       fill: colS}),
     Plot.text([{t: 2, S: (eulerEnd + eulerTrue) / 2, label: "error of one step"}],
       {x: "t", y: "S", text: "label", dx: 16, dy: 4, textAnchor: "start",
-       fill: colI})
+       fill: colI}),
+    Plot.text([{t: 2, S: eulerTrue, label: "true S(2), the ODE"}],
+      {x: "t", y: "S", text: "label", dx: 16, dy: 30, textAnchor: "start",
+       fill: colS})
   ]
 })
 ```
