@@ -7,13 +7,17 @@ name: Devcontainer image
 on:
   push:
     branches: [main]
+    # Only what actually goes into the image. devcontainer.json, instantiate.sh
+    # and xdg-open are read from the workspace when a codespace is created, so
+    # editing them does not need an hour of rebuilding; use the Run workflow
+    # button if the build itself ever needs re-running by hand.
     paths:
-      - .devcontainer/**
+      - .devcontainer/Dockerfile
+      - .devcontainer/build-depot.sh
       - Project.toml
       - Manifest.toml
       - environments/ch10/**
       - src/**
-      - .github/workflows/devcontainer-image.yml
   schedule:
     - cron: "17 5 * * 1"
   workflow_dispatch:
