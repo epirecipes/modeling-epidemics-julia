@@ -871,9 +871,9 @@ No arrow points back into S, so the blue count only ever falls.
 
 :::: {.columns}
 ::: {.column width="38%"}
-- Cut time since infection into tiny slivers $\mathrm{d}t$
-- Every sliver carries the same chance $\gamma\,\mathrm{d}t$ of recovering, however long you have been ill
-- So the chance of still being infectious falls by the same fraction each sliver: $e^{-\gamma t}$
+- Cut time since infection into slivers $\mathrm{d}t$
+- In every sliver the same fraction $\gamma\,\mathrm{d}t$ of those still infectious recover, however long they have been ill
+- So what is left shrinks by the same factor each sliver: $(1 - \gamma\,\mathrm{d}t)^k \to e^{-\gamma t}$
 - Mean time infectious $1/\gamma$ days
 
 $$
@@ -893,21 +893,29 @@ survRows = Array.from({length: 201}, (_, i) => {
   return {t, p: Math.exp(-gammaR * t)};
 })
 {
-  const W = 1050, H = 110, n = 20, x0 = 90, x1 = 950, y = 30, h = 44;
-  const w = (x1 - x0) / n;
+  const W = 1050, H = 230, n = 24, dt = 0.5, x0 = 90, x1 = 1000, y0 = 34, hmax = 150;
+  const w = (x1 - x0) / n, q = gammaR * dt;
+  const bars = Array.from({length: n}, (_, i) => Math.pow(1 - q, i));
   return htl.svg`<svg width=${W} height=${H} viewBox="0 0 ${W} ${H}"
       style="max-width:100%;height:auto;font-family:Georgia,'Times New Roman',serif">
-    ${Array.from({length: n}, (_, i) => htl.svg`<rect x=${x0 + i * w} y=${y}
-      width=${w} height=${h} fill=${cols.I} fill-opacity="0.15"
-      stroke=${cols.I} stroke-width="1.5" />`)}
-    <text x=${x0} y=${y - 8} font-size="22" fill="#333">time since infection, in slivers dt</text>
-    <text x=${x1} y=${y + h + 26} font-size="22" fill=${cols.I}
-      text-anchor="end">each sliver: the same chance γ dt of recovering</text>
+    <text x=${x0} y="22" font-size="22" fill="#333">still infectious, sliver by sliver (dt = half a day)</text>
+    ${bars.map((b, i) => {
+      const hb = b * hmax, hr = b * q * hmax, top = y0 + hmax - hb;
+      return htl.svg`<g>
+        <rect x=${x0 + i * w + 1} y=${top + hr} width=${w - 2} height=${hb - hr}
+          fill=${cols.I} fill-opacity="0.18" stroke=${cols.I} stroke-width="1" />
+        <rect x=${x0 + i * w + 1} y=${top} width=${w - 2} height=${hr}
+          fill=${cols.I} />
+      </g>`;
+    })}
+    <line x1=${x0} y1=${y0 + hmax} x2=${x1} y2=${y0 + hmax} stroke="#333" stroke-width="1.5" />
+    <text x=${x1} y=${y0 + hmax + 24} font-size="22" fill=${cols.I} text-anchor="end">
+      solid: the fraction γ dt = ${q.toFixed(3)} of each bar that recovers in that sliver. The next bar is what is left</text>
   </svg>`;
 }
 Plot.plot({
   ...plotBase,
-  height: 470,
+  height: 400,
   title: `γ = ${gammaR} per day. Most recover early, a few stay a long time`,
   x: axisX("days since infection", {domain: [0, 20]}),
   y: axisY("still infectious (fraction)", {domain: [0, 1]}),
