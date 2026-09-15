@@ -59,6 +59,12 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}-devcontainer:latest
             ghcr.io/${{ github.repository }}-devcontainer:${{ github.sha }}
+          # Without a cache every run recompiles the depot from scratch, an
+          # hour even for a one-line change to a later layer. The cache lives
+          # in the registry rather than the 10 GB Actions cache, which these
+          # layers would not fit in.
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}-devcontainer:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}-devcontainer:buildcache,mode=max
 
       - name: Report image size
         run: docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}' | head

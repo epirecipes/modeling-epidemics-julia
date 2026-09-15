@@ -1,0 +1,15 @@
+#!/bin/sh
+# CairoMakie's display() writes the figure to a temporary PNG and then calls
+# xdg-open, which in a container has no desktop to open it on, so it gives up
+# with "Can't find a way to open a browser". Handing the file to the editor
+# instead makes it appear as an image tab.
+#
+# Installed into /usr/local/bin at container-creation time rather than baked
+# into the image, so it reaches codespaces started from an image built before
+# this existed.
+if command -v code >/dev/null 2>&1; then
+    exec code "$@"
+fi
+
+echo "xdg-open: no editor available; open $* manually" >&2
+exit 1
