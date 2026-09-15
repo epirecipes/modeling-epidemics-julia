@@ -12,6 +12,18 @@ format:
     code-line-numbers: false
 ---
 
+## Talk plan
+
+- Why step through time at all
+- The map: stepping the ODE
+- The chain: whole people, moved at random
+- What each becomes as the step shrinks
+- Beyond SIR, same recipe
+
+::: {.notes}
+Fifteen minutes. Two discrete models with the same rates, and two different limits.
+:::
+
 # Why discrete time
 
 ## The world arrives in steps
