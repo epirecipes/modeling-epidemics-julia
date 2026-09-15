@@ -171,14 +171,81 @@ Bailey's 1957 book gathered the stochastic theory in one place.
 
 # The map approximates the ODE
 
+## Why a rate becomes a probability
+
+:::: {.columns}
+::: {.column width="34%"}
+- The ODE moves people at rate $r$ per day
+- Slice the step into $n$ slivers
+- In one sliver the chance is $r\,\delta t / n$
+- Survive all $n$, then let $n \to \infty$
+
+$$
+\Bigl(1 - \frac{r\,\delta t}{n}\Bigr)^{n} \longrightarrow e^{-r\,\delta t}
+$$
+
+```{ojs}
+//| echo: false
+nSliver = {
+  while (true) {
+    for (const n of [1, 2, 4, 8, 16, 64]) {
+      yield n
+      await Promises.delay(n === 64 ? 2500 : 1300)
+    }
+  }
+}
+md`At r δt = 1: (1 − 1/${nSliver})<sup>${nSliver}</sup> = **${Math.pow(1 - 1 / nSliver, nSliver).toFixed(3)}**, and e<sup>−1</sup> = ${Math.exp(-1).toFixed(3)}`
+```
+:::
+::: {.column width="66%"}
+```{ojs}
+//| echo: false
+sliverRows = Array.from({length: 121}, (_, i) => i * 0.025).flatMap((x) => [
+  {x, y: Math.pow(Math.max(0, 1 - x / nSliver), nSliver),
+    which: `${nSliver} sliver${nSliver > 1 ? "s" : ""}`},
+  {x, y: Math.exp(-x), which: "exp(−r δt)"}
+])
+Plot.plot({
+  width: 1050, height: 600, marginLeft: 90, marginBottom: 70, marginTop: 30,
+  style: {fontSize: "24px"},
+  title: `${nSliver} sliver${nSliver > 1 ? "s" : ""}: the chance of surviving the whole step`,
+  x: {label: "r δt (rate × step, dimensionless)", domain: [0, 3],
+    labelAnchor: "center", labelOffset: 55},
+  y: {label: "chance of no event in the step", domain: [0, 1],
+    ticks: [0, 0.5, 1], labelAnchor: "top", labelOffset: 40},
+  color: {domain: [`${nSliver} sliver${nSliver > 1 ? "s" : ""}`, "exp(−r δt)"],
+    range: ["#17242b", colI], legend: true,
+    swatchSize: 22, style: {fontSize: "22px"}},
+  marks: [
+    Plot.line(sliverRows, {x: "x", y: "y", stroke: "which", strokeWidth: 3}),
+    Plot.ruleX([1], {stroke: "#888", strokeDasharray: "6,4"}),
+    Plot.dot([{x: 1, y: Math.pow(1 - 1 / nSliver, nSliver)}],
+      {x: "x", y: "y", fill: "#17242b", r: 9}),
+    Plot.dot([{x: 1, y: Math.exp(-1)}], {x: "x", y: "y", fill: colI, r: 9})
+  ]
+})
+```
+::: {.attribution}
+The slivers multiply. More slivers, and the product settles on the exponential.
+:::
+:::
+::::
+
+::: {.notes}
+The ODE speaks in rates. A rate is a chance per tiny sliver of time.
+Cut the step into n slivers. Each is survived with chance one minus r delta t over n. Survive the step means survive every sliver, so multiply.
+Let the slivers shrink. The product tends to the exponential. That is the definition of e, the same limit as compound interest.
+So a constant rate over a step gives an exponential survival, and the rest follows.
+:::
+
 ## From a rate to a probability
 
 :::: {.columns}
 ::: {.column width="34%"}
-- Constant hazard $r$ per day
 - Chance of no event in $\delta t$: $e^{-r\delta t}$
 - So $p = 1 - e^{-r\delta t}$
-- $r\delta t$ alone can exceed one
+- $r\delta t$ is the expected number of events, not a chance
+- It can exceed one. $p$ cannot
 
 ```{ojs}
 //| echo: false
@@ -223,10 +290,9 @@ Plot.plot({
 ::::
 
 ::: {.notes}
-The ODE speaks in rates. A step needs a probability.
-If the hazard is constant over the step, the chance of surviving it is the exponential.
-One minus that is the chance the event happens.
-For small steps the two lines agree. For large ones the naive product goes past one.
+One minus the survival chance is the chance the event happens at least once.
+r delta t is the expected number of events in the step. For a small step that is nearly the same as the probability, so the two lines agree at the left.
+For a large step the expected count goes past one, but a person can only leave once. The exponential form keeps p between zero and one.
 :::
 
 ## The deterministic map
