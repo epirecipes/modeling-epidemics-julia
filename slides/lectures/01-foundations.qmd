@@ -1315,13 +1315,15 @@ Third, at the end nobody is infectious, so recovered is everyone who is not susc
 
 :::: {.columns}
 ::: {.column width="38%"}
-- $s_\infty$ appears alone and inside the exponential
-- No rearrangement isolates it. That is "transcendental"
-- Move everything to one side. The answer is where $f = 0$, its root
-- Newton's method: follow the tangent to zero, repeat
+- $s_\infty$ sits alone and inside the exponential, so no rearranging isolates it
+- Write everything on one side as $f(s)$. The answer is where $f = 0$, its root
+- Newton's method: from a guess, draw the tangent to the curve and go to where that line hits zero
+- That is the next guess. Repeat; each step lands far closer
 
 $$
-f(s) = s - s_0\, e^{-R_0 (1 - s)}
+f(s) = s - s_0\, e^{-R_0 (1 - s)},
+\qquad
+s_{k+1} = s_k - \frac{f(s_k)}{f'(s_k)}
 $$
 :::
 ::: {.column width="62%"}
