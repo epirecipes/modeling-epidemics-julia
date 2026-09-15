@@ -2,7 +2,7 @@
 
 Work through this page **before Day 1**. It takes about half an hour, most of which is waiting for downloads. Doing it in advance means Session 1 starts with you writing model code rather than installing software.
 
-You need four things: Julia, a code editor (we suggest VSCode), Quarto, and the course materials themselves. Follow the sections in order.
+You need four things: Julia, a code editor (we suggest VSCode), Quarto, and the course materials themselves. Follow the sections in order. If you cannot install software on the machine you will bring with you — a locked-down work laptop, say — skip instead to [running the course in your browser](#running-the-course-in-your-browser).
 
 ::: {.callout-tip}
 ## If you get stuck, try to keep installing the rest of the software and make a note of where you got stuck. 
@@ -246,6 +246,40 @@ Because `#` starts a comment in Julia, you can label a block by writing after th
 | `?` | help | you want a function's arguments — `?expm1` |
 | `]` | package | a package seems missing — `]st` also names the active project |
 | `;` | shell | you need `ls` or `git status` without leaving Julia |
+
+## Running the course in your browser
+
+Everything above puts the course on your own machine. If that is not practical — a laptop you are not allowed to install software on, an installation that will not cooperate, or no time left before Day 1 — you can run the whole course in a browser tab instead, on a machine GitHub provides. Julia, Quarto, VSCode and every package the course uses are already installed on it.
+
+All you need is a free [GitHub account](https://github.com/signup) and a stable internet connection.
+
+**Starting it.** Sign in to GitHub, open [the course repository](https://github.com/epirecipes/modeling-epidemics-julia), and click *Code* → *Codespaces* → *Create codespace on main*. After a minute or two a VSCode window opens in the tab, with the course materials already in it. Do this the day before Day 1, not on the morning, so that there is time to sort out any surprises.
+
+**It is the same VSCode.** Everything in [step 7](#running-code-while-you-follow-along) applies unchanged: `Shift`+`Enter` runs a cell, `#%%` blocks work in `.jl` files, and *Quarto: Render* turns a finished worksheet into a report.
+
+**You do not need `--project=.` here.** The course project is already active, so plain `julia` has the course packages. That flag still matters on your own machine, which is why [step 5](#install-the-course-packages) explains it — the browser setup simply applies it for you.
+
+**Pluto notebooks.** Start Pluto from a terminal inside the codespace (*Terminal* → *New Terminal*):
+
+```bash
+julia -e 'using Pluto; Pluto.run(host="0.0.0.0", port=1234, launch_browser=false, require_secret_for_access=false)'
+```
+
+Then open the *Ports* panel, which sits beside the terminal, find port 1234, and click the globe icon, *Open in Browser*. Pluto opens in a new tab. Do not use *Preview in Editor*: GitHub does not allow the forwarded page to be displayed inside the editor, and you will get a browser message about the page being embedded by another site.
+
+**Keeping your work.** A codespace is a computer in the cloud, and everything you write lives on it rather than on your laptop. Anything you want to keep, you have to take with you: right-click a file in the Explorer panel and choose *Download*, or, if you use git, push your work to a branch of your own fork.
+
+**Closing down at the end of a session.** Three things are running, and closing the browser tab stops none of them:
+
+1. In Pluto's start page, click *Shut down notebook* for each notebook you opened. Closing a notebook's tab leaves its Julia process running and holding memory.
+2. Press `Ctrl`+`C` in the terminal where Pluto is running.
+3. Open the command palette with `Cmd`/`Ctrl`+`Shift`+`P` and run *Codespaces: Stop Current Codespace*.
+
+::: {.callout-warning}
+## Stop your codespace, do not delete it
+
+*Stop* puts it to sleep with your work intact, and your free monthly hours are only counted while it runs. *Delete* throws the machine away, and everything you wrote in it goes too. A codespace you simply walk away from stops by itself after 30 minutes.
+:::
 
 ## If something goes wrong
 
