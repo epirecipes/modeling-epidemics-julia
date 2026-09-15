@@ -27,6 +27,19 @@
       "settings": {
         "julia.environmentPath": "${containerWorkspaceFolder}",
         "julia.useRevise": false,
+
+        // Julia is installed from the tarball in the Dockerfile, not through
+        // juliaup. The extension resolves the REPL from PATH and so finds it,
+        // but the language server's precedence is
+        // languageServerExecutablePath > languageServerJuliaupChannel >
+        // `julia +release`, so without the second setting it hunts for juliaup,
+        // fails, and shows a modal offering to install it. Naming the binary
+        // for both stops the prompt and keeps the language server running.
+        // These belong here rather than in a tracked .vscode/settings.json:
+        // the path only exists inside this container.
+        "julia.executablePath": "/usr/local/bin/julia",
+        "julia.languageServerExecutablePath": "/usr/local/bin/julia",
+        "julia.juliaup.install.hint": false,
         "files.watcherExclude": {
           "**/_freeze/**": true,
           "**/_site/**": true
