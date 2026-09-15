@@ -48,10 +48,13 @@
     }
   },
 
-  // Pluto's default port, for the notebook units.
+  // Pluto's default port, for the notebook units. openBrowser rather than
+  // openPreview: GitHub serves forwarded ports with frame-blocking headers, so
+  // VS Code's embedded Simple Browser cannot display Pluto and shows a refusal
+  // about the page being embedded by another site. A real tab works.
   "forwardPorts": [1234],
   "portsAttributes": {
-    "1234": { "label": "Pluto", "onAutoForward": "openPreview" }
+    "1234": { "label": "Pluto", "onAutoForward": "openBrowser" }
   },
 
   // JULIA_PROJECT="@." makes a bare `julia` in the terminal activate the nearest
