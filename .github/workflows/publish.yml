@@ -16,6 +16,11 @@ concurrency:
 
 jobs:
   publish:
+    # Forks of this repository inherit its workflows. Without this, a
+    # participant who forks the course and syncs it gets failing runs they
+    # have no reason to care about, and an hour-long image build they have no
+    # use for.
+    if: github.repository == 'epirecipes/modeling-epidemics-julia'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
