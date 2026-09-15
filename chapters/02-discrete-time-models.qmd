@@ -317,6 +317,7 @@ deterministic map cannot capture.
 
 ## Companion materials
 
+- [Alternative slides](../slides/lectures/02-discrete-time-models.html)
 - [Slides](../slides/chapters/02-discrete-time-models.html)
 - [Pluto preview](../notebook-exports/chapters/02-discrete-time-models.html)
 - [Pluto source](../notebooks/chapters/02-discrete-time-models.jl)
