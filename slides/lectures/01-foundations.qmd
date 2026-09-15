@@ -16,7 +16,8 @@ format:
 - The model, one term at a time
 - $R_0$, the threshold and the peak
 - The final size and the attack rate
-- One slide on solving it, then beyond SIR
+- Solving it
+- Extending the model
 
 ::: {.notes}
 Fifteen minutes. History first, then the model built slowly, then the three numbers it gives us, then where the rest of the course goes.
