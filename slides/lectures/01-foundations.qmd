@@ -1463,9 +1463,20 @@ The threshold is what vaccination aims for. An unmitigated epidemic goes well pa
 
 :::: {.columns}
 ::: {.column width="38%"}
-- Nothing so far gave a formula for $S(t)$. A computer steps instead
-- Euler: take the current slope, step forward, repeat
-- Runge–Kutta: several slopes per step. Tsit5, the worksheet's solver, is one and picks its own step size
+- Nothing so far gave a formula for $S(t)$. A computer steps through time instead
+- Euler: hold the current rate for a whole step. Error shrinks in proportion to $\delta t$
+- Runge–Kutta: sample the rate at several points inside the step and take a weighted average, so the step follows the curve
+- Tsit5, the worksheet's solver: a fifth-order Runge–Kutta, error shrinks like $\delta t^5$, and it picks its own step size to hold a set tolerance
+
+$$
+\text{Euler: } u_{t+\delta t} = u_t + \delta t\, f(u_t),
+\qquad
+\text{Runge–Kutta: } u_{t+\delta t} = u_t + \delta t \sum_i w_i\, k_i
+$$
+
+::: {.sub}
+$f$ is the rate; the $k_i$ are the rate sampled at points inside the step.
+:::
 :::
 ::: {.column width="62%"}
 ```{ojs}
@@ -1516,7 +1527,7 @@ eulerPlot = (dtE) => Plot.plot({
 ::: {.notes}
 Nothing on the previous slides had a formula for S of t. A computer steps through time instead.
 Euler is the simplest. Big steps overshoot the curve. Shrink the step and it closes in.
-Runge-Kutta methods take a few trial slopes per step and do far better. Tsit5, which the worksheet uses, also chooses its own step size.
+Runge-Kutta methods sample the rate at several points inside the step and average them, so the step bends with the curve. Tsit5, which the worksheet uses, is fifth order: halve the step and the error falls by about thirty-two. It also chooses its own step size to keep the error under a tolerance you set.
 :::
 
 ## Beyond SIR: another box, another arrow
