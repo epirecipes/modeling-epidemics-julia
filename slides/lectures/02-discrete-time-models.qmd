@@ -1120,8 +1120,6 @@ The stochastic mean sits a little below the deterministic step of the same step 
 The ODE is the large-N limit of the stochastic model, the law of large numbers: averages settle down as N grows. It is not its mean at finite N.
 :::
 
-# What the stochastic model approximates
-
 ## Two limits as the step shrinks
 
 <svg viewBox="0 0 1600 640" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Avenir Next, Helvetica Neue, Arial, sans-serif">
