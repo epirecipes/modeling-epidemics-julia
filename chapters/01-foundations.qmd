@@ -347,7 +347,7 @@ $S/N = 1/R_0$ itself.
 
 ## Companion materials
 
-- [Lecture](../slides/lectures/01-foundations.html)
+- [Alternative slides](../slides/lectures/01-foundations.html)
 - [Slides](../slides/chapters/01-foundations.html)
 - [Pluto preview](../notebook-exports/chapters/01-foundations.html)
 - [Pluto source](../notebooks/chapters/01-foundations.jl)

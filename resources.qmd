@@ -5,7 +5,7 @@ Welcome to the workshop! Below you will find the materials for all ten taught se
 For each session, you will use three resources:
 
 *   **Book:** Each chapter includes a more detailed exploration of the subject with code. You can read this if you are stuck or something is not clear.
-*   **Lecture:** For two Day 1 sessions, a short theory lecture given before the slides.
+*   **Alternative slides:** For two Day 1 sessions, a second deck that teaches the theory with animations, given before the session slides.
 *   **Slides:** The presentation slides shown in the room at the start of each session.
 *   **Worksheet:** The file you will fill in during the workshop. It is in your course folder under `worksheets/`, and that is the copy to open in VS Code. Clicking the link downloads the same Quarto (`.qmd`) file.
 
@@ -29,7 +29,7 @@ The **Pluto preview** is a saved copy of the notebook: it shows the model at its
 ### Foundations: SIR theory and the Julia workflow — Day 1, Session 2
 
 - [Book](chapters/01-foundations.html)
-- [Lecture](slides/lectures/01-foundations.html)
+- [Alternative slides](slides/lectures/01-foundations.html)
 - [Slides](slides/chapters/01-foundations.html)
 - [Worksheet](worksheets/chapters/01-foundations.qmd)
 - Optional: [Pluto preview](notebook-exports/chapters/01-foundations.html) · [Pluto source](notebooks/chapters/01-foundations.jl)
@@ -44,7 +44,7 @@ The **Pluto preview** is a saved copy of the notebook: it shows the model at its
 ### Discrete-time models — Day 1, Session 4
 
 - [Book](chapters/02-discrete-time-models.html)
-- [Lecture](slides/lectures/02-discrete-time-models.html)
+- [Alternative slides](slides/lectures/02-discrete-time-models.html)
 - [Slides](slides/chapters/02-discrete-time-models.html)
 - [Worksheet](worksheets/chapters/02-discrete-time-models.qmd)
 - Optional: [Pluto preview](notebook-exports/chapters/02-discrete-time-models.html) · [Pluto source](notebooks/chapters/02-discrete-time-models.jl)
