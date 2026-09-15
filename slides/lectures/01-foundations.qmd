@@ -1,0 +1,1304 @@
+---
+title: "Foundations of the SIR model"
+subtitle: "Day 1, Session 2"
+author: "Sam Abbott"
+engine: markdown
+format:
+  revealjs:
+    width: 1920
+    height: 1080
+    center: true
+    css: lectures.css
+    link-external-newwindow: true
+---
+
+## Molecules in a box
+
+:::: {.columns}
+::: {.column width="36%"}
+- Two kinds of molecule bounce around at random
+- They react when they collide
+- Collisions per second scale with the product of the counts
+- People are the same. Contacts between $S$ and $I$
+
+$$
+\text{rate} = k\,[A]\,[B]
+$$
+
+$$
+\text{infections per day} = \beta c \,\tfrac{I}{N}\, S
+$$
+
+::: {.attribution}
+Guldberg and Waage, 1864. Speed stands in for the contact rate $c$.
+$\beta$ is the chance a contact transmits.
+:::
+:::
+::: {.column width="64%"}
+```{ojs}
+//| echo: false
+viewof nRed = Inputs.range([5, 40], {
+  value: 20, step: 1, label: "red dots"
+})
+viewof nBlue = Inputs.range([5, 40], {
+  value: 40, step: 1, label: "blue dots"
+})
+viewof speed = Inputs.range([0.5, 4], {
+  value: 1, step: 0.5, label: "speed"
+})
+viewof look = Inputs.radio(["molecules", "people"], {
+  value: "molecules", label: "draw as"
+})
+```
+
+```{ojs}
+//| echo: false
+{
+  const W = 1000, H = 520, r = 10, n = nRed + nBlue;
+  const canvas = DOM.canvas(W, H);
+  const ctx = canvas.getContext("2d");
+  const people = look === "people";
+  const red = "#b22222", blue = "#4682b4";
+  const dots = Array.from({length: n}, (_, i) => {
+    const th = Math.random() * 2 * Math.PI;
+    return {
+      x: r + Math.random() * (W - 2 * r),
+      y: r + Math.random() * (H - 2 * r),
+      vx: Math.cos(th), vy: Math.sin(th), red: i < nRed
+    };
+  });
+  const touching = new Set();
+  const hits = [];
+  const flashes = [];
+  const win = 5000;
+  const t0 = performance.now();
+  while (true) {
+    const now = performance.now();
+    const v = 2.5 * speed;
+    for (const d of dots) {
+      d.x += d.vx * v;
+      d.y += d.vy * v;
+      if (d.x < r) { d.x = r; d.vx = -d.vx; }
+      if (d.x > W - r) { d.x = W - r; d.vx = -d.vx; }
+      if (d.y < r) { d.y = r; d.vy = -d.vy; }
+      if (d.y > H - r) { d.y = H - r; d.vy = -d.vy; }
+    }
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        if (dots[i].red === dots[j].red) continue;
+        const dx = dots[i].x - dots[j].x, dy = dots[i].y - dots[j].y;
+        const close = dx * dx + dy * dy < 4 * r * r;
+        const key = i * n + j;
+        if (close && !touching.has(key)) {
+          touching.add(key);
+          hits.push(now);
+          flashes.push({
+            x: (dots[i].x + dots[j].x) / 2,
+            y: (dots[i].y + dots[j].y) / 2, t: now
+          });
+        } else if (!close) {
+          touching.delete(key);
+        }
+      }
+    }
+    while (hits.length && now - hits[0] > win) hits.shift();
+    while (flashes.length && now - flashes[0].t > 400) flashes.shift();
+    ctx.fillStyle = "#f4f6f8";
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = "#999";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#e0a020";
+    for (const f of flashes) {
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, 2 * r + (now - f.t) / 25, 0, 2 * Math.PI);
+      ctx.stroke();
+    }
+    ctx.font = "bold 12px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for (const d of dots) {
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, r, 0, 2 * Math.PI);
+      ctx.fillStyle = d.red ? red : blue;
+      ctx.fill();
+      if (people) {
+        ctx.fillStyle = "white";
+        ctx.fillText(d.red ? "I" : "S", d.x, d.y + 1);
+      }
+    }
+    const secs = Math.max(0.5, Math.min(win, now - t0) / 1000);
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.fillRect(1, 1, W - 2, 46);
+    ctx.fillStyle = "#17242b";
+    ctx.font = "26px sans-serif";
+    ctx.textBaseline = "top";
+    ctx.textAlign = "left";
+    ctx.fillText(
+      `${(hits.length / secs).toFixed(1)} red-blue collisions per second`,
+      16, 12
+    );
+    ctx.textAlign = "right";
+    const lab = people ? "S × I" : "A × B";
+    ctx.fillText(
+      `${lab} = ${nBlue} × ${nRed} = ${nBlue * nRed}`, W - 16, 12
+    );
+    yield canvas;
+  }
+}
+```
+:::
+::::
+
+::: {.notes}
+Start here with no maths. Red dots and blue dots. A flash is a red-blue collision.
+Halve red and the rate halves. Halve blue and it halves again. That is the product rule.
+Speed is the contact rate. Double it and collisions double.
+Then flip "draw as" to people and say nothing has changed except the labels.
+Point at each symbol in the second equation once. Contacts a day, chance a contact passes it on, chance the contact is infectious, how many people are at risk. We build it again slowly in a few slides.
+:::
+
+## Where the idea came from
+
+:::: {.columns}
+::: {.column width="42%"}
+- **Bernoulli, 1760.** A model to weigh smallpox inoculation against its risk
+- **Hamer, 1906.** Measles waves explained by susceptibles meeting infectious people
+:::
+::: {.column width="58%"}
+```{ojs}
+//| echo: false
+timeline = (events, lo, hi, on) => {
+  const W = 1100, H = 350, mid = 180;
+  const x = (y) => 60 + (y - lo) / (hi - lo) * (W - 170);
+  return htl.svg`<svg width=${W} height=${H} viewBox="0 0 ${W} ${H}"
+      style="max-width:100%;height:auto;font-family:Georgia,'Times New Roman',serif">
+    <defs><marker id="tarr" viewBox="0 0 10 10" refX="9" refY="5"
+      markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#000"/></marker></defs>
+    <line x1=${x(lo) - 40} y1=${mid} x2=${x(hi) + 40} y2=${mid}
+      stroke="#000" stroke-width="2.5" marker-end="url(#tarr)"/>
+    <text x=${x(hi) + 52} y=${mid + 8} font-size="24" fill="#000">time</text>
+    ${[lo, hi].map((y) => htl.svg`<text x=${x(y)} y=${mid + 34}
+      font-size="20" fill="#9a9a9a" text-anchor="middle">${y}</text>`)}
+    ${events.map((e, i) => {
+      const hot = on.includes(e.year);
+      const up = i % 2 === 0;
+      const lift = e.tier ? 62 : 0;
+      const col = hot ? "#b22222" : "#9a9a9a";
+      const ty = up ? mid - 70 - lift : mid + 84 + lift;
+      return htl.svg`<g>
+        <line x1=${x(e.year)} y1=${up ? mid - 36 - lift : mid + 14}
+          x2=${x(e.year)} y2=${up ? mid - 14 : mid + 36 + lift}
+          stroke="#c8c8c8" stroke-width="1.5" stroke-dasharray="2,4"/>
+        <line x1=${x(e.year)} y1=${mid - 14} x2=${x(e.year)} y2=${mid + 14}
+          stroke=${col} stroke-width=${hot ? 5 : 3} />
+        <text x=${x(e.year)} y=${ty} font-size=${hot ? 32 : 26}
+          font-weight=${hot ? 700 : 400} fill=${col} text-anchor="middle">
+          ${e.label}</text>
+        <text x=${x(e.year)} y=${ty + (hot ? 34 : 30)}
+          font-size=${hot ? 28 : 24} fill=${col} text-anchor="middle">
+          ${e.who}</text>
+      </g>`;
+    })}
+  </svg>`;
+}
+epiEvents = [
+  {year: 1760, label: "1760", who: "Bernoulli"},
+  {year: 1864, label: "1864", who: "Guldberg, Waage"},
+  {year: 1906, label: "1906", who: "Hamer"},
+  {year: 1911, label: "1911", who: "Ross"},
+  {year: 1927, label: "1927", who: "Kermack, McKendrick", tier: 1}
+]
+timeline(epiEvents, 1740, 1940, [1760, 1906])
+```
+
+::: {.attribution}
+Chemistry's mass action (1864) sits in the middle.
+:::
+:::
+::::
+
+::: {.notes}
+Bernoulli asked whether inoculating against smallpox was worth the risk of the procedure. He built a life table with and without it. First model used to argue for an intervention.
+Hamer wanted to know why measles came in waves. His answer was that new cases depend on susceptibles times infectious. That is mass action, forty years after the chemists.
+:::
+
+## The threshold arrives
+
+:::: {.columns}
+::: {.column width="42%"}
+- **Ross, 1911.** Malaria falls once mosquitoes drop below a threshold. No need to remove them all
+- **Kermack and McKendrick, 1927.** The SIR model, and the epidemic threshold
+:::
+::: {.column width="58%"}
+```{ojs}
+//| echo: false
+timeline(epiEvents, 1740, 1940, [1911, 1927])
+```
+
+::: {.attribution}
+Ross called it the "a priori" method. Write the mechanism down, then see what follows.
+:::
+:::
+::::
+
+::: {.notes}
+Ross wrote the mechanism down first and reasoned from it. He showed malaria could be controlled without killing every mosquito. That is the first threshold result.
+Kermack and McKendrick gave us the model on these slides. Two results: an epidemic only takes off if enough people are susceptible, and it ends with susceptibles left over.
+:::
+
+## Why model an epidemic?
+
+:::: {.columns}
+::: {.column width="38%"}
+- Run the epidemic twice, with and without a change
+- Find the threshold where growth stops
+- Say in advance how big it gets
+:::
+::: {.column width="62%"}
+```{ojs}
+//| echo: false
+rk4 = (f, u0, tmax, dt) => {
+  const out = [{t: 0, u: u0.slice()}];
+  const add = (a, b, s) => a.map((x, i) => x + s * b[i]);
+  let u = u0.slice(), t = 0;
+  while (t < tmax - 1e-9) {
+    const k1 = f(u);
+    const k2 = f(add(u, k1, dt / 2));
+    const k3 = f(add(u, k2, dt / 2));
+    const k4 = f(add(u, k3, dt));
+    u = u.map((x, i) =>
+      x + dt / 6 * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]));
+    t += dt;
+    out.push({t, u});
+  }
+  return out;
+}
+base = ({N: 1000, S0: 990, I0: 10, beta: 0.05, c: 10, gamma: 0.25})
+sirRhs = (p) => ([S, I, R]) => {
+  const lam = p.beta * p.c * I / p.N;
+  return [-lam * S, lam * S - p.gamma * I, p.gamma * I];
+}
+sirRun = (p, tmax = 80, dt = 0.1) =>
+  rk4(sirRhs(p), [p.S0, p.I0, p.N - p.S0 - p.I0], tmax, dt)
+    .map(({t, u}) => ({t, S: u[0], I: u[1], R: u[2]}))
+sirLong = (rows) => rows.flatMap((d) => [
+  {t: d.t, n: d.S, k: "S"}, {t: d.t, n: d.I, k: "I"}, {t: d.t, n: d.R, k: "R"}
+])
+cols = ({S: "#4682b4", I: "#b22222", R: "#2e8b57", E: "#e0a020"})
+axisX = (label, extra = {}) => ({
+  label, labelAnchor: "center", labelOffset: 52, ...extra
+})
+axisY = (label, extra = {}) => ({
+  label, labelAnchor: "top", labelOffset: 40, ...extra
+})
+plotBase = ({
+  width: 1050, height: 580, marginLeft: 90, marginBottom: 70,
+  marginTop: 40, marginRight: 100, insetTop: 30,
+  style: {fontSize: "24px"}
+})
+```
+
+```{ojs}
+//| echo: false
+viewof cut = Inputs.range([0, 60], {
+  value: 30, step: 5, label: "contacts cut by (%)"
+})
+cfRows = [
+  ...sirRun(base, 100).map((d) => ({t: d.t, I: d.I, k: "no change"})),
+  ...sirRun({...base, c: base.c * (1 - cut / 100)}, 100)
+    .map((d) => ({t: d.t, I: d.I, k: `contacts cut by ${cut}%`}))
+]
+Plot.plot({
+  ...plotBase,
+  title: `Cut contacts and the peak is lower and later`,
+  x: axisX("time (days)"),
+  y: axisY("infectious (people)"),
+  color: {domain: ["no change", `contacts cut by ${cut}%`],
+    range: ["#888", cols.I]},
+  marks: [
+    Plot.line(cfRows, {x: "t", y: "I", stroke: "k", strokeWidth: 3}),
+    Plot.text(cfRows, Plot.selectMaxY({x: "t", y: "I", z: "k",
+      text: "k", fill: "k", dy: -18}))
+  ]
+})
+```
+
+::: {.attribution}
+A peek ahead. The SIR model we build next, with contacts reduced from day zero.
+:::
+:::
+::::
+
+::: {.notes}
+This is why. The grey curve is what the model says happens. The red one is the same model with fewer contacts. We cannot run the real epidemic twice, but the model can.
+Drag the slider. Somewhere near 50 percent the epidemic stops growing at all. That is a threshold, and the rest of the lecture is about where it comes from.
+:::
+
+## Why rates of change?
+
+:::: {.columns}
+::: {.column width="42%"}
+- **Newton and Leibniz, 1670s to 1680s.** Calculus. Motion as rates of change
+- **Malthus, 1798.** Populations grow in proportion to their size
+- **Verhulst, 1838.** Growth slows as a population fills its space
+- **Lotka 1925, Volterra 1926.** Two species interact through a product term
+
+$$
+\frac{\mathrm{d}N}{\mathrm{d}t} = r N
+$$
+:::
+::: {.column width="58%"}
+```{ojs}
+//| echo: false
+odeEvents = [
+  {year: 1678, label: "1670s to 80s", who: "Newton, Leibniz"},
+  {year: 1798, label: "1798", who: "Malthus"},
+  {year: 1838, label: "1838", who: "Verhulst"},
+  {year: 1925, label: "1925, 1926", who: "Lotka, Volterra"}
+]
+timeline(odeEvents, 1650, 1950, [1678, 1798, 1838, 1925])
+```
+
+::: {.attribution}
+Large populations change smoothly, so a rate of change is enough.
+:::
+:::
+::::
+
+::: {.notes}
+Why differential equations at all. Calculus gave us a language for how things change moment by moment.
+Malthus applied it to people. Growth in proportion to size gives an exponential, and the I equation starts out looking just like it. Verhulst put a brake on it. Lotka and Volterra put two populations together, and their interaction term is a product, mass action again.
+The point for us. With thousands of people, counts change smoothly enough to treat as continuous. Then a rate of change is all we need to write down. That is an ordinary differential equation.
+:::
+
+## Compartments and flows
+
+:::: {.columns}
+::: {.column width="38%"}
+- Everyone is in exactly one box
+- People move along the arrows, never back
+- Each arrow is a rate. That is the whole model
+:::
+::: {.column width="62%"}
+```{ojs}
+//| echo: false
+flowDiagram = (boxes, arrows) => {
+  const W = 1050, H = 360, bw = 190, bh = 150, y = 105;
+  const gap = (W - boxes.length * bw) / (boxes.length + 1);
+  const bx = (i) => gap + i * (bw + gap);
+  return htl.svg`<svg width=${W} height=${H} viewBox="0 0 ${W} ${H}"
+      style="max-width:100%;height:auto;font-family:Georgia,'Times New Roman',serif">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5"
+      markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker></defs>
+    ${boxes.map((b, i) => htl.svg`<g>
+      <rect x=${bx(i)} y=${y} width=${bw} height=${bh} rx="18"
+        fill=${b.col} fill-opacity="0.15" stroke=${b.col} stroke-width="5"/>
+      <text x=${bx(i) + bw / 2} y=${y + 70} font-size="64" font-weight="700"
+        fill=${b.col} text-anchor="middle">${b.k}</text>
+      <text x=${bx(i) + bw / 2} y=${y + 120} font-size="26"
+        fill=${b.col} text-anchor="middle">${b.name}</text>
+    </g>`)}
+    ${arrows.map((a, i) => htl.svg`<g>
+      <line x1=${bx(i) + bw + 16} y1=${y + bh / 2} x2=${bx(i + 1) - 16}
+        y2=${y + bh / 2} stroke="#555" stroke-width="5" marker-end="url(#arr)"/>
+      <text x=${bx(i) + bw + gap / 2} y=${y + bh / 2 - 18} font-size="24"
+        fill="#333" text-anchor="middle">${a}</text>
+    </g>`)}
+  </svg>`;
+}
+flowDiagram([
+  {k: "S", name: "susceptible", col: cols.S},
+  {k: "I", name: "infectious", col: cols.I},
+  {k: "R", name: "recovered", col: cols.R}
+], ["infection", "recovery"])
+```
+
+::: {.attribution}
+Closed population, no births or deaths. $S + I + R = N$.
+:::
+:::
+::::
+
+::: {.notes}
+Three boxes, two arrows. The whole job is to say how fast people move along each arrow.
+Say the assumptions once. Nobody is born, nobody dies, nobody comes back from R. Everyone mixes with everyone.
+:::
+
+## Force of infection
+
+:::: {.columns}
+::: {.column width="38%"}
+- One susceptible makes $c$ contacts a day
+- A fraction $I/N$ of them are infectious
+- Each of those transmits with probability $\beta$
+
+$$
+\lambda = \beta \, c \, \frac{I}{N}
+$$
+
+::: {.sub}
+The rate at which one susceptible gets infected.
+:::
+:::
+::: {.column width="62%"}
+```{ojs}
+//| echo: false
+viewof prevF = Inputs.range([0, 1], {
+  value: 0.3, step: 0.1, label: "prevalence I/N"
+})
+viewof betaF = Inputs.range([0, 1], {
+  value: 0.5, step: 0.1, label: "β, chance a contact transmits"
+})
+{
+  const c = 10, W = 1050, H = 520, cx = 525, cy = 240, R = 180;
+  const nI = Math.round(prevF * c);
+  const pts = Array.from({length: c}, (_, i) => {
+    const a = -Math.PI / 2 + i * 2 * Math.PI / c;
+    return {x: cx + R * Math.cos(a), y: cy + R * Math.sin(a), inf: i < nI};
+  });
+  const lam = betaF * c * prevF;
+  return htl.svg`<svg width=${W} height=${H} viewBox="0 0 ${W} ${H}"
+      style="max-width:100%;height:auto;font-family:Georgia,'Times New Roman',serif">
+    ${pts.map((p) => htl.svg`<line x1=${cx} y1=${cy} x2=${p.x} y2=${p.y}
+      stroke=${p.inf ? cols.I : "#bbb"}
+      stroke-width=${p.inf ? 2 + 10 * betaF : 2}
+      stroke-opacity=${p.inf ? 0.25 + 0.75 * betaF : 0.7} />`)}
+    ${pts.map((p) => htl.svg`<circle cx=${p.x} cy=${p.y} r="22"
+      fill=${p.inf ? cols.I : "#bbb"} />`)}
+    <circle cx=${cx} cy=${cy} r="30" fill=${cols.S} />
+    <text x=${cx} y=${cy + 10} font-size="30" font-weight="700" fill="white"
+      text-anchor="middle">S</text>
+    <text x=${cx} y="480" font-size="30" fill="#17242b" text-anchor="middle">
+      λ = ${betaF.toFixed(1)} × 10 × ${prevF.toFixed(1)} =
+      ${lam.toFixed(1)} per day</text>
+  </svg>`;
+}
+```
+:::
+::::
+
+::: {.notes}
+One blue person, ten contacts today. Slide prevalence and watch how many of the contacts are red. Slide beta and watch how strong each red line is.
+Lambda is the product of the three. It is a rate per susceptible per day. It changes over time because I changes.
+:::
+
+## The S equation
+
+:::: {.columns}
+::: {.column width="38%"}
+- Each susceptible is infected at rate $\lambda$
+- There are $S$ of them
+- $S$ only ever falls
+
+$$
+\frac{\mathrm{d}S}{\mathrm{d}t} = -\lambda S = -\beta c \,\frac{I}{N}\, S
+$$
+:::
+::: {.column width="62%"}
+```{ojs}
+//| echo: false
+viewof betaS = Inputs.range([0.01, 0.15], {
+  value: 0.05, step: 0.01, label: "β"
+})
+viewof cS = Inputs.range([2, 20], {
+  value: 10, step: 1, label: "c, contacts a day"
+})
+sRows = sirRun({...base, beta: betaS, c: cS}, 80)
+Plot.plot({
+  ...plotBase,
+  title: "S only ever falls, faster with more contacts",
+  x: axisX("time (days)"),
+  y: axisY("susceptible (people)", {domain: [0, 1000]}),
+  marks: [
+    Plot.line(sRows, {x: "t", y: "S", stroke: cols.S, strokeWidth: 4}),
+    Plot.text([{t: 78, S: sRows[sRows.length - 1].S}],
+      {x: "t", y: "S", text: () => "S", fill: cols.S, dx: 18,
+       fontSize: 28, fontWeight: 700})
+  ]
+})
+```
+
+::: {.attribution}
+$N = 1000$, $S(0) = 990$, $I(0) = 10$, $\gamma = 0.25$ per day.
+:::
+:::
+::::
+
+::: {.notes}
+Rate per person times number of people. That is the first equation.
+It has a minus sign and nothing feeding in, so S can only fall. Push beta or c up and it falls faster and further.
+The curve comes from the whole model; we are only reading the S part.
+:::
+
+## Recovery at a constant rate
+
+:::: {.columns}
+::: {.column width="38%"}
+- Each infectious person recovers at rate $\gamma$
+- So the infectious period is exponential
+- Mean $1/\gamma$ days
+- Memoryless. Day ten looks like day one
+
+$$
+\text{recoveries per day} = \gamma I
+$$
+:::
+::: {.column width="62%"}
+```{ojs}
+//| echo: false
+viewof gammaR = Inputs.range([0.05, 1], {
+  value: 0.25, step: 0.05, label: "γ, recovery rate per day"
+})
+survRows = Array.from({length: 201}, (_, i) => {
+  const t = i * 0.1;
+  return {t, p: Math.exp(-gammaR * t)};
+})
+Plot.plot({
+  ...plotBase,
+  title: "Most recover early, a few stay infectious a long time",
+  x: axisX("days since infection", {domain: [0, 20]}),
+  y: axisY("still infectious (fraction)", {domain: [0, 1]}),
+  marks: [
+    Plot.areaY(survRows, {x: "t", y: "p", fill: cols.I, fillOpacity: 0.15}),
+    Plot.line(survRows, {x: "t", y: "p", stroke: cols.I, strokeWidth: 4}),
+    Plot.ruleX([1 / gammaR], {stroke: "#333", strokeDasharray: "8,6"}),
+    Plot.text([{x: 1 / gammaR, y: 0.95}], {x: "x", y: "y", dx: 12,
+      textAnchor: "start", fontSize: 26,
+      text: () => `mean ${(1 / gammaR).toFixed(1)} days`})
+  ]
+})
+```
+:::
+::::
+
+::: {.notes}
+The simplest possible assumption. Every infectious person has the same chance of recovering today, whatever day they are on.
+That gives an exponential infectious period with mean one over gamma. Baseline is four days.
+It is not realistic. Most people recover around some typical time. We come back to that at the end.
+:::
+
+## The I and R equations
+
+:::: {.columns}
+::: {.column width="38%"}
+- $I$ gains what $S$ loses, and loses recoveries
+- $R$ gains recoveries
+
+$$
+\begin{aligned}
+\frac{\mathrm{d}S}{\mathrm{d}t} &= -\lambda S \\
+\frac{\mathrm{d}I}{\mathrm{d}t} &= \lambda S - \gamma I \\
+\frac{\mathrm{d}R}{\mathrm{d}t} &= \gamma I
+\end{aligned}
+$$
+:::
+::: {.column width="62%"}
+```{ojs}
+//| echo: false
+viewof betaM = Inputs.range([0.01, 0.15], {
+  value: 0.05, step: 0.01, label: "β"
+})
+viewof cM = Inputs.range([2, 20], {
+  value: 10, step: 1, label: "c, contacts a day"
+})
+viewof gammaM = Inputs.range([0.05, 0.6], {
+  value: 0.25, step: 0.05, label: "γ, recovery rate per day"
+})
+sirRows = sirLong(sirRun({...base, beta: betaM, c: cM, gamma: gammaM}, 80))
+Plot.plot({
+  ...plotBase,
+  height: 520,
+  title: "I rises then falls. R only ever rises",
+  x: axisX("time (days)"),
+  y: axisY("people", {domain: [0, 1000]}),
+  color: {domain: ["S", "I", "R"], range: [cols.S, cols.I, cols.R]},
+  marks: [
+    Plot.line(sirRows, {x: "t", y: "n", stroke: "k", strokeWidth: 4}),
+    Plot.text(sirRows.filter((d) => d.k !== "I"),
+      Plot.selectLast({x: "t", y: "n", z: "k", text: "k", fill: "k",
+        dx: 18, fontSize: 28, fontWeight: 700})),
+    Plot.text(sirRows.filter((d) => d.k === "I"),
+      Plot.selectMaxY({x: "t", y: "n", text: "k", fill: "k",
+        dy: -20, fontSize: 28, fontWeight: 700}))
+  ]
+})
+```
+:::
+::::
+
+::: {.notes}
+Add the two flows into I and out of I. R just collects.
+Push the sliders. Beta and c make it faster and bigger, gamma shortens the infectious period and shrinks it.
+:::
+
+## Conservation
+
+:::: {.columns}
+::: {.column width="38%"}
+- The three rates sum to zero
+- So $S + I + R = N$ for ever
+- $R = N - S - I$, so two equations do the work
+
+$$
+\frac{\mathrm{d}S}{\mathrm{d}t} + \frac{\mathrm{d}I}{\mathrm{d}t}
++ \frac{\mathrm{d}R}{\mathrm{d}t} = 0
+$$
+:::
+::: {.column width="62%"}
+```{ojs}
+//| echo: false
+consRun = sirRun(base, 80)
+consRows = sirLong(consRun)
+consLab = {
+  const pk = consRun.reduce((a, b) => (b.I > a.I ? b : a));
+  const end = consRun[consRun.length - 1];
+  return [
+    {t: 70, y: end.S / 2, k: "S"},
+    {t: pk.t, y: pk.S + pk.I / 2, k: "I"},
+    {t: 70, y: end.S + end.I + end.R / 2, k: "R"}
+  ];
+}
+Plot.plot({
+  ...plotBase,
+  title: "Stacked, S + I + R is flat at N = 1000",
+  x: axisX("time (days)"),
+  y: axisY("people", {domain: [0, 1080]}),
+  color: {domain: ["S", "I", "R"], range: [cols.S, cols.I, cols.R]},
+  marks: [
+    Plot.areaY(consRows, {x: "t", y: "n", fill: "k", fillOpacity: 0.75}),
+    Plot.ruleY([1000], {stroke: "#333", strokeDasharray: "8,6"}),
+    Plot.text(consLab, {x: "t", y: "y", text: "k", fill: "white",
+      fontSize: 34, fontWeight: 700})
+  ]
+})
+```
+:::
+::::
+
+::: {.notes}
+Add the right-hand sides. Everything cancels, so the total never changes. Nothing in the solver enforces that. It follows from writing flows.
+Stack the three and the top edge is flat. That is the check the worksheet runs.
+It also means we never need to solve for R. It is whatever is left. Keep that in mind for the final size.
+:::
+
+## The basic reproduction number
+
+:::: {.columns}
+::: {.column width="42%"}
+- Infections per infectious person per day, everyone susceptible: $\beta c$
+- Times the mean infectious duration: $1/\gamma$
+- Baseline: $0.05 \times 10 \times 4 = 2$
+
+$$
+R_0 = \beta c \times \frac{1}{\gamma} = \frac{\beta c}{\gamma}
+$$
+:::
+::: {.column width="58%"}
+```{ojs}
+//| echo: false
+{
+  const W = 1050, H = 520;
+  const gens = [1, 2, 4, 8];
+  const gx = (g) => 120 + g * 270;
+  const nodes = [], links = [];
+  gens.forEach((n, g) => {
+    for (let i = 0; i < n; i++) {
+      const y = H / 2 + (i - (n - 1) / 2) * (H - 80) / Math.max(n, 2) * (n > 1 ? 1 : 0);
+      nodes.push({g, i, x: gx(g), y});
+      if (g > 0) links.push({g, x1: gx(g - 1),
+        y1: nodes.find((d) => d.g === g - 1 && d.i === Math.floor(i / 2)).y,
+        x2: gx(g), y2: y});
+    }
+  });
+  const draw = (upto) => htl.svg`<svg width=${W} height=${H}
+      viewBox="0 0 ${W} ${H}"
+      style="max-width:100%;height:auto;font-family:Georgia,'Times New Roman',serif">
+    ${links.filter((l) => l.g <= upto).map((l) => htl.svg`<line x1=${l.x1}
+      y1=${l.y1} x2=${l.x2} y2=${l.y2} stroke="#bbb" stroke-width="3"/>`)}
+    ${nodes.filter((d) => d.g <= upto).map((d) => htl.svg`<circle cx=${d.x}
+      cy=${d.y} r=${d.g === 0 ? 30 : 20} fill=${cols.I} />`)}
+    ${gens.slice(0, upto + 1).map((n, g) => htl.svg`<text x=${gx(g)} y="40"
+      font-size="28" fill="#555" text-anchor="middle">${n}</text>`)}
+    <text x=${W / 2} y=${H - 10} font-size="28" fill="#333"
+      text-anchor="middle">generation ${upto}: ${gens[upto]} case${gens[upto] > 1 ? "s" : ""}. Each infects R₀ = 2 others</text>
+  </svg>`;
+  while (true) {
+    for (let g = 0; g < gens.length; g++) {
+      yield draw(g);
+      await Promises.delay(g === gens.length - 1 ? 1600 : 800);
+    }
+  }
+}
+```
+:::
+::::
+
+::: {.notes}
+Keep this simple. How many people does one case infect while infectious, if everyone around them is susceptible.
+Rate of infecting per day, times how many days. Two here. The picture is the doubling that gives.
+The "everyone susceptible" part matters. Later in the epidemic each case infects R nought times the susceptible fraction.
+:::
+
+## Does an outbreak take off?
+
+:::: {.columns}
+::: {.column width="42%"}
+- An equilibrium is a state where nothing changes
+- With $I = 0$ nothing changes, whatever $S$ is
+- While $I$ is small, $S$ barely moves, so the $I$ equation is linear
+- It grows if and only if $R_0 s > 1$, with $s = S/N$
+
+$$
+\frac{\mathrm{d}I}{\mathrm{d}t} \approx r I,
+\qquad r = \gamma \,(R_0 s - 1)
+$$
+:::
+::: {.column width="58%"}
+```{ojs}
+//| echo: false
+viewof r0s = Inputs.range([0.5, 2], {
+  value: 1.5, step: 0.1, label: "R₀ s"
+})
+linRows = Array.from({length: 301}, (_, i) => {
+  const t = i * 0.1;
+  return {t, I: 10 * Math.exp(0.25 * (r0s - 1) * t)};
+})
+Plot.plot({
+  ...plotBase,
+  title: r0s > 1 ? "R₀ s above 1: the outbreak grows" : "R₀ s below 1: the outbreak dies out",
+  x: axisX("time (days)", {domain: [0, 30]}),
+  y: axisY("infectious (people)", {domain: [0, 150]}),
+  marks: [
+    Plot.ruleY([10], {stroke: "#999", strokeDasharray: "8,6"}),
+    Plot.line(linRows, {x: "t", y: "I", stroke: cols.I, strokeWidth: 4,
+      clip: true})
+  ]
+})
+html`<p style="font-size:28px;color:#b22222;margin:0.2em 0 0 90px">
+  r = 0.25 × (${r0s.toFixed(1)} − 1) = ${(0.25 * (r0s - 1)).toFixed(2)}
+  per day</p>`
+```
+
+::: {.attribution}
+$\gamma = 0.25$, $I(0) = 10$. The linear approximation, so it ignores $S$ falling.
+:::
+:::
+::::
+
+::: {.notes}
+Equilibrium just means a state the model would sit in for ever. No infectious people is one, for any S. Are those states stable.
+Write the I equation as gamma I times R nought s minus one. Near I equals zero that is exponential growth or decay with rate r.
+Slide R nought s through one. Below it the outbreak dies, above it grows. Stable if and only if R nought s is below one.
+:::
+
+## The peak
+
+:::: {.columns}
+::: {.column width="38%"}
+- $S$ falls, so $R_0 s$ falls with it
+- $I$ grows while $s > 1/R_0$
+- The peak is where $s$ crosses $1/R_0$
+- Then $I$ falls, but the epidemic is not over
+
+$$
+\frac{\mathrm{d}I}{\mathrm{d}t} > 0
+\iff s > \frac{1}{R_0}
+$$
+:::
+::: {.column width="62%"}
+```{ojs}
+//| echo: false
+viewof r0P = Inputs.range([1.2, 5], {
+  value: 2, step: 0.1, label: "R₀"
+})
+peakRun = sirRun({...base, c: r0P * base.gamma / base.beta}, 80)
+peakRows = peakRun.flatMap((d) => [
+  {t: d.t, f: d.S / base.N, k: "S/N"}, {t: d.t, f: d.I / base.N, k: "I/N"}
+])
+peakAt = peakRun.reduce((a, b) => (b.I > a.I ? b : a))
+peakPlot = (tNow) => {
+  const rows = peakRows.filter((d) => d.t <= tNow + 1e-9);
+  const past = tNow >= peakAt.t;
+  return Plot.plot({
+    ...plotBase,
+    title: "I peaks exactly when s crosses 1 / R₀",
+    x: axisX("time (days)", {domain: [0, 80]}),
+    y: axisY("fraction of population", {domain: [0, 1]}),
+    color: {domain: ["S/N", "I/N"], range: [cols.S, cols.I]},
+    marks: [
+      Plot.ruleY([1 / r0P], {stroke: "#333", strokeDasharray: "8,6"}),
+      Plot.text([{x: 79, y: 1 / r0P}], {x: "x", y: "y", dy: -18,
+        textAnchor: "end", fontSize: 26,
+        text: () => `1 / R₀ = ${(1 / r0P).toFixed(2)}`}),
+      Plot.line(rows, {x: "t", y: "f", stroke: "k", strokeWidth: 4}),
+      Plot.dot(rows.filter((d) => d.k === "S/N").slice(-1), {x: "t", y: "f",
+        r: 11, fill: cols.S, stroke: "white", strokeWidth: 2}),
+      Plot.text(rows.filter((d) => d.k === "S/N"),
+        Plot.selectLast({x: "t", y: "f", text: "k", fill: "k", dx: 18,
+          dy: -18, fontSize: 26, fontWeight: 700})),
+      Plot.text(rows.filter((d) => d.k === "I/N"),
+        Plot.selectLast({x: "t", y: "f", text: "k", fill: "k", dx: 18,
+          dy: 18, fontSize: 26, fontWeight: 700})),
+      ...(past ? [
+        Plot.ruleX([peakAt.t], {stroke: "#999", strokeDasharray: "4,4"}),
+        Plot.dot([peakAt], {x: "t", y: (d) => d.S / base.N, r: 9,
+          fill: "#333"}),
+        Plot.text([peakAt], {x: "t", y: (d) => d.I / base.N, dy: -22,
+          fontSize: 24, fill: cols.I, text: () => "peak"})
+      ] : [])
+    ]
+  });
+}
+{
+  while (true) {
+    for (let f = 1; f <= 40; f++) {
+      const tNow = f * 2;
+      yield peakPlot(tNow);
+      const crossing = tNow >= peakAt.t && tNow - 2 < peakAt.t;
+      await Promises.delay(crossing ? 1600 : 70);
+    }
+    await Promises.delay(2500);
+  }
+}
+```
+:::
+::::
+
+::: {.notes}
+Now let S move. The growth condition is s above one over R nought. S only falls, so it crosses that line at most once. That crossing is the peak of I.
+The curves draw themselves in time. Slide R nought, the dashed line drops and the peak moves earlier and higher.
+Note the peak is not the end. There are still lots of infectious people, and they keep infecting. That overshoot is the next few slides.
+:::
+
+## Final size, step by step
+
+:::: {.columns}
+::: {.column width="40%"}
+- Divide the $S$ rate by the $R$ rate. Time drops out
+- Integrate from the start to the end
+- At the end $I = 0$, so $r_\infty = 1 - s_\infty$
+:::
+::: {.column width="60%"}
+$$
+\frac{\mathrm{d}S}{\mathrm{d}R}
+= \frac{-\beta c \,(I/N)\, S}{\gamma I}
+= -R_0 \,\frac{S}{N}
+\qquad\text{so}\qquad
+\frac{\mathrm{d}s}{\mathrm{d}r} = -R_0\, s
+$$
+
+::: {.fragment}
+$$
+\ln \frac{s}{s_0} = -R_0\, r
+\qquad\Longrightarrow\qquad
+s = s_0\, e^{-R_0 r}
+$$
+:::
+
+::: {.fragment}
+$$
+s_\infty = s_0\, \exp\!\bigl(-R_0\,(1 - s_\infty)\bigr)
+$$
+:::
+
+::: {.sub}
+Lower case means a fraction of $N$. Nobody immune at the start, $r_0 = 0$.
+:::
+:::
+::::
+
+::: {.notes}
+Three steps. First, divide the two rates. I cancels, and so does time. That is why the final size does not depend on how fast the epidemic runs.
+Second, integrate. Left side in s, right side in r. Exponentiate.
+Third, at the end nobody is infectious, so recovered is everyone who is not susceptible. That gives one equation in one unknown, s infinity.
+:::
+
+## Finding the root
+
+:::: {.columns}
+::: {.column width="38%"}
+- $s_\infty$ appears alone and inside the exponential
+- No rearrangement isolates it. That is "transcendental"
+- Move everything to one side and find where $f = 0$
+- Newton: follow the tangent to zero, repeat
+
+$$
+f(s) = s - s_0\, e^{-R_0 (1 - s)}
+$$
+:::
+::: {.column width="62%"}
+```{ojs}
+//| echo: false
+viewof r0F = Inputs.range([1.1, 5], {
+  value: 2, step: 0.1, label: "R₀"
+})
+s0 = base.S0 / base.N
+fs = (s, R0) => s - s0 * Math.exp(-R0 * (1 - s))
+dfs = (s, R0) => 1 - s0 * R0 * Math.exp(-R0 * (1 - s))
+rootOf = (R0) => {
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 60; i++) {
+    const m = (lo + hi) / 2;
+    if (fs(m, R0) < 0) lo = m; else hi = m;
+  }
+  return (lo + hi) / 2;
+}
+newtonPath = {
+  const xs = [0.5];
+  for (let i = 0; i < 6; i++) {
+    const x = xs[xs.length - 1];
+    xs.push(x - fs(x, r0F) / dfs(x, r0F));
+  }
+  return xs;
+}
+fRows = Array.from({length: 201}, (_, i) => {
+  const s = i / 200;
+  return {s, f: fs(s, r0F)};
+})
+newtonPlot = (k) => Plot.plot({
+  ...plotBase,
+  title: "The root is where f crosses zero. Newton walks there",
+  x: axisX("s, susceptible fraction at the end", {domain: [0, 1]}),
+  y: axisY("f(s)", {domain: [-0.3, 0.3]}),
+  marks: [
+    Plot.ruleY([0], {stroke: "#333"}),
+    Plot.line(fRows, {x: "s", y: "f", stroke: "#333", strokeWidth: 4}),
+    Plot.dot([rootOf(r0F)], {x: (d) => d, y: 0, r: 11, fill: cols.R}),
+    Plot.text([rootOf(r0F)], {x: (d) => d, y: 0, dy: 40, dx: 40, fill: cols.R,
+      fontSize: 26, fontWeight: 700, textAnchor: "start",
+      text: (d) => `root s∞ = ${d.toFixed(3)}`}),
+    Plot.dot(newtonPath.slice(0, k + 1), {x: (d) => d,
+      y: (d) => fs(d, r0F), r: 8, fill: cols.I}),
+    ...(k > 0 ? [
+      Plot.line([-0.2, 1.2].map((s) => {
+        const x = newtonPath[k - 1];
+        return {s, y: fs(x, r0F) + dfs(x, r0F) * (s - x)};
+      }), {x: "s", y: "y", stroke: cols.I, strokeWidth: 2.5,
+        strokeDasharray: "8,6", clip: true}),
+      Plot.ruleX([newtonPath[k]], {stroke: cols.I, strokeDasharray: "4,4"})
+    ] : []),
+    Plot.text([{x: newtonPath[k], y: 0.26}], {x: "x", y: "y",
+      fill: cols.I, fontSize: 26, textAnchor: "start", dx: 10,
+      text: () => k === 0 ? "start at s = 0.5"
+        : `step ${k}: s = ${newtonPath[k].toFixed(3)}`})
+  ]
+})
+{
+  while (true) {
+    for (let k = 0; k <= 5; k++) {
+      yield newtonPlot(k);
+      await Promises.delay(k === 0 ? 1000 : 1400);
+    }
+    await Promises.delay(2200);
+  }
+}
+```
+:::
+::::
+
+::: {.notes}
+Root finding is just this. Draw the function, ask where it crosses zero.
+Watch the steps play. Start at a half. Take the tangent, follow it to the axis, evaluate there, repeat. Three steps and it has converged.
+Transcendental just means no algebra gets s out on its own. So we solve numerically, every time.
+f has a second root just above s = 1, the "no epidemic" solution, which is why the starting guess matters.
+:::
+
+## Attack rate and herd immunity
+
+:::: {.columns}
+::: {.column width="38%"}
+- Attack rate: fraction ever infected, $1 - s_\infty$
+- Herd immunity threshold: where growth stops, $1 - 1/R_0$
+- The gap is the overshoot
+- At $R_0 = 2$: threshold at 50%, attack rate 80%
+:::
+::: {.column width="62%"}
+```{ojs}
+//| echo: false
+arRows = Array.from({length: 91}, (_, i) => {
+  const R0 = 0.5 + i * 0.05;
+  return {R0, attack: 1 - rootOf(R0), hit: Math.max(0, 1 - 1 / R0)};
+})
+Plot.plot({
+  ...plotBase,
+  title: "An epidemic overshoots the herd immunity threshold",
+  x: axisX("R₀", {domain: [0.5, 5]}),
+  y: axisY("fraction of population", {domain: [0, 1]}),
+  marks: [
+    Plot.areaY(arRows, {x: "R0", y1: "hit", y2: "attack", fill: cols.I,
+      fillOpacity: 0.12}),
+    Plot.line(arRows, {x: "R0", y: "attack", stroke: cols.I,
+      strokeWidth: 4}),
+    Plot.line(arRows, {x: "R0", y: "hit", stroke: "#333", strokeWidth: 3,
+      strokeDasharray: "8,6"}),
+    Plot.ruleX([2], {stroke: "#999", strokeDasharray: "4,4"}),
+    Plot.dot([{x: 2, y: 1 - rootOf(2)}, {x: 2, y: 0.5}], {x: "x", y: "y",
+      r: 9, fill: "#333"}),
+    Plot.text([{x: 3.4, y: 0.87}], {x: "x", y: "y", fill: cols.I,
+      fontSize: 26, fontWeight: 700, text: () => "attack rate 1 − s∞"}),
+    Plot.text([{x: 3.6, y: 0.62}], {x: "x", y: "y", fill: "#333",
+      fontSize: 26, fontWeight: 700,
+      text: () => "herd immunity threshold 1 − 1/R₀"}),
+    Plot.text([{x: 2.6, y: 0.72}], {x: "x", y: "y", fill: cols.I,
+      fontSize: 24, text: () => "overshoot"})
+  ]
+})
+```
+
+::: {.attribution}
+$s_0 = 0.99$, as in the course baseline. Nobody immune at the start.
+:::
+:::
+::::
+
+::: {.notes}
+Two numbers people mix up. The threshold is where the epidemic stops growing. The attack rate is how many it gets in the end.
+The shaded gap is the overshoot. At the peak there are more infectious people than at any other time, and they keep going.
+The threshold is what vaccination aims for. An unmitigated epidemic goes well past it.
+:::
+
+## Solving it on a computer
+
+:::: {.columns}
+::: {.column width="38%"}
+- Euler: take the current slope, step forward, repeat
+- Runge–Kutta: several slopes per step
+- Tsit5 also picks the step size
+- Newton: for roots, follow the tangent
+:::
+::: {.column width="62%"}
+```{ojs}
+//| echo: false
+eulerRows = (dtE) => {
+  const f = sirRhs(base);
+  let u = [base.S0, base.I0, 0], t = 0;
+  const out = [{t, I: u[1]}];
+  while (t < 60 - 1e-9) {
+    const k = f(u);
+    u = u.map((x, i) => x + dtE * k[i]);
+    t += dtE;
+    out.push({t, I: u[1]});
+  }
+  return out;
+}
+fineRows = sirRun(base, 60, 0.05)
+eulerPlot = (dtE) => Plot.plot({
+  ...plotBase,
+  title: "Big steps overshoot the curve, small steps track it",
+  x: axisX("time (days)", {domain: [0, 60]}),
+  y: axisY("infectious (people)", {domain: [0, 260]}),
+  marks: [
+    Plot.line(fineRows, {x: "t", y: "I", stroke: "#333", strokeWidth: 4}),
+    Plot.line(eulerRows(dtE), {x: "t", y: "I", stroke: cols.I,
+      strokeWidth: 3, clip: true}),
+    Plot.dot(eulerRows(dtE), {x: "t", y: "I", fill: cols.I, r: 6,
+      clip: true}),
+    Plot.text([{x: 40, y: 245}], {x: "x", y: "y", fill: "#333",
+      fontSize: 26, fontWeight: 700, text: () => "Runge–Kutta, small steps"}),
+    Plot.text([{x: 40, y: 215}], {x: "x", y: "y", fill: cols.I,
+      fontSize: 26, fontWeight: 700,
+      text: () => `Euler, step ${dtE} days`})
+  ]
+})
+{
+  while (true) {
+    for (const dt of [4, 2, 1, 0.5, 0.25]) {
+      yield eulerPlot(dt);
+      await Promises.delay(dt === 0.25 ? 2400 : 1400);
+    }
+  }
+}
+```
+:::
+::::
+
+::: {.notes}
+Nothing on the previous slides had a formula for S of t. A computer steps through time instead.
+Euler is the simplest. Big steps overshoot the curve. Shrink the step and it closes in.
+Runge-Kutta methods take a few trial slopes per step and do far better. Tsit5, which the worksheet uses, also chooses its own step size. Newton is the same idea for roots.
+:::
+
+## Beyond SIR
+
+:::: {.columns}
+::: {.column width="38%"}
+- SEIR adds a latent stage before infectiousness
+- SIRS lets immunity wane, so $S$ refills
+- Same idea. Boxes and rates
+
+::: {.sub}
+$$
+\text{SEIR:}\quad
+\frac{\mathrm{d}E}{\mathrm{d}t} = \lambda S - \sigma E,
+\qquad
+\frac{\mathrm{d}I}{\mathrm{d}t} = \sigma E - \gamma I
+$$
+
+$$
+\text{SIRS:}\quad
+\frac{\mathrm{d}S}{\mathrm{d}t} = -\lambda S + \omega R,
+\qquad
+\frac{\mathrm{d}R}{\mathrm{d}t} = \gamma I - \omega R
+$$
+:::
+:::
+::: {.column width="62%"}
+```{ojs}
+//| echo: false
+viewof model = Inputs.radio(["SIR", "SEIR", "SIRS"], {
+  value: "SIR", label: "model"
+})
+extTmax = model === "SIRS" ? 365 : 100
+extRows = {
+  const p = {...base, sigma: 0.5, omega: 1 / 60};
+  const f = ([S, E, I, R]) => {
+    const lam = p.beta * p.c * I / p.N;
+    const wane = model === "SIRS" ? p.omega * R : 0;
+    if (model === "SEIR") {
+      return [-lam * S, lam * S - p.sigma * E, p.sigma * E - p.gamma * I,
+        p.gamma * I];
+    }
+    return [-lam * S + wane, 0, lam * S - p.gamma * I, p.gamma * I - wane];
+  };
+  const keys = model === "SEIR" ? ["S", "E", "I", "R"] : ["S", "I", "R"];
+  return rk4(f, [p.S0, 0, p.I0, 0], extTmax, 0.1).flatMap(({t, u}) =>
+    keys.map((k) => ({t, n: u[["S", "E", "I", "R"].indexOf(k)], k})));
+}
+extTitle = ({
+  SIR: "SIR: one wave, then it burns out",
+  SEIR: "SEIR: the same wave, later and a little flatter",
+  SIRS: "SIRS: immunity wanes and the disease settles in"
+})[model]
+extPlot = (tNow) => {
+  const rows = extRows.filter((d) => d.t <= tNow + 1e-9);
+  return Plot.plot({
+    ...plotBase,
+    title: extTitle,
+    x: axisX("time (days)", {domain: [0, extTmax]}),
+    y: axisY("people", {domain: [0, 1000]}),
+    color: {domain: ["S", "E", "I", "R"],
+      range: [cols.S, cols.E, cols.I, cols.R]},
+    marks: [
+      Plot.line(rows, {x: "t", y: "n", stroke: "k", strokeWidth: 4}),
+      Plot.text(rows.filter((d) => d.k === "S"),
+        Plot.selectLast({x: "t", y: "n", text: "k", fill: "k",
+          dx: 18, dy: -14, fontSize: 28, fontWeight: 700})),
+      Plot.text(rows.filter((d) => d.k === "R"),
+        Plot.selectLast({x: "t", y: "n", text: "k", fill: "k",
+          dx: 18, dy: 14, fontSize: 28, fontWeight: 700})),
+      Plot.text(rows.filter((d) => d.k === "I" || d.k === "E"),
+        Plot.selectLast({x: "t", y: "n", z: "k", text: "k", fill: "k",
+          dx: 18, fontSize: 28, fontWeight: 700}))
+    ]
+  });
+}
+{
+  while (true) {
+    for (let f = 1; f <= 50; f++) {
+      yield extPlot(f * extTmax / 50);
+      await Promises.delay(60);
+    }
+    await Promises.delay(2500);
+  }
+}
+```
+
+::: {.attribution}
+Latent period $1/\sigma = 2$ days. Immunity lasts $1/\omega = 60$ days on average.
+:::
+:::
+::::
+
+::: {.notes}
+Every extension in this course is another box or another arrow.
+SEIR: infected but not yet infectious. The curve shifts later and flattens a little. Same final size.
+SIRS: recovered people drift back to S. The epidemic no longer burns out. It settles to an endemic level.
+:::
+
+## Non-exponential infectious periods
+
+:::: {.columns}
+::: {.column width="38%"}
+- Split $I$ into $k$ identical stages
+- Leave each at rate $k\gamma$
+- Mean stays $1/\gamma$, variance shrinks to $1/(k\gamma^2)$
+
+$$
+\frac{\mathrm{d}I_j}{\mathrm{d}t} = k\gamma I_{j-1} - k\gamma I_j
+$$
+:::
+::: {.column width="62%"}
+```{ojs}
+//| echo: false
+viewof kStages = Inputs.range([1, 20], {
+  value: 1, step: 1, label: "k, number of stages"
+})
+erlRows = {
+  const g = 0.25, rate = kStages * g;
+  const lf = (n) => { let s = 0; for (let i = 2; i <= n; i++) s += Math.log(i); return s; };
+  return Array.from({length: 241}, (_, i) => {
+    const x = 0.02 + i * 0.05;
+    const lp = kStages * Math.log(rate) + (kStages - 1) * Math.log(x)
+      - rate * x - lf(kStages - 1);
+    return {x, p: Math.exp(lp)};
+  });
+}
+Plot.plot({
+  ...plotBase,
+  title: "More stages: same mean, less spread",
+  x: axisX("infectious period (days)", {domain: [0, 12]}),
+  y: axisY("density", {domain: [0, 0.6]}),
+  marks: [
+    Plot.areaY(erlRows, {x: "x", y: "p", fill: cols.I, fillOpacity: 0.15,
+      clip: true}),
+    Plot.line(erlRows, {x: "x", y: "p", stroke: cols.I, strokeWidth: 4,
+      clip: true}),
+    Plot.ruleX([4], {stroke: "#333", strokeDasharray: "8,6"}),
+    Plot.text([{x: 4.1, y: 0.57}], {x: "x", y: "y", textAnchor: "start",
+      fontSize: 26, text: () => "mean 4 days"}),
+    Plot.text([{x: 8, y: 0.45}], {x: "x", y: "y", fill: cols.I,
+      fontSize: 26, fontWeight: 700,
+      text: () => `k = ${kStages}, sd ${(4 / Math.sqrt(kStages)).toFixed(1)} days`})
+  ]
+})
+```
+
+::: {.attribution}
+Self-study chapter 10.
+:::
+:::
+::::
+
+::: {.notes}
+The exponential period was the weak assumption. Fix it without leaving ODEs: chain k stages, each exponential with rate k gamma.
+Slide k up. The mean stays at four days, but the spread shrinks and the shape becomes a hump. That is an Erlang distribution.
+The stage equation on the slide is for the later stages, j of two or more. The first stage is fed by new infections instead.
+One line in the model, a much more realistic infectious period.
+:::
+
+## Summary
+
+- Mass action: new infections scale with $S \times I / N$
+- $R_0 = \beta c / \gamma$. Growth needs $R_0 s > 1$
+- The peak is at $s = 1 / R_0$. The end is at the root of the final size equation
+- Every later model is SIR with a box or an arrow changed
+
+::: {.notes}
+Four things to take away.
+:::
+
+## Next
+
+::: {style="margin-top: 3.5em;"}
+- Go to the worksheet folder and open the `chapters/01-foundations.qmd` worksheet.
+- Follow the instructions and complete the exercises.
+- Let us know if you have any questions!
+:::
+
+::: {.notes}
+The worksheet builds this model in Julia, solves it, and checks the peak and the final size against the theory from today.
+:::
