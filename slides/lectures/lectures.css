@@ -40,9 +40,26 @@
   opacity: 0.8;
 }
 
-/* Keep OJS inputs readable at 1920x1080. */
-.reveal .slides form.oi-ec2a1e {
+/* Keep OJS inputs readable at 1920x1080. The class hash varies by
+   Inputs version, so match the prefix. Wider labels and sliders. */
+.reveal .slides form[class^="oi-"] {
   font-size: 0.6em;
+  --label-width: 280px;
+  --input-width: 600px;
+}
+.reveal .slides form[class^="oi-"] label {
+  font-size: 1.1em;
+}
+
+/* Takeaway titles on Observable Plot figures, serif like the schematics. */
+.reveal .slides .cell-output figure > h2 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 0.65em;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: #17242b;
+  text-align: left;
+  margin: 0 0 0.2em 0;
 }
 .reveal .slides .ojs-in-a-box-waiting-for-module-import {
   min-height: 2em;
@@ -56,3 +73,30 @@
 .reveal .slides .col-I { color: #b22222; }
 .reveal .slides .col-R { color: #2e8b57; }
 .reveal .slides .col-E { color: #e0a020; }
+
+/* Small caption directly under an equation, inside a column. */
+.reveal .slides .sub {
+  font-size: 0.65em;
+  opacity: 0.8;
+}
+
+/* Code that must fit beside a column at 1920x1080. */
+.reveal .slides section.tight-code pre {
+  font-size: 0.5em;
+}
+
+/* No copy buttons on OJS cells in the lecture decks. */
+.reveal .slides .cell .code-copy-outer-scaffold .code-copy-button {
+  display: none;
+}
+
+/* Radio rows (Inputs.radio) need a narrower label to stay on one line. */
+.reveal .slides form[class^="oi-"][class*="-checkbox"] {
+  --label-width: 140px;
+}
+
+/* Plot wraps a titled chart in a figure with a white background. */
+.reveal .slides .cell-output figure,
+.reveal .slides .cell-output figure svg {
+  background: transparent !important;
+}
