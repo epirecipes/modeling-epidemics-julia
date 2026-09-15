@@ -29,18 +29,13 @@ Fifteen minutes. History first, then the model built slowly, then the three numb
 - Two kinds of molecule bounce around at random
 - They react when they collide
 - Collisions per second scale with the product of the counts
-- People are the same. Contacts between $S$ and $I$
+- Infections work the same way. Back to this in a few slides
 
 $$
 \text{rate} = k\,[A]\,[B]
 $$
 
-$$
-\text{infections per day} = \beta c \,\tfrac{I}{N}\, S
-$$
-
 ::: {.attribution}
-Speed stands in for the contact rate $c$. $\beta$ is the chance a contact transmits.
 Guldberg and Waage, "Studier over Affiniteten", 1864; English translation in *J. Chem. Educ.* 63, 1986 ([doi](https://doi.org/10.1021/ed063p1044)).
 :::
 :::
@@ -158,7 +153,7 @@ Start here with no maths. Red dots and blue dots. A flash is a red-blue collisio
 The animation runs with 10 red, then 20, then 40, blue fixed at 40. Each doubling of red doubles the collision rate. That is the product rule.
 Speed is the contact rate. Double it and collisions double.
 The last phase redraws the same dots as people, and nothing has changed except the labels.
-Point at each symbol in the second equation once. Contacts a day, chance a contact passes it on, chance the contact is infectious, how many people are at risk. We build it again slowly in a few slides.
+Say that infections are a collision between a susceptible and an infectious person. We build the equation slowly in a few slides.
 :::
 
 ## Where the idea came from
@@ -344,7 +339,7 @@ A peek ahead. The SIR model we build next, with contacts reduced from day zero.
 
 ::: {.notes}
 This is why. The grey curve is what the model says happens. The red one is the same model with fewer contacts. We cannot run the real epidemic twice, but the model can.
-The animation cuts contacts by 20, 40 then 60 percent. Somewhere near 50 percent the epidemic stops growing at all. That is a threshold, and the rest of the lecture is about where it comes from.
+The animation cuts contacts by 20, 40 then 60 percent. At 60 percent it never takes off. Where that line sits is what the rest of the lecture works out.
 :::
 
 ## Why rates of change?
@@ -373,7 +368,7 @@ timeline(odeEvents, 1650, 1950, [1678, 1798, 1838, 1925])
 ```
 
 ::: {.attribution}
-Large populations change smoothly, so a rate of change is enough.
+Large populations change smoothly, so a rate of change is enough. Ours has three parts, each with its own rate.
 Newton, *Principia*, 1687. Leibniz, "Nova methodus pro maximis et minimis", *Acta Eruditorum*, 1684.
 Malthus, *An Essay on the Principle of Population*, 1798 ([Gutenberg](https://www.gutenberg.org/ebooks/4239)).
 Verhulst, "Notice sur la loi que la population suit dans son accroissement", *Corr. Math. Phys.* 10, 1838.
@@ -392,9 +387,9 @@ The point for us. With thousands of people, counts change smoothly enough to tre
 
 :::: {.columns}
 ::: {.column width="38%"}
-- Everyone is in exactly one box
+- $N$ people, each in exactly one box
 - People move along the arrows, never back
-- Each arrow is a rate. That is the whole model
+- Each arrow is a rate
 :::
 ::: {.column width="62%"}
 ```{ojs}
@@ -450,13 +445,13 @@ Say the assumptions once. Nobody is born, nobody dies, nobody comes back from R.
 - A fraction $I/N$ of them are infectious
 - Each of those transmits with probability $\beta$
 
+::: {.sub}
+The rate at which one susceptible gets infected: a chance per day.
+:::
+
 $$
 \lambda = \beta \, c \, \frac{I}{N}
 $$
-
-::: {.sub}
-The rate at which one susceptible gets infected.
-:::
 :::
 ::: {.column width="62%"}
 ```{ojs}
@@ -556,7 +551,6 @@ The curve comes from the whole model; we are only reading the S part.
 - Each infectious person recovers at rate $\gamma$
 - So the infectious period is exponential
 - Mean $1/\gamma$ days
-- Memoryless. Day ten looks like day one
 
 $$
 \text{recoveries per day} = \gamma I
@@ -602,8 +596,7 @@ It is not realistic. Most people recover around some typical time. We come back 
 
 :::: {.columns}
 ::: {.column width="38%"}
-- $I$ gains what $S$ loses, and loses recoveries
-- $R$ gains recoveries
+- Two flows: infection moves people $S \to I$, recovery $I \to R$
 
 $$
 \begin{aligned}
@@ -652,56 +645,6 @@ Add the two flows into I and out of I. R just collects.
 The animation shows the baseline, then twice the contacts, then twice the recovery rate. More contacts make it faster and bigger. A shorter infectious period shrinks it.
 :::
 
-## Conservation
-
-:::: {.columns}
-::: {.column width="38%"}
-- The three rates sum to zero
-- So $S + I + R = N$ for ever
-- $R = N - S - I$, so two equations do the work
-
-$$
-\frac{\mathrm{d}S}{\mathrm{d}t} + \frac{\mathrm{d}I}{\mathrm{d}t}
-+ \frac{\mathrm{d}R}{\mathrm{d}t} = 0
-$$
-:::
-::: {.column width="62%"}
-```{ojs}
-//| echo: false
-consRun = sirRun(base, 80)
-consRows = sirLong(consRun)
-consLab = {
-  const pk = consRun.reduce((a, b) => (b.I > a.I ? b : a));
-  const end = consRun[consRun.length - 1];
-  return [
-    {t: 70, y: end.S / 2, k: "S"},
-    {t: pk.t, y: pk.S + pk.I / 2, k: "I"},
-    {t: 70, y: end.S + end.I + end.R / 2, k: "R"}
-  ];
-}
-Plot.plot({
-  ...plotBase,
-  title: "Stacked, S + I + R is flat at N = 1000",
-  x: axisX("time (days)"),
-  y: axisY("people", {domain: [0, 1080]}),
-  color: {domain: ["S", "I", "R"], range: [cols.S, cols.I, cols.R]},
-  marks: [
-    Plot.areaY(consRows, {x: "t", y: "n", fill: "k", fillOpacity: 0.75}),
-    Plot.ruleY([1000], {stroke: "#333", strokeDasharray: "8,6"}),
-    Plot.text(consLab, {x: "t", y: "y", text: "k", fill: "white",
-      fontSize: 34, fontWeight: 700})
-  ]
-})
-```
-:::
-::::
-
-::: {.notes}
-Add the right-hand sides. Everything cancels, so the total never changes. Nothing in the solver enforces that. It follows from writing flows.
-Stack the three and the top edge is flat. That is the check the worksheet runs.
-It also means we never need to solve for R. It is whatever is left. Keep that in mind for the final size.
-:::
-
 ## The basic reproduction number
 
 :::: {.columns}
@@ -709,6 +652,7 @@ It also means we never need to solve for R. It is whatever is left. Keep that in
 - Infections per infectious person per day, everyone susceptible: $\beta c$
 - Times the mean infectious duration: $1/\gamma$
 - Baseline: $0.05 \times 10 \times 4 = 2$
+- Later, each case infects $R_0 s$, with $s = S/N$ still susceptible
 
 $$
 R_0 = \beta c \times \frac{1}{\gamma} = \frac{\beta c}{\gamma}
@@ -764,14 +708,14 @@ The "everyone susceptible" part matters. Later in the epidemic each case infects
 
 :::: {.columns}
 ::: {.column width="42%"}
-- An equilibrium is a state where nothing changes
 - With $I = 0$ nothing changes, whatever $S$ is
+- Stable means a small outbreak dies out
 - While $I$ is small, $S$ barely moves, so the $I$ equation is linear
-- It grows if and only if $R_0 s > 1$, with $s = S/N$
+- It grows if and only if $R_0 s > 1$
 
 $$
-\frac{\mathrm{d}I}{\mathrm{d}t} \approx r I,
-\qquad r = \gamma \,(R_0 s - 1)
+\frac{\mathrm{d}I}{\mathrm{d}t} \approx g I,
+\qquad g = \gamma \,(R_0 s - 1)
 $$
 :::
 ::: {.column width="58%"}
@@ -801,7 +745,7 @@ Plot.plot({
   ]
 })
 html`<p style="font-size:28px;color:#b22222;margin:0.2em 0 0 90px">
-  r = 0.25 × (${r0s.toFixed(1)} − 1) = ${(0.25 * (r0s - 1)).toFixed(2)}
+  g = 0.25 × (${r0s.toFixed(1)} − 1) = ${(0.25 * (r0s - 1)).toFixed(2)}
   per day</p>`
 ```
 
@@ -813,7 +757,7 @@ $\gamma = 0.25$, $I(0) = 10$. The linear approximation, so it ignores $S$ fallin
 
 ::: {.notes}
 Equilibrium just means a state the model would sit in for ever. No infectious people is one, for any S. Are those states stable.
-Write the I equation as gamma I times R nought s minus one. Near I equals zero that is exponential growth or decay with rate r.
+Write the I equation as gamma I times R nought s minus one. Near I equals zero that is exponential growth or decay with rate g.
 The animation steps R nought s from 0.6 up to 2, through one. Below it the outbreak dies, above it grows. Stable if and only if R nought s is below one.
 :::
 
@@ -821,7 +765,6 @@ The animation steps R nought s from 0.6 up to 2, through one. Below it the outbr
 
 :::: {.columns}
 ::: {.column width="38%"}
-- $S$ falls, so $R_0 s$ falls with it
 - $I$ grows while $s > 1/R_0$
 - The peak is where $s$ crosses $1/R_0$
 - Then $I$ falls, but the epidemic is not over
@@ -903,7 +846,57 @@ The curves draw themselves in time, then repeat with R nought at 1.5, 2 and 3. A
 Note the peak is not the end. There are still lots of infectious people, and they keep infecting. That overshoot is the next few slides.
 :::
 
-## Final size, step by step
+## Conservation
+
+:::: {.columns}
+::: {.column width="38%"}
+- The three rates sum to zero
+- So $S + I + R = N$ for ever
+- $R = N - S - I$, so two equations do the work
+
+$$
+\frac{\mathrm{d}S}{\mathrm{d}t} + \frac{\mathrm{d}I}{\mathrm{d}t}
++ \frac{\mathrm{d}R}{\mathrm{d}t} = 0
+$$
+:::
+::: {.column width="62%"}
+```{ojs}
+//| echo: false
+consRun = sirRun(base, 80)
+consRows = sirLong(consRun)
+consLab = {
+  const pk = consRun.reduce((a, b) => (b.I > a.I ? b : a));
+  const end = consRun[consRun.length - 1];
+  return [
+    {t: 70, y: end.S / 2, k: "S"},
+    {t: pk.t, y: pk.S + pk.I / 2, k: "I"},
+    {t: 70, y: end.S + end.I + end.R / 2, k: "R"}
+  ];
+}
+Plot.plot({
+  ...plotBase,
+  title: "Stacked, S + I + R is flat at N = 1000",
+  x: axisX("time (days)"),
+  y: axisY("people", {domain: [0, 1080]}),
+  color: {domain: ["S", "I", "R"], range: [cols.S, cols.I, cols.R]},
+  marks: [
+    Plot.areaY(consRows, {x: "t", y: "n", fill: "k", fillOpacity: 0.75}),
+    Plot.ruleY([1000], {stroke: "#333", strokeDasharray: "8,6"}),
+    Plot.text(consLab, {x: "t", y: "y", text: "k", fill: "white",
+      fontSize: 34, fontWeight: 700})
+  ]
+})
+```
+:::
+::::
+
+::: {.notes}
+Add the right-hand sides. Everything cancels, so the total never changes. Nothing in the solver enforces that. It follows from writing flows.
+Stack the three and the top edge is flat. That is the check the worksheet runs.
+It also means we never need to solve for R. It is whatever is left. The next slide uses exactly that.
+:::
+
+## How big does it get?
 
 :::: {.columns}
 ::: {.column width="40%"}
@@ -935,7 +928,7 @@ $$
 :::
 
 ::: {.sub}
-Lower case means a fraction of $N$. Nobody immune at the start, $r_0 = 0$.
+Lower case means a fraction of $N$.
 :::
 :::
 ::::
@@ -943,7 +936,7 @@ Lower case means a fraction of $N$. Nobody immune at the start, $r_0 = 0$.
 ::: {.notes}
 Three steps. First, divide the two rates. I cancels, and so does time. That is why the final size does not depend on how fast the epidemic runs.
 Second, integrate. Left side in s, right side in r. Exponentiate.
-Third, at the end nobody is infectious, so recovered is everyone who is not susceptible. That gives one equation in one unknown, s infinity.
+Third, at the end nobody is infectious, so recovered is everyone who is not susceptible. This assumes nobody was immune at the start. That gives one equation in one unknown, s infinity.
 :::
 
 ## Finding the root
@@ -1096,9 +1089,9 @@ The threshold is what vaccination aims for. An unmitigated epidemic goes well pa
 
 :::: {.columns}
 ::: {.column width="38%"}
+- Nothing so far gave a formula for $S(t)$. A computer steps instead
 - Euler: take the current slope, step forward, repeat
-- Runge–Kutta: several slopes per step
-- Tsit5 also picks the step size
+- Runge–Kutta: several slopes per step. Tsit5, in the worksheet, also picks the step size
 - Newton: for roots, follow the tangent
 :::
 ::: {.column width="62%"}
@@ -1159,7 +1152,6 @@ Runge-Kutta methods take a few trial slopes per step and do far better. Tsit5, w
 ::: {.column width="38%"}
 - SEIR adds a latent stage before infectiousness
 - SIRS lets immunity wane, so $S$ refills
-- Same idea. Boxes and rates
 
 ::: {.sub}
 $$
@@ -1302,7 +1294,7 @@ Plot.plot({
 ```
 
 ::: {.attribution}
-Self-study chapter 10.
+That is an Erlang distribution. Self-study chapter 10.
 :::
 :::
 ::::
