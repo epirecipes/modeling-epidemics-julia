@@ -32,8 +32,8 @@ Fifteen minutes. Two discrete models with the same rates, and two different limi
 ::: {.column width="36%"}
 - Case counts come daily or weekly
 - Computers advance in fixed steps
-- Two discrete-time models today: deterministic, moving expected numbers
-- and stochastic, drawing whole people
+- Deterministic model: moves the expected numbers
+- Stochastic model: draws whole people at random
 :::
 ::: {.column width="64%"}
 ```{ojs}
@@ -183,7 +183,7 @@ Greenwood's 1931 version has a fixed risk per step, whatever the number infectio
 Bailey's 1957 book gathered the stochastic theory in one place.
 :::
 
-# The deterministic model
+# The deterministic model: expected numbers, moved each step
 
 ## What a time step is
 
@@ -251,8 +251,9 @@ Notice the dots do not sit exactly on the faint ODE curve. We come back to that.
 
 :::: {.columns}
 ::: {.column width="38%"}
-- A rate is a chance per tiny moment for someone it has not happened to yet (a hazard): chance $\approx r\,\mathrm{d}t$ only when $\mathrm{d}t$ is tiny
-- A whole step is not tiny. $r\,\delta t$ can pass one
+- A rate is a chance per tiny moment, for someone it has not happened to yet (a hazard)
+- chance $\approx r\,\mathrm{d}t$ only when $\mathrm{d}t$ is tiny
+- A whole step is not tiny
 - So cut the step into $n$ slivers small enough for the rule to hold
 - Each sliver: chance $r\,\delta t / n$
 
@@ -266,10 +267,10 @@ nSliver = {
     }
   }
 }
-md`n = **${nSliver}**: each sliver has chance r δt / ${nSliver}, which is **${(1 / nSliver).toFixed(3)}** at r δt = 1`
 ```
 :::
 ::: {.column width="62%"}
+::: {style="display: flex; flex-direction: column; justify-content: center; min-height: 560px;"}
 ```{ojs}
 //| echo: false
 sliverBar = {
@@ -291,6 +292,7 @@ sliverBar = {
 One step cut into n slivers. n cycles through 1, 2, 4, 8, 16 and 64.
 :::
 :::
+:::
 ::::
 
 ::: {.notes}
@@ -303,6 +305,8 @@ So rebuild the day out of intervals that are tiny. Each sliver gets a share r de
 
 :::: {.columns}
 ::: {.column width="38%"}
+Survival here just means no event yet.
+
 ::: {.fragment}
 No event in the step means no event in sliver 1, and in sliver 2, and so on
 :::
@@ -320,10 +324,6 @@ $$
 \Bigl(1 - \tfrac{r\delta t}{n}\Bigr)^{n} \to e^{-r\delta t}
 $$
 the limit that defines $e$ (compound interest), the survival function of a constant hazard, an exponential waiting time
-:::
-
-::: {.sub}
-Survival here just means no event yet.
 :::
 :::
 ::: {.column width="62%"}
@@ -452,7 +452,8 @@ For a large step the expected count goes past one, but a person can only leave o
 
 :::: {.columns}
 ::: {.column width="40%"}
-- The ODE has two flows: infection at rate $\lambda = \beta c I / N$ per susceptible, recovery at rate $\gamma$ per infectious
+- The ODE has two flows: infection at rate $\lambda = \beta c I / N$ per susceptible
+- recovery at rate $\gamma$ per infectious
 - Over one step, each susceptible is infected with $p_I = 1 - e^{-\lambda \delta t}$
 - Each infectious person recovers with $p_R = 1 - e^{-\gamma \delta t}$
 - $\lambda$ uses $I_t$, held fixed for the step
@@ -502,7 +503,7 @@ The force of infection uses the number infectious at the start of the step and h
 
 :::: {.columns}
 ::: {.column width="40%"}
-- Move the expected number along each arrow
+- Move the average (expected) number along each arrow
 - Add up what each box gains and loses
 - Sum the lines: the population is conserved
 :::
@@ -547,7 +548,7 @@ Nothing is random yet.
 :::: {.columns}
 ::: {.column width="40%"}
 - Hold the current rate for the whole step. That is Euler's method, 1768
-- $u_{t+\delta t} = u_t + \delta t\, f(u_t)$
+- $u_{t+\delta t} = u_t + \delta t\, f(u_t)$, with $f$ the rate
 - For a small step, $p_I = 1 - e^{-\lambda \delta t} \approx \lambda\,\delta t$
 - So $S_{t+1} \approx S_t - \lambda S_t\,\delta t$: Euler's step for $\mathrm{d}S/\mathrm{d}t = -\lambda S$
 :::
@@ -605,7 +606,6 @@ The exponential wrapper only keeps p below one.
 
 :::: {.columns}
 ::: {.column width="34%"}
-- Compare the deterministic model with the ODE
 - Large steps overshoot the peak
 - Small steps sit on the curve
 
@@ -660,7 +660,7 @@ The deterministic step is a first-order method. It is Euler's step with the rate
 :::: {.columns}
 ::: {.column width="34%"}
 - Error at day 40 against the ODE
-- Log axes, slope one guide
+- Both axes logarithmic: each tick is a doubling
 - First order: error $\propto \delta t$
 - The deterministic model converges to the ODE
 :::
@@ -713,7 +713,7 @@ Halve the step and the error halves. That is what first order means.
 This is the first limit: the deterministic model tends to the ODE.
 :::
 
-# The stochastic model
+# The stochastic model: whole people, moved at random
 
 ## Why draw at random?
 
@@ -757,7 +757,7 @@ This is the first limit: the deterministic model tends to the ODE.
     <rect x="510" y="200" width="60" height="44"/>
     <rect x="580" y="200" width="60" height="44"/>
     <rect x="650" y="200" width="60" height="44"/>
-    <rect x="720" y="200" width="42" height="44"/>
+    <rect x="720" y="200" width="54" height="44"/>
     <rect x="720" y="200" width="60" height="44" fill="none" stroke-dasharray="4,3"/>
   </g>
   <g fill="#b22222">
@@ -768,7 +768,7 @@ This is the first limit: the deterministic model tends to the ODE.
     <circle cx="750" cy="462" r="20"/>
   </g>
   <g text-anchor="middle" font-size="28" fill="#17242b">
-    <text x="640" y="150">p<tspan font-size="20" dy="8">I</tspan><tspan dy="-8"> S</tspan><tspan font-size="20" dy="8">t</tspan><tspan dy="-8"> = 4.7 people, a fraction</tspan></text>
+    <text x="640" y="150">p<tspan font-size="20" dy="8">I</tspan><tspan dy="-8"> S</tspan><tspan font-size="20" dy="8">t</tspan><tspan dy="-8"> = 4.9 people, a fraction</tspan></text>
     <text x="640" y="390">Y<tspan font-size="20" dy="8">t</tspan><tspan dy="-8"> = 5 people, a draw</tspan></text>
   </g>
 </svg>
@@ -881,70 +881,17 @@ Given the state at $t$, the deterministic step moves exactly what the stochastic
 Same two probabilities.
 Replace the expected numbers with binomial draws.
 The deterministic step is the one-step expectation of the stochastic step. That is the link. It is also where the link ends.
-:::
-
-## Three models, one set of rates {.tight-code}
-
-:::: {.columns}
-::: {.column width="34%"}
-ODE
-
-```julia
-function sir_ode!(du, u, p, t)
-    S, I, R = u
-    λ = p.β * p.c * I / p.N
-    du[1] = -λ * S
-    du[2] = λ * S - p.γ * I
-    du[3] = p.γ * I
-    return nothing
-end
-```
-
-- Rates in, derivatives out
-- A solver chooses the steps
-:::
-::: {.column width="66%"}
-Deterministic and stochastic
-
-```julia
-rate_to_proportion(r, δt) = -expm1(-r * δt)
-
-function sir_map_step(state, p, δt)          # deterministic, eq-ch02-map
-    S, I, R = state
-    infection = rate_to_proportion(p.β * p.c * I / p.N, δt) * S
-    recovery  = rate_to_proportion(p.γ, δt) * I
-    return (S - infection, I + infection - recovery, R + recovery)
-end
-
-function sir_chain_step(state, p, δt, rng)   # stochastic, eq-ch02-chain
-    S, I, R = state
-    Y = rand(rng, Binomial(round(Int, S), rate_to_proportion(p.β * p.c * I / p.N, δt)))
-    Z = rand(rng, Binomial(round(Int, I), rate_to_proportion(p.γ, δt)))
-    return (S - Y, I + Y - Z, R + Z)
-end
-```
-
-::: {.sub}
-The chapter calls these the function map and the Markov chain.
-:::
-:::
-::::
-
-::: {.notes}
-Same rates in all three.
-The ODE hands them to a solver.
-The deterministic step converts them to probabilities and multiplies.
-The stochastic step converts them to probabilities and draws. Two lines differ.
+Both draws use the state at t, so nobody is infected and recovers in the same step. That is an artefact of the step, not of the disease, and it fades as delta t shrinks.
 :::
 
 ## Many runs
 
 :::: {.columns}
 ::: {.column width="34%"}
-- Grey: single runs of the stochastic model
-- Amber: their mean
-- Black dashed: the deterministic model
-- Red: the ODE
+- Each run is one possible epidemic
+- Runs differ in height and timing
+- Their mean sits just below the deterministic step
+- The ODE sits lower still: step-size error
 
 ```{ojs}
 //| echo: false
@@ -1005,7 +952,7 @@ Plot.plot({
 ::: {.notes}
 One run is one possible epidemic.
 Runs pile up to a hundred. Once ten are in, the mean appears and settles. The deterministic model and the ODE run close to it but peak higher.
-Some runs never take off. The deterministic model cannot do that.
+With ten initial cases none fade out. At small N they do, next slide.
 It loops, replaying the same hundred runs.
 :::
 
@@ -1013,7 +960,6 @@ It loops, replaying the same hundred runs.
 
 :::: {.columns}
 ::: {.column width="34%"}
-- Same initial fraction, $I_0 = N / 100$
 - Spread in $I/N$ shrinks like $1 / \sqrt{N}$
 - Small $N$: fade-out is common
 - Large $N$: runs hug the ODE
@@ -1070,7 +1016,7 @@ Plot.plot({
 })
 ```
 ::: {.attribution}
-100 runs of the stochastic model, δt = 1 day. N cycles through 100, 1000 and 10000. Red: the ODE.
+100 runs of the stochastic model, δt = 1 day, same initial fraction I~0~ = N / 100. N cycles through 100, 1000 and 10000. Red: the ODE.
 :::
 :::
 ::::
@@ -1165,6 +1111,60 @@ Runs crest on different days too, and averaging curves that crest at different t
 The ODE is the large-N limit of the stochastic model, the law of large numbers: averages settle down as N grows. It is not its mean at finite N.
 :::
 
+## Three models, one set of rates {.tight-code}
+
+:::: {.columns}
+::: {.column width="34%"}
+ODE
+
+```julia
+function sir_ode!(du, u, p, t)
+    S, I, R = u
+    λ = p.β * p.c * I / p.N
+    du[1] = -λ * S
+    du[2] = λ * S - p.γ * I
+    du[3] = p.γ * I
+    return nothing
+end
+```
+
+- Rates in, derivatives out
+- A solver chooses the steps
+:::
+::: {.column width="66%"}
+Deterministic and stochastic
+
+```julia
+rate_to_proportion(r, δt) = -expm1(-r * δt)
+
+function sir_map_step(state, p, δt)          # deterministic, eq-ch02-map
+    S, I, R = state
+    infection = rate_to_proportion(p.β * p.c * I / p.N, δt) * S
+    recovery  = rate_to_proportion(p.γ, δt) * I
+    return (S - infection, I + infection - recovery, R + recovery)
+end
+
+function sir_chain_step(state, p, δt, rng)   # stochastic, eq-ch02-chain
+    S, I, R = state
+    Y = rand(rng, Binomial(round(Int, S), rate_to_proportion(p.β * p.c * I / p.N, δt)))
+    Z = rand(rng, Binomial(round(Int, I), rate_to_proportion(p.γ, δt)))
+    return (S - Y, I + Y - Z, R + Z)
+end
+```
+
+::: {.sub}
+The chapter calls these the function map and the Markov chain.
+:::
+:::
+::::
+
+::: {.notes}
+Same rates in all three.
+The ODE hands them to a solver.
+The deterministic step converts them to probabilities and multiplies.
+The stochastic step converts them to probabilities and draws. Two lines differ.
+:::
+
 # What the stochastic model approximates
 
 ## Two limits as the step shrinks
@@ -1189,7 +1189,8 @@ The ODE is the large-N limit of the stochastic model, the law of large numbers: 
     <text x="300" y="460" font-size="40" font-weight="700" fill="#b22222">Stochastic</text>
     <text x="300" y="510" font-size="26" opacity="0.8">discrete time, stochastic</text>
     <text x="1220" y="460" font-size="40" font-weight="700" fill="#b22222">Continuous-time Markov chain</text>
-    <text x="1220" y="510" font-size="26" opacity="0.8">continuous time, stochastic (Day 2, Session 1)</text>
+    <text x="1220" y="500" font-size="24" opacity="0.8">events one at a time, at random moments</text>
+    <text x="1220" y="532" font-size="24" opacity="0.8">(Day 2, Session 1)</text>
   </g>
   <g stroke="#17242b" stroke-width="4" fill="none" marker-end="url(#lim-arrow)">
     <line x1="540" y1="155" x2="880" y2="155"/>
@@ -1216,57 +1217,6 @@ Bottom: the stochastic model tends to the continuous-time Markov chain, which is
 The two right-hand boxes are different objects. The ODE is a mean-field description, the behaviour of averages in a large population, not the mean of the stochastic model at finite N.
 :::
 
-## One step, one move
-
-:::: {.columns}
-::: {.column width="34%"}
-- Both draws use the state at $t$
-- Nobody is infected and recovers in the same step
-- An artefact of the step, not of the disease
-- It fades as $\delta t \to 0$
-:::
-::: {.column width="66%"}
-<svg viewBox="0 0 1200 420" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Avenir Next, Helvetica Neue, Arial, sans-serif">
-  <defs>
-    <marker id="step-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#17242b"/>
-    </marker>
-  </defs>
-  <g stroke-width="4" fill="#fbfcfd">
-    <rect x="80" y="130" width="200" height="130" rx="16" stroke="#4682b4"/>
-    <rect x="500" y="130" width="200" height="130" rx="16" stroke="#b22222"/>
-    <rect x="920" y="130" width="200" height="130" rx="16" stroke="#2e8b57"/>
-  </g>
-  <g text-anchor="middle" font-size="60" font-weight="700">
-    <text x="180" y="215" fill="#4682b4">S</text>
-    <text x="600" y="215" fill="#b22222">I</text>
-    <text x="1020" y="215" fill="#2e8b57">R</text>
-  </g>
-  <g stroke="#17242b" stroke-width="4" fill="none" marker-end="url(#step-arrow)">
-    <line x1="290" y1="195" x2="490" y2="195"/>
-    <line x1="710" y1="195" x2="910" y2="195"/>
-  </g>
-  <g text-anchor="middle" font-size="30" fill="#17242b">
-    <text x="390" y="165">Y ~ Bin(S<tspan font-size="22" dy="8">t</tspan><tspan dy="-8">, p</tspan><tspan font-size="22" dy="8">I</tspan><tspan dy="-8">)</tspan></text>
-    <text x="810" y="165">Z ~ Bin(I<tspan font-size="22" dy="8">t</tspan><tspan dy="-8">, p</tspan><tspan font-size="22" dy="8">R</tspan><tspan dy="-8">)</tspan></text>
-  </g>
-  <path d="M 180 280 C 180 400, 1020 400, 1020 280" stroke="#999" stroke-width="4" fill="none" stroke-dasharray="12,10"/>
-  <g stroke="#b22222" stroke-width="6" stroke-linecap="round">
-    <line x1="575" y1="345" x2="625" y2="395"/>
-    <line x1="625" y1="345" x2="575" y2="395"/>
-  </g>
-  <text x="600" y="60" text-anchor="middle" font-size="30" fill="#17242b">one step, t → t + δt</text>
-</svg>
-:::
-::::
-
-::: {.notes}
-Infections and recoveries are drawn side by side from the same starting state.
-So a person infected in this step cannot also recover in it.
-With a step of a day and a four-day infectious period this barely matters.
-With a large step it does. The event-driven model of the next session has no such artefact.
-:::
-
 ## Beyond SIR, same recipe
 
 :::: {.columns}
@@ -1274,7 +1224,7 @@ With a large step it does. The event-driven model of the next session has no suc
 - A rate becomes a probability per step
 - SEIR: a latent stage $E$
 - SIRS: immunity wanes, $R \to S$
-- Erlang stages: chain several $I$ boxes (Chapter 10)
+- Erlang stages: several $I$ boxes in a row, for a less spread-out infectious period (Chapter 10)
 :::
 ::: {.column width="66%"}
 <svg viewBox="0 0 1200 450" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Avenir Next, Helvetica Neue, Arial, sans-serif">
