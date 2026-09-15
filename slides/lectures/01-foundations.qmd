@@ -12,6 +12,7 @@ format:
 
 ## Talk plan
 
+- Why model an epidemic at all
 - Where mass action and the SIR model came from
 - The model, one term at a time
 - $R_0$, the epidemic threshold and the peak
@@ -21,6 +22,168 @@ format:
 
 ::: {.notes}
 Fifteen minutes. History first, then the model built slowly, then the three numbers it gives us, then where the rest of the course goes.
+:::
+
+## Why model an epidemic?
+
+:::: {.columns}
+::: {.column width="38%"}
+- Run the epidemic twice, with and without a change
+- Find the threshold where growth stops
+- Say in advance how big it gets
+:::
+::: {.column width="62%"}
+```{ojs}
+//| echo: false
+rk4 = (f, u0, tmax, dt) => {
+  const out = [{t: 0, u: u0.slice()}];
+  const add = (a, b, s) => a.map((x, i) => x + s * b[i]);
+  let u = u0.slice(), t = 0;
+  while (t < tmax - 1e-9) {
+    const k1 = f(u);
+    const k2 = f(add(u, k1, dt / 2));
+    const k3 = f(add(u, k2, dt / 2));
+    const k4 = f(add(u, k3, dt));
+    u = u.map((x, i) =>
+      x + dt / 6 * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]));
+    t += dt;
+    out.push({t, u});
+  }
+  return out;
+}
+base = ({N: 1000, S0: 990, I0: 10, beta: 0.05, c: 10, gamma: 0.25})
+sirRhs = (p) => ([S, I, R]) => {
+  const lam = p.beta * p.c * I / p.N;
+  return [-lam * S, lam * S - p.gamma * I, p.gamma * I];
+}
+sirRun = (p, tmax = 80, dt = 0.1) =>
+  rk4(sirRhs(p), [p.S0, p.I0, p.N - p.S0 - p.I0], tmax, dt)
+    .map(({t, u}) => ({t, S: u[0], I: u[1], R: u[2]}))
+sirLong = (rows) => rows.flatMap((d) => [
+  {t: d.t, n: d.S, k: "S"}, {t: d.t, n: d.I, k: "I"}, {t: d.t, n: d.R, k: "R"}
+])
+cols = ({S: "#4682b4", I: "#b22222", R: "#2e8b57", E: "#e0a020"})
+axisX = (label, extra = {}) => ({
+  label, labelAnchor: "center", labelOffset: 52, ...extra
+})
+axisY = (label, extra = {}) => ({
+  label, labelAnchor: "top", labelOffset: 40, ...extra
+})
+plotBase = ({
+  width: 1050, height: 580, marginLeft: 90, marginBottom: 70,
+  marginTop: 40, marginRight: 100, insetTop: 30,
+  style: {fontSize: "24px"}
+})
+```
+
+```{ojs}
+//| echo: false
+cut = {
+  while (true) {
+    for (const v of [0, 20, 40, 60]) { yield v; await Promises.delay(2500) }
+  }
+}
+cfRows = [
+  ...sirRun(base, 100).map((d) => ({t: d.t, I: d.I, k: "no change"})),
+  ...(cut === 0 ? [] : sirRun({...base, c: base.c * (1 - cut / 100)}, 100)
+    .map((d) => ({t: d.t, I: d.I, k: `contacts cut by ${cut}%`})))
+]
+Plot.plot({
+  ...plotBase,
+  title: cut === 0 ? "No change. The epidemic runs its course"
+    : cut >= 50 ? `Contacts cut by ${cut}%. It never takes off`
+    : `Contacts cut by ${cut}%. The peak is lower and later`,
+  x: axisX("time (days)", {domain: [0, 100]}),
+  y: axisY("infectious (people)", {domain: [0, 175]}),
+  color: {domain: ["no change", `contacts cut by ${cut}%`],
+    range: ["#888", cols.I]},
+  marks: [
+    Plot.line(cfRows, {x: "t", y: "I", stroke: "k", strokeWidth: 3}),
+    Plot.text(cfRows, Plot.selectMaxY({x: "t", y: "I", z: "k",
+      text: "k", fill: "k", dy: -18}))
+  ]
+})
+```
+
+::: {.attribution}
+The model we build next, with contacts cut from day zero.
+:::
+:::
+::::
+
+::: {.notes}
+This is why. The grey curve is what the model says happens. The red one is the same model with fewer contacts. We cannot run the real epidemic twice, but the model can.
+The animation cuts contacts by 20, 40 then 60 percent. At 60 percent it never takes off. Where that line sits is what the rest of the lecture works out.
+:::
+
+## So how do we model an epidemic?
+
+:::: {.columns}
+::: {.column width="40%"}
+- Count people in a few states: susceptible, infectious, recovered
+- Write how fast people move between them: rates of change
+- The hard part is the rate of new infections. Chemistry had the answer first
+:::
+::: {.column width="60%"}
+```{ojs}
+//| echo: false
+flowDiagram([
+  {k: "S", name: "susceptible", col: cols.S},
+  {k: "I", name: "infectious", col: cols.I},
+  {k: "R", name: "recovered", col: cols.R}
+], ["new infections: ?", "recovery"])
+```
+:::
+::::
+
+::: {.notes}
+Two ingredients. Boxes for the states people can be in, and rates for how fast they move between the boxes.
+Recovery is easy: a rate per person. New infections need two kinds of people to meet, and that is where the next few slides go: first why rates of change, then where the meeting term comes from.
+:::
+
+## Why rates of change?
+
+:::: {.columns}
+::: {.column width="42%"}
+- **Newton and Leibniz, 1670s to 1680s.** Calculus. Motion as rates of change
+- **Malthus, 1798.** Populations grow in proportion to their size
+- **Verhulst, 1838.** Growth slows as a population fills its space
+- **Lotka 1925, Volterra 1926.** Two species interact through a product term
+
+$$
+\frac{\mathrm{d}N}{\mathrm{d}t} = r N
+$$
+
+::: {.sub}
+Read $\mathrm{d}N/\mathrm{d}t$ as how fast $N$ is changing: the rate of change.
+:::
+:::
+::: {.column width="58%"}
+```{ojs}
+//| echo: false
+odeEvents = [
+  {year: 1678, label: "1670s to 80s", who: "Newton, Leibniz"},
+  {year: 1798, label: "1798", who: "Malthus"},
+  {year: 1838, label: "1838", who: "Verhulst"},
+  {year: 1925, label: "1925, 1926", who: "Lotka, Volterra"}
+]
+timeline(odeEvents, 1650, 1950, [1678, 1798, 1838, 1925])
+```
+
+::: {.attribution}
+Large populations change smoothly, so a rate of change is enough. Ours has three parts, each with its own rate.
+Newton, *Principia*, 1687. Leibniz, "Nova methodus pro maximis et minimis", *Acta Eruditorum*, 1684.
+Malthus, *An Essay on the Principle of Population*, 1798 ([Gutenberg](https://www.gutenberg.org/ebooks/4239)).
+Verhulst, "Notice sur la loi que la population suit dans son accroissement", *Corr. Math. Phys.* 10, 1838.
+Lotka, *Elements of Physical Biology*, 1925 ([archive.org](https://archive.org/details/elementsofphysic017171mbp)). Volterra, *Nature* 118, 1926 ([doi](https://doi.org/10.1038/118558a0)).
+:::
+:::
+::::
+
+::: {.notes}
+Why differential equations at all. Calculus gave us a language for how things change moment by moment.
+Malthus applied it to people. Growth in proportion to size gives an exponential, and the I equation starts out looking just like it. Verhulst put a brake on it. Lotka and Volterra put two populations together, and their interaction term is a product, mass action again.
+The point for us. With thousands of people, counts change smoothly enough to treat as continuous. Then a rate of change is all we need to write down. That is an ordinary differential equation.
 :::
 
 ## Molecules in a box
@@ -162,6 +325,10 @@ Say that infections are a collision between a susceptible and an infectious pers
 ::: {.column width="42%"}
 - **Bernoulli, 1760.** A model to weigh smallpox inoculation against its risk
 - **Hamer, 1906.** Measles waves explained by susceptibles meeting infectious people
+
+$$
+\text{new cases} \propto S \times I
+$$
 :::
 ::: {.column width="58%"}
 ```{ojs}
@@ -248,139 +415,6 @@ Ross wrote the mechanism down first and reasoned from it. He showed malaria coul
 Kermack and McKendrick gave us the model on these slides. Two results: an epidemic only takes off if enough people are susceptible, and it ends with susceptibles left over.
 :::
 
-## Why model an epidemic?
-
-:::: {.columns}
-::: {.column width="38%"}
-- Run the epidemic twice, with and without a change
-- Find the threshold where growth stops
-- Say in advance how big it gets
-:::
-::: {.column width="62%"}
-```{ojs}
-//| echo: false
-rk4 = (f, u0, tmax, dt) => {
-  const out = [{t: 0, u: u0.slice()}];
-  const add = (a, b, s) => a.map((x, i) => x + s * b[i]);
-  let u = u0.slice(), t = 0;
-  while (t < tmax - 1e-9) {
-    const k1 = f(u);
-    const k2 = f(add(u, k1, dt / 2));
-    const k3 = f(add(u, k2, dt / 2));
-    const k4 = f(add(u, k3, dt));
-    u = u.map((x, i) =>
-      x + dt / 6 * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]));
-    t += dt;
-    out.push({t, u});
-  }
-  return out;
-}
-base = ({N: 1000, S0: 990, I0: 10, beta: 0.05, c: 10, gamma: 0.25})
-sirRhs = (p) => ([S, I, R]) => {
-  const lam = p.beta * p.c * I / p.N;
-  return [-lam * S, lam * S - p.gamma * I, p.gamma * I];
-}
-sirRun = (p, tmax = 80, dt = 0.1) =>
-  rk4(sirRhs(p), [p.S0, p.I0, p.N - p.S0 - p.I0], tmax, dt)
-    .map(({t, u}) => ({t, S: u[0], I: u[1], R: u[2]}))
-sirLong = (rows) => rows.flatMap((d) => [
-  {t: d.t, n: d.S, k: "S"}, {t: d.t, n: d.I, k: "I"}, {t: d.t, n: d.R, k: "R"}
-])
-cols = ({S: "#4682b4", I: "#b22222", R: "#2e8b57", E: "#e0a020"})
-axisX = (label, extra = {}) => ({
-  label, labelAnchor: "center", labelOffset: 52, ...extra
-})
-axisY = (label, extra = {}) => ({
-  label, labelAnchor: "top", labelOffset: 40, ...extra
-})
-plotBase = ({
-  width: 1050, height: 580, marginLeft: 90, marginBottom: 70,
-  marginTop: 40, marginRight: 100, insetTop: 30,
-  style: {fontSize: "24px"}
-})
-```
-
-```{ojs}
-//| echo: false
-cut = {
-  while (true) {
-    for (const v of [0, 20, 40, 60]) { yield v; await Promises.delay(2500) }
-  }
-}
-cfRows = [
-  ...sirRun(base, 100).map((d) => ({t: d.t, I: d.I, k: "no change"})),
-  ...(cut === 0 ? [] : sirRun({...base, c: base.c * (1 - cut / 100)}, 100)
-    .map((d) => ({t: d.t, I: d.I, k: `contacts cut by ${cut}%`})))
-]
-Plot.plot({
-  ...plotBase,
-  title: cut === 0 ? "No change. The epidemic runs its course"
-    : cut >= 50 ? `Contacts cut by ${cut}%. It never takes off`
-    : `Contacts cut by ${cut}%. The peak is lower and later`,
-  x: axisX("time (days)", {domain: [0, 100]}),
-  y: axisY("infectious (people)", {domain: [0, 175]}),
-  color: {domain: ["no change", `contacts cut by ${cut}%`],
-    range: ["#888", cols.I]},
-  marks: [
-    Plot.line(cfRows, {x: "t", y: "I", stroke: "k", strokeWidth: 3}),
-    Plot.text(cfRows, Plot.selectMaxY({x: "t", y: "I", z: "k",
-      text: "k", fill: "k", dy: -18}))
-  ]
-})
-```
-
-::: {.attribution}
-The model we build next, with contacts cut from day zero.
-:::
-:::
-::::
-
-::: {.notes}
-This is why. The grey curve is what the model says happens. The red one is the same model with fewer contacts. We cannot run the real epidemic twice, but the model can.
-The animation cuts contacts by 20, 40 then 60 percent. At 60 percent it never takes off. Where that line sits is what the rest of the lecture works out.
-:::
-
-## Why rates of change?
-
-:::: {.columns}
-::: {.column width="42%"}
-- **Newton and Leibniz, 1670s to 1680s.** Calculus. Motion as rates of change
-- **Malthus, 1798.** Populations grow in proportion to their size
-- **Verhulst, 1838.** Growth slows as a population fills its space
-- **Lotka 1925, Volterra 1926.** Two species interact through a product term
-
-$$
-\frac{\mathrm{d}N}{\mathrm{d}t} = r N
-$$
-:::
-::: {.column width="58%"}
-```{ojs}
-//| echo: false
-odeEvents = [
-  {year: 1678, label: "1670s to 80s", who: "Newton, Leibniz"},
-  {year: 1798, label: "1798", who: "Malthus"},
-  {year: 1838, label: "1838", who: "Verhulst"},
-  {year: 1925, label: "1925, 1926", who: "Lotka, Volterra"}
-]
-timeline(odeEvents, 1650, 1950, [1678, 1798, 1838, 1925])
-```
-
-::: {.attribution}
-Large populations change smoothly, so a rate of change is enough. Ours has three parts, each with its own rate.
-Newton, *Principia*, 1687. Leibniz, "Nova methodus pro maximis et minimis", *Acta Eruditorum*, 1684.
-Malthus, *An Essay on the Principle of Population*, 1798 ([Gutenberg](https://www.gutenberg.org/ebooks/4239)).
-Verhulst, "Notice sur la loi que la population suit dans son accroissement", *Corr. Math. Phys.* 10, 1838.
-Lotka, *Elements of Physical Biology*, 1925 ([archive.org](https://archive.org/details/elementsofphysic017171mbp)). Volterra, *Nature* 118, 1926 ([doi](https://doi.org/10.1038/118558a0)).
-:::
-:::
-::::
-
-::: {.notes}
-Why differential equations at all. Calculus gave us a language for how things change moment by moment.
-Malthus applied it to people. Growth in proportion to size gives an exponential, and the I equation starts out looking just like it. Verhulst put a brake on it. Lotka and Volterra put two populations together, and their interaction term is a product, mass action again.
-The point for us. With thousands of people, counts change smoothly enough to treat as continuous. Then a rate of change is all we need to write down. That is an ordinary differential equation.
-:::
-
 ## Compartments and flows
 
 :::: {.columns}
@@ -444,7 +478,7 @@ Say the assumptions once. Nobody is born, nobody dies, nobody comes back from R.
 - Each of those transmits with probability $\beta$
 
 ::: {.sub}
-The force of infection $\lambda$: the rate at which one susceptible gets infected, a chance per day.
+The force of infection $\lambda$: how fast one susceptible gets infected. A rate, not a chance: over a tiny interval $\mathrm{d}t$ the chance is $\lambda\,\mathrm{d}t$.
 :::
 
 $$
@@ -495,6 +529,130 @@ One blue person, ten contacts today. The animation raises prevalence first, so m
 Lambda is the product of the three. It is a rate per susceptible per day. It changes over time because I changes.
 :::
 
+## Molecules again, with three kinds
+
+:::: {.columns}
+::: {.column width="36%"}
+- Follow one blue dot, a susceptible
+- It bumps into every kind of dot
+- Only bumps with red ones count
+- Its rate of infection is its bump rate times the red share, times $\beta$
+
+$$
+\lambda = \beta \, c \, \frac{I}{N}
+$$
+:::
+::: {.column width="64%"}
+```{ojs}
+//| echo: false
+{
+  const W = 1000, H = 520, r = 10, v = 1.25, win = 6000, hold = 9000;
+  const canvas = DOM.canvas(W, H);
+  const ctx = canvas.getContext("2d");
+  const col = {S: cols.S, I: cols.I, R: cols.R};
+  const phases = [{nI: 5, nR: 25}, {nI: 15, nR: 15}, {nI: 30, nR: 0}];
+  const nOther = 30;
+  while (true) {
+    for (const {nI, nR} of phases) {
+      const kinds = ["S", ...Array(nOther).fill("S"), ...Array(nI).fill("I"),
+        ...Array(nR).fill("R")];
+      const n = kinds.length;
+      const dots = kinds.map((k, i) => {
+        const th = Math.random() * 2 * Math.PI;
+        return {
+          x: r + Math.random() * (W - 2 * r),
+          y: r + Math.random() * (H - 2 * r),
+          vx: Math.cos(th), vy: Math.sin(th), k, hero: i === 0
+        };
+      });
+      const touching = new Set();
+      const hitsI = [], hitsOther = [];
+      const flashes = [];
+      const t0 = performance.now();
+      while (performance.now() - t0 < hold) {
+        const now = performance.now();
+        for (const d of dots) {
+          d.x += d.vx * v;
+          d.y += d.vy * v;
+          if (d.x < r) { d.x = r; d.vx = -d.vx; }
+          if (d.x > W - r) { d.x = W - r; d.vx = -d.vx; }
+          if (d.y < r) { d.y = r; d.vy = -d.vy; }
+          if (d.y > H - r) { d.y = H - r; d.vy = -d.vy; }
+        }
+        const h = dots[0];
+        for (let j = 1; j < n; j++) {
+          const dx = h.x - dots[j].x, dy = h.y - dots[j].y;
+          const close = dx * dx + dy * dy < 4 * r * r;
+          if (close && !touching.has(j)) {
+            touching.add(j);
+            if (dots[j].k === "I") {
+              hitsI.push(now);
+              flashes.push({x: (h.x + dots[j].x) / 2, y: (h.y + dots[j].y) / 2,
+                t: now});
+            } else {
+              hitsOther.push(now);
+            }
+          } else if (!close) {
+            touching.delete(j);
+          }
+        }
+        while (hitsI.length && now - hitsI[0] > win) hitsI.shift();
+        while (hitsOther.length && now - hitsOther[0] > win) hitsOther.shift();
+        while (flashes.length && now - flashes[0].t > 400) flashes.shift();
+        ctx.fillStyle = "#f4f6f8";
+        ctx.fillRect(0, 0, W, H);
+        ctx.strokeStyle = "#999";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "#e0a020";
+        for (const f of flashes) {
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, 2 * r + (now - f.t) / 25, 0, 2 * Math.PI);
+          ctx.stroke();
+        }
+        for (const d of dots) {
+          ctx.beginPath();
+          ctx.arc(d.x, d.y, d.hero ? 1.6 * r : r, 0, 2 * Math.PI);
+          ctx.fillStyle = col[d.k];
+          ctx.fill();
+          if (d.hero) {
+            ctx.lineWidth = 4; ctx.strokeStyle = "#17242b"; ctx.stroke();
+          }
+        }
+        const secs = Math.max(0.5, Math.min(win, now - t0) / 1000);
+        const share = nI / (n - 1);
+        ctx.fillStyle = "rgba(255,255,255,0.85)";
+        ctx.fillRect(1, 1, W - 2, 46);
+        ctx.fillStyle = "#17242b";
+        ctx.font = "26px sans-serif";
+        ctx.textBaseline = "top";
+        ctx.textAlign = "left";
+        ctx.fillText(
+          `the blue dot: ${(hitsI.length / secs).toFixed(2)} bumps with red per s, ` +
+          `${(hitsOther.length / secs).toFixed(2)} with others`, 16, 12);
+        ctx.textAlign = "right";
+        ctx.fillText(`red share I/N = ${nI} / ${n - 1} = ${share.toFixed(2)}`,
+          W - 16, 12);
+        yield canvas;
+      }
+    }
+  }
+}
+```
+
+::: {.attribution}
+One susceptible (outlined), 30 other susceptibles, and red and green dots whose numbers change: 5 and 25, then 15 and 15, then 30 and 0. Total contacts stay the same. Only the red share moves the infection rate.
+:::
+:::
+::::
+
+::: {.notes}
+Back to the box, now with three kinds of dot. Watch the outlined blue one.
+Its total bump rate barely changes across the phases: that is c. What changes is how many of its bumps are with red: the share I over N.
+Multiply by the chance a red bump passes it on, beta, and you have lambda. Same picture as the wheel on the last slide, seen as collisions.
+:::
+
 ## The S equation
 
 :::: {.columns}
@@ -505,6 +663,10 @@ Lambda is the product of the three. It is a rate per susceptible per day. It cha
 $$
 \frac{\mathrm{d}S}{\mathrm{d}t} = -\lambda S = -\beta c \,\frac{I}{N}\, S
 $$
+
+::: {.sub}
+$\mathrm{d}S/\mathrm{d}t$: how fast $S$ changes, in people per day.
+:::
 :::
 ::: {.column width="62%"}
 ```{ojs}
@@ -545,7 +707,7 @@ The curve comes from the whole model; we are only reading the S part.
 
 :::: {.columns}
 ::: {.column width="38%"}
-- Each infectious person recovers at rate $\gamma$
+- Each infectious person recovers at rate $\gamma$: over a tiny $\mathrm{d}t$, chance $\gamma\,\mathrm{d}t$
 - So the time infectious is exponential: most short, a few long
 - Mean $1/\gamma$ days
 
