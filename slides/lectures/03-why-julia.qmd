@@ -1,0 +1,202 @@
+---
+title: "Why Julia? Day 1 in review, Day 2 in prospect"
+engine: markdown
+format:
+  revealjs:
+    width: 1920
+    height: 1080
+    center: true
+    css: lectures.css
+    link-external-newwindow: true
+    code-copy: false
+    code-line-numbers: false
+---
+
+## Where we got to
+
+Yesterday you built, from scratch:
+
+- an **SIR model**, derived from its assumptions rather than quoted
+- the same model as a **discrete-time** recursion
+- $R_0$, the epidemic threshold, the peak, the final size
+- a working Julia toolchain: REPL, environments, VS Code, Quarto
+
+That is a real day's work, and none of it needed Julia.
+
+::: {.notes}
+Open by conceding the point rather than defending it. Everything yesterday could
+have been done in R, Python or MATLAB, and most of the room has done exactly that
+before. Say so plainly — it buys credibility for the rest of the session.
+:::
+
+## An honest accounting
+
+We made five claims for Julia yesterday. We **demonstrated none of them**.
+
+| We said | You actually saw |
+|---|---|
+| Julia is fast | one ODE solved in milliseconds |
+| Multiple dispatch makes code modular | `solve` called on one problem type |
+| Macros let you rewrite code | the word "macro" |
+| Automatic differentiation is built in | nothing |
+| The modelling ecosystem is rich | one solver and a `for` loop |
+
+::: {.notes}
+Put this table up and leave it up. Read the right-hand column aloud; it is
+deliberately unflattering. Anyone who came in sceptical is currently correct, and
+naming that is more persuasive than another round of assertion.
+
+Today is not more claims. Each row gets paid off by a specific session, and by
+this evening you can check the receipts.
+:::
+
+## Claim 1 — "Julia is fast"
+
+Yesterday: one ODE, solved faster than you could notice. So what?
+
+Speed only matters when you need the **same model run thousands of times**:
+
+- **Session 1** — stochastic jump processes. One realisation tells you nothing;
+  you need hundreds to see a distribution.
+- **Session 3** — a parameter sweep over a Latin hypercube design, hundreds of
+  solves, then sensitivity indices on top.
+
+The question is not "is one solve fast" but "can you afford the study you
+actually want".
+
+::: {.notes}
+This is the honest version of the speed argument. Benchmarks of a single ODE
+solve are close to meaningless — every language solves a three-compartment model
+instantly. What changes the science is whether an ensemble of a thousand runs is
+a coffee break or an overnight job, because that determines which questions you
+are willing to ask.
+:::
+
+## Claim 2 — "Multiple dispatch makes code modular"
+
+Yesterday you called `solve` exactly once, on an `ODEProblem`.
+
+Today the same verb takes entirely different mathematics:
+
+```julia
+solve(ODEProblem(...),  Tsit5())        # deterministic, continuous
+solve(SDEProblem(...),  LambaEM())      # stochastic, continuous
+solve(JumpProblem(...), SSAStepper())   # stochastic, discrete events
+```
+
+Same function, same mental model, three different kinds of process — and none of
+these were written to know about the others.
+
+::: {.notes}
+The payoff is not that it looks tidy. It is that what you learn about the solver
+interface transfers: saveat, callbacks, tolerances, ensembles all behave the same
+way across problem types you have never used.
+
+Sessions 1 and 2 use all three of these, and session 4 adds an optimisation
+problem to the list.
+:::
+
+## Claim 3 — "Macros let you rewrite code"
+
+Yesterday: the word, and nothing behind it.
+
+Today you write the *model* rather than its equations:
+
+```julia
+sir = @reaction_network begin
+    κ, S + I --> 2I
+    γ, I --> R
+end
+```
+
+Two lines of chemistry. The macro turns them into whichever system you ask for.
+
+::: {.notes}
+Worth being precise about what a macro is doing here: it is reading that block as
+syntax, before anything runs, and generating the stoichiometry and rate laws from
+it. You are not calling a function that parses a string — the code itself is the
+input.
+
+Session 2. Point out that this is also the moment the model stops being a
+right-hand-side function you hand-differentiate and starts being an object other
+tools can analyse.
+:::
+
+## Claim 4 — "Automatic differentiation is built in"
+
+Yesterday: mentioned, never used.
+
+Today, in session 3: how sensitive is the epidemic peak to each parameter?
+
+- Not a finite difference, with a step size to agonise over
+- The **variational equations**, solved alongside the model
+- Exact derivatives, to solver tolerance
+
+The same machinery underlies fitting models to data, which is where most of you
+will meet it again.
+
+::: {.notes}
+If anyone has spent an afternoon tuning a finite-difference step, this is the
+slide that lands. Too large and you measure curvature, too small and you measure
+floating-point noise; autodiff removes the dial entirely.
+
+Session 3 also shows where the derivative stops being enough, which is the more
+interesting half of the story.
+:::
+
+## Claim 5 — "The ecosystem is rich"
+
+Yesterday: a solver and a `for` loop. Available anywhere.
+
+Today, from that *same* two-line network:
+
+- an **ODE** system, an **SDE** system, a **jump** process — no rewriting
+- equations for the **mean and variance** directly, without simulating
+- the **full probability distribution** over states, including the chance the
+  outbreak dies out
+
+::: {.notes}
+This is the claim that is hardest to demonstrate and most worth demonstrating,
+because it is not about any one package. It is that the packages compose: Catalyst
+hands its network to the solvers, to MomentClosure, and to the finite state
+projection, none of which were written with the others in mind.
+
+The extinction probability is the one to dwell on. No amount of ODE work gives it
+to you, and it is exactly the quantity a public health question often turns on.
+:::
+
+## Today, and which promise it pays
+
+| Session | Topic | Pays off |
+|---|---|---|
+| 1 | Jump processes | speed, dispatch |
+| 2 | Reaction networks and moment closure | macros, ecosystem, dispatch |
+| 3 | Sensitivity and identifiability | autodiff, speed |
+| 4 | Interventions and optimization | dispatch, ecosystem |
+
+::: {.notes}
+Keep this short — it is a map, not a lecture. The one thing to say aloud is that
+sessions 2 and 3 are the crux: session 2 is where one specification turns into
+five different models, and session 3 is where you find out that two of the
+parameters cannot be told apart no matter how good your data is.
+:::
+
+## The thing to watch for
+
+By this evening, ask yourself of each session:
+
+> Could I have done that as easily in the language I came here using?
+
+For yesterday, the honest answer is **yes**.
+
+If it is still yes tonight, Julia has not earned its place in your work — and
+that is a perfectly reasonable conclusion to reach.
+
+::: {.notes}
+End on this rather than a sales pitch. Inviting the negative verdict is what makes
+the positive one worth anything, and it also sets the right standard: a tool
+earns its keep by enabling work you would not otherwise attempt, not by being
+pleasant.
+
+Then go straight into session 1.
+:::

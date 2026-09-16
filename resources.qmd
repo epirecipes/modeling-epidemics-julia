@@ -51,6 +51,13 @@ The **Pluto preview** is a saved copy of the notebook: it shows the model at its
 
 ## Day 2
 
+### Why Julia? — Day 2 opening recap
+
+A short recap of Day 1, revisiting the claims made for Julia and mapping each to
+the session that demonstrates it.
+
+- [Slides](slides/lectures/03-why-julia.html)
+
 ### Continuous-time Markov chains and jump processes — Day 2, Session 1
 
 - [Book](chapters/05-jump-processes.html)
