@@ -60,6 +60,7 @@ book:
     - appendices/05-symbolic-analysis.qmd
     - appendices/cheat-sheet.qmd
     - appendices/solutions.qmd
+    - appendices/worksheet-solutions.qmd
     - references.qmd
 
 engines: [julia]

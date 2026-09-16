@@ -1,0 +1,240 @@
+## Ordinary differential equations — Day 1, Session 3
+
+Worksheet: `worksheets/chapters/03-ordinary-differential-equations.qmd`. The
+chapter is [Ordinary differential
+equations](../chapters/03-ordinary-differential-equations.qmd).
+
+```{julia}
+#| label: ws-ch03-setup
+using OrdinaryDiffEq
+using DiffEqCallbacks
+using CairoMakie
+
+check(name, condition) =
+    println(condition ? "✓ $name" : "✗ $name — not right yet, see the hint")
+
+function sir_ode!(du, u, p, t)
+    S, I, R = u
+    λ = p.β * p.c * I / p.N
+    du[1] = -λ * S
+    du[2] = λ * S - p.γ * I
+    du[3] = p.γ * I
+    return nothing
+end
+
+u0    = [990.0, 10.0, 0.0]
+p     = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
+tspan = (0.0, 80.0)
+tt    = 0.0:0.25:80.0
+
+sol = solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5(); reltol = 1e-8, abstol = 1e-8)
+
+println("peak infectious: ", round(maximum(sol(t)[2] for t in tt), digits = 1))
+println("final size (R at day 80): ", round(sol(80.0)[3], digits = 1))
+```
+
+### Part A — a vaccination pulse
+
+```{julia}
+#| label: ws-ch03-a1
+t_vax = 10.0     # day of the campaign
+f_vax = 0.30     # fraction of susceptibles reached
+vaccinated = Float64[]     # record of how many the campaign reached
+
+function vaccinate!(integrator)
+    moved = f_vax * integrator.u[1]
+    integrator.u[1] -= moved
+    integrator.u[3] += moved
+    push!(vaccinated, moved)
+end
+
+vax_cb  = PresetTimeCallback([t_vax], vaccinate!)
+sol_vax = solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5();
+                callback = vax_cb, reltol = 1e-8, abstol = 1e-8)
+
+# R now holds recovered and vaccinated people alike, so the number ever infected
+# is no longer just R(80) — subtract the people the campaign put there.
+ever_infected = sol_vax(80.0)[3] - sum(vaccinated)
+baseline_infected = sol(80.0)[3]
+peak_vax = maximum(sol_vax(t)[2] for t in tt)
+peak_base = maximum(sol(t)[2] for t in tt)
+
+check("population still conserved",
+      all(u -> isapprox(sum(u), 1000.0; atol = 1e-6), sol_vax.u))
+check("the campaign moved people out of S", sum(vaccinated) > 1.0)
+check("the peak is lower", peak_vax < 0.8 * peak_base)
+check("fewer people were ever infected", ever_infected < baseline_infected - 50)
+
+(; vaccinated = round(sum(vaccinated); digits = 1),
+   peak_base = round(peak_base; digits = 1), peak_vax = round(peak_vax; digits = 1),
+   ever_infected = round(ever_infected; digits = 1),
+   baseline_infected = round(baseline_infected; digits = 1))
+```
+
+#### A1. Interpret
+
+- The campaign reaches about 246 people on day 10. The peak falls from about 158
+  to about 91, and the number ever infected from about 800 to about 498.
+- $R(80)$ alone would have said 744 against a baseline of 800 — an improvement,
+  but badly understated, and for a campaign late in the epidemic it flips sign
+  and appears to make things *worse*.
+- After a campaign $R$ no longer means "people who have been infected". It holds
+  the recovered and the vaccinated together, answering "how many are immune now",
+  and only the first of those measures burden. Subtracting `sum(vaccinated)`
+  separates them again.
+- A count rather than a rate shows as a step: the callback fires once, so $S$ and
+  $R$ jump vertically at day 10 while $I$ is untouched at that instant, leaving no
+  jump in the infectious curve.
+- There is a corner, though. With $\mathrm{d}I/\mathrm{d}t = \lambda S - \gamma I$
+  and $S$ down by 246, the growth rate drops from about 13.7 to about 3.2 people
+  per day. It does not go negative — $S = 574$ is still above $N/R_0 = 500$ — so
+  $I$ keeps rising for three more days and peaks on day 13 instead of day 17.5.
+- A rate would have bent all three curves gradually, with no corner anywhere.
+  Taking `moved` out of `u[1]` and adding the same quantity to `u[3]` is what
+  keeps the population constant, and the conservation check is what confirms
+  it.
+
+```{julia}
+#| label: fig-ws-ch03-vax
+#| fig-cap: "Infectious curve with and without a vaccination pulse on day 10."
+fig = Figure(size = (720, 400))
+ax  = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "infectious I(t)")
+vlines!(ax, [t_vax]; color = :black, linestyle = :dot, label = "campaign")
+lines!(ax, tt, [sol(t)[2] for t in tt]; color = :firebrick, linewidth = 3,
+       label = "no vaccination")
+lines!(ax, tt, [sol_vax(t)[2] for t in tt]; color = :seagreen, linewidth = 3,
+       linestyle = :dash, label = "vaccination on day $(Int(t_vax))")
+axislegend(ax; position = :rt)
+fig
+```
+
+### Part B — when should the campaign happen?
+
+```{julia}
+#| label: ws-ch03-b1
+function ever_infected_with_vaccination(day)
+    moved_by_campaign = Float64[]
+    affect!(integrator) = begin
+        moved = f_vax * integrator.u[1]
+        integrator.u[1] -= moved
+        integrator.u[3] += moved
+        push!(moved_by_campaign, moved)
+    end
+    s = solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5();
+              callback = PresetTimeCallback([day], affect!),
+              reltol = 1e-8, abstol = 1e-8)
+    return s(80.0)[3] - sum(moved_by_campaign)
+end
+
+campaign_days = [5.0, 20.0, 40.0]
+
+for d in campaign_days
+    println("campaign on day $d → $(round(ever_infected_with_vaccination(d), digits = 1)) ever infected")
+end
+
+check("three days tried", length(campaign_days) == 3)
+```
+
+#### B1. Interpret
+
+- Day 5 is much the best: about 414 people ever infected, against about 708 for
+  day 20 and about 796 for day 40 — the last barely better than the 800 with no
+  campaign at all.
+- The same 30% coverage protects a different number each time, because it is 30%
+  *of whoever is still susceptible*. On day 5 that is almost the whole
+  population, so the campaign removes a large block of fuel before the epidemic
+  accelerates; by day 40 most people have already been infected, and those still
+  susceptible were unlikely to be infected in the time remaining.
+- Beyond protecting individuals, removing susceptibles early lowers the force of
+  infection for everyone left behind, so each vaccination also prevents further
+  infections indirectly. That is why acting early buys more than the difference
+  in doses delivered would suggest.
+
+### Part C — a lockdown that triggers itself
+
+```{julia}
+#| label: ws-ch03-c1
+capacity = 100.0
+trigger_day = Float64[]
+
+capacity_condition(u, t, integrator) = u[2] - capacity
+
+function impose_restrictions!(integrator)
+    integrator.p = merge(integrator.p, (β = 0.02,))     # β drops
+    push!(trigger_day, integrator.t)
+end
+
+# the third argument, `nothing`, means "fire on the way up only"
+cap_cb  = ContinuousCallback(capacity_condition, impose_restrictions!, nothing)
+sol_cap = solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5();
+                callback = cap_cb, reltol = 1e-8, abstol = 1e-8)
+
+check("the trigger fired", !isempty(trigger_day))
+check("restrictions kept I near capacity",
+      maximum(sol_cap(t)[2] for t in tt) < 1.1 * capacity)
+
+isempty(trigger_day) || println("restrictions imposed on day ",
+                                round(trigger_day[1], digits = 2))
+```
+
+#### C1. Interpret
+
+- The trigger fires on day 11.0 and the infectious curve tops out at almost
+  exactly the capacity of 100.
+- The scheduled campaign in Part A requires knowing *when* to act, and so
+  requires knowing in advance how the epidemic will unfold. The triggered
+  lockdown watches instead, and needs a reliable, timely measurement of $I(t)$ — in
+  practice the harder requirement, since surveillance reports cases late and
+  incompletely. The observation-model session makes that gap explicit.
+- The largest value of $I$ sits exactly at the trigger, not at a smooth top.
+  Restrictions cut $\beta$ to $0.02$, which at $S = 782$ gives
+  $\beta c S / N = 0.156$ against $\gamma = 0.25$, so $\mathrm{d}I/\mathrm{d}t$
+  jumps straight from positive to about $-9.4$.
+- $I$ stays continuous but its slope does not, so the curve turns a corner rather
+  than arching over, and root-finding on $\mathrm{d}I/\mathrm{d}t = 0$ would find
+  nothing. Whenever a parameter switches mid-run, the switching times matter as
+  much as the callback's own events.
+- Lifting the restrictions with `affect_neg!`, the third positional argument, does
+  not work at this threshold. Imposing restrictions turns $I$ downward *at the
+  same value of $I = 100$ that triggered them*, so the release condition is met
+  at the root the solver has just handled; it does not re-detect an event it has
+  just processed, and the restrictions never come off. The run above shows one
+  event at day 11 and no release for the remaining 69 days.
+
+The fix is **hysteresis**: two thresholds, plus a record of whether restrictions
+are currently active. It imposes at $I = 100$, releases lower at $I = 60$, and
+lets the condition watch whichever threshold currently applies.
+
+```{julia}
+#| label: ws-ch03-c2
+restrictions_on = Ref(false)
+policy_log = Tuple{Float64,Symbol}[]
+
+# watch 100 while free, 60 while locked down
+hysteresis_condition(u, t, integrator) =
+    restrictions_on[] ? u[2] - 60.0 : u[2] - 100.0
+
+function toggle_restrictions!(integrator)
+    restrictions_on[] = !restrictions_on[]
+    integrator.p = merge(integrator.p, (β = restrictions_on[] ? 0.02 : 0.05,))
+    push!(policy_log, (integrator.t, restrictions_on[] ? :impose : :release))
+end
+
+sol_hyst = solve(ODEProblem(sir_ode!, u0, tspan, p), Tsit5();
+                 callback = ContinuousCallback(hysteresis_condition, toggle_restrictions!),
+                 reltol = 1e-8, abstol = 1e-8)
+
+check("restrictions were imposed and then lifted", length(policy_log) == 2)
+check("I never exceeded capacity",
+      maximum(sol_hyst(t)[2] for t in tt) < 1.01 * capacity)
+
+[(round(t; digits = 2), what) for (t, what) in policy_log]
+```
+
+- Restrictions go on at day 11.0 and come off at day 16.1, once prevalence has
+  fallen to 60.
+- The gap between the two thresholds is what stops the policy switching on and
+  off repeatedly at a single value, and the `Ref` is what lets the condition
+  remember which phase it is in.
+- The epidemic does not return to 100 after release: by day 16 enough
+  susceptibles have been infected that it cannot regrow that far.

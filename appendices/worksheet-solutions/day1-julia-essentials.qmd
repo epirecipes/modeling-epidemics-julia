@@ -1,0 +1,214 @@
+## Julia essentials for modelers — Day 1, Session 1
+
+Worksheet: `worksheets/prerequisites/01-julia-essentials.qmd`. The chapter is
+[Julia essentials for modelers](../prerequisites/01-julia-essentials.qmd).
+
+```{julia}
+#| label: ws-p01-setup
+using CairoMakie
+using StableRNGs
+
+check(name, condition) =
+    println(condition ? "✓ $name" : "✗ $name — not right yet, see the hint")
+
+println("Julia version: ", VERSION)
+```
+
+### Part A — writing a model kernel
+
+```{julia}
+#| label: ws-p01-a1
+p  = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
+u0 = [990.0, 10.0, 0.0]      # S, I, R
+
+function sir_ode!(du, u, p, t)
+    S, I, R = u
+    λ = p.β * p.c * I / p.N        # force of infection, λ = βcI/N
+    du[1] = -λ * S                 # dS/dt
+    du[2] = λ * S - p.γ * I        # dI/dt
+    du[3] = p.γ * I                # dR/dt
+    return nothing
+end
+
+du = zeros(3)
+sir_ode!(du, u0, p, 0.0)
+
+check("dI/dt is 2.45 at the baseline", isapprox(du[2], 2.45; atol = 1e-9))
+check("dR/dt is 2.50 at the baseline", isapprox(du[3], 2.50; atol = 1e-9))
+check("nobody is created or destroyed",
+      any(!iszero, du) && isapprox(sum(du), 0.0; atol = 1e-12))
+du
+```
+
+#### A1. Interpret
+
+- At the starting state $\lambda = 0.005$ per day, giving derivatives
+  $(-4.95,\; 2.45,\; 2.50)$. They sum to zero: the 4.95 people per day leaving
+  $S$ arrive in $I$, and 2.50 per day move on to $R$, so $I$ nets
+  $4.95 - 2.50 = 2.45$.
+- The exact numbers carry the weight here, not the shape of the answer. Both
+  rates are positive and a sum does not care about order, so the $I$ and $R$
+  lines written the wrong way round would pass a sign check and the conservation
+  check alike. That is why every later unit validates against a number the theory
+  fixes in advance.
+
+**Why `du[2] = ...` rather than `du = [...]`**
+
+- `du[2] = ...` writes into the array the caller already made, so the caller sees
+  the change. `du = [...]` points the local name at a new array and leaves the
+  caller's untouched, so the function appears to do nothing.
+- Experiment 1 shows it: `x` is still `[1.0, 2.0, 3.0]` after `build_new_array`
+  and `[10.0, 2.0, 3.0]` after `write_into_array!`. Both return `nothing`, and
+  both lines are legal Julia, so the difference never surfaces as an error.
+- A solver calls the kernel thousands of times; allocating a fresh three-element
+  array each call leaves the garbage collector cleaning up work that never
+  needed doing.
+
+**Where the answer went**
+
+- `return nothing` is literal. In experiment 2 `returned` is `nothing`, while
+  `du_trial` has gone from three `NaN`s to `[-4.95, 2.45, 2.5]`.
+- Julia passes arguments by sharing, so the `du` inside the function and the `du`
+  outside are two names for one array. The trailing `!` is the convention that
+  marks an argument as being modified.
+
+**`p.β` versus `p[1]`**
+
+- Positional access encodes the *order* of the parameters into every line that
+  uses them. In experiment 3, `p.β` gives `0.05` from both tuples, while `p[1]`
+  gives `0.05` from one and `1000.0`, the population size, from the other.
+- Nothing errors, and every answer downstream is wrong. `p.β` either finds the
+  field or raises an error immediately, which is the difference between a silent
+  failure and a loud one.
+
+### Part B — the same calculation over a whole grid
+
+```{julia}
+#| label: ws-p01-b1
+rate_to_proportion(r, δt) = -expm1(-r * δt)   # numerically stable 1 - exp(-r δt)
+
+δts = 0.0:0.25:10.0
+γ   = 0.25      # the session's recovery rate, per day
+
+linear = γ .* δts    # the shortcut, elementwise — note the dot on the `*`
+probs  = rate_to_proportion.(γ, δts)
+
+check("one value of each for every δt",
+      length(probs) == length(δts) && length(linear) == length(δts))
+check("every probability stays between 0 and 1",
+      !isempty(probs) && all(0 .<= probs .<= 1))
+check("the shortcut escapes [0, 1]", !isempty(linear) && maximum(linear) > 1)
+check("the two agree when δt is small",
+      length(probs) > 1 && length(linear) > 1 &&
+      isapprox(probs[2], linear[2]; rtol = 0.05))
+```
+
+```{julia}
+#| label: fig-ws-p01-rate
+#| fig-cap: "Probability of at least one event in a window of width δt at rate γ = 0.25, against the linear shortcut γ δt."
+fig = Figure(size = (720, 400))
+ax  = Axis(fig[1, 1]; xlabel = "window width δt (days)", ylabel = "probability")
+hlines!(ax, [1.0]; color = :black, linestyle = :dash, label = "probability = 1")
+lines!(ax, δts, linear; color = :firebrick, linewidth = 3, label = "shortcut γ δt")
+lines!(ax, δts, probs; color = :seagreen, linewidth = 3, label = "1 - exp(-γ δt)")
+axislegend(ax; position = :rb)
+ylims!(ax, 0, 2.6)
+fig
+```
+
+#### B1. Interpret
+
+- The two are nearly indistinguishable while $\gamma\,\delta t$ is small:
+  $0.0606$ against $0.0625$ at $\delta t = 0.25$ (3% high), $0.221$ against
+  $0.250$ at $\delta t = 1$ (13%), $0.393$ against $0.500$ at $\delta t = 2$
+  (27%), where they are visibly different curves.
+- The shortcut reaches 1 at $\delta t = 4$ and 2.5 by the right-hand edge of the
+  plot, while the exact probability flattens towards 1, reaching $0.918$.
+- The product $\gamma\,\delta t$ is not a probability. It is the rate accumulated
+  over the window, the cumulative hazard. With a constant rate the probability of
+  *not* recovering is $e^{-\gamma\,\delta t}$, so the probability of recovering
+  is its complement $1 - e^{-\gamma\,\delta t}$, which cannot leave $[0, 1]$.
+- In a discrete-time model this has consequences. Once $\gamma\,\delta t$
+  exceeds 1, using it as a transition probability can remove more people from a
+  compartment than it holds and push it below zero. The exact conversion stays
+  inside $[0, 1]$ at any step width, and a small enough step keeps the shortcut
+  close to it. The discrete-time session returns to this.
+
+### Part C — random numbers you can reproduce
+
+```{julia}
+#| label: ws-p01-c1
+λ0 = p.β * p.c * u0[2] / p.N          # force of infection at the start
+p_infect = rate_to_proportion(λ0, 1.0)
+
+# An RNG produces a stream of numbers. Recreating it with the same
+# seed restarts that stream from the beginning.
+rng_demo = StableRNG(2024)
+
+first_five = rand(rng_demo, 5)
+next_five  = rand(rng_demo, 5)
+
+first_five_again = rand(StableRNG(2024), 5)
+
+check("the same seed replays the same stream", first_five == first_five_again)
+check("drawing from an RNG advances its stream", first_five != next_five)
+
+function infected_today(rng, n_susceptible, p_infect)
+    draws = rand(rng, n_susceptible)
+    return count(draws .< p_infect)
+end
+
+today = infected_today(StableRNG(1), 990, p_infect)
+println("of 990 susceptibles, ", today, " are infected today")
+
+# One million independent trials, to check that their long-run
+# frequency approaches p_infect.
+fraction = infected_today(StableRNG(2), 1_000_000, p_infect) / 1_000_000
+check("the observed fraction matches the probability",
+      isapprox(fraction, p_infect; rtol = 0.05))
+(; p_infect, fraction, today)
+```
+
+#### C1. Interpret
+
+- With $\lambda = 0.005$ per day a given susceptible is infected today with
+  probability $1 - e^{-0.005} = 0.004988$, so the expected count across 990
+  susceptibles is about 4.9. `StableRNG(1)` happens to give 3.
+- Seeds 1 to 12 give 3, 3, 7, 8, 7, 6, 0, 3, 5, 3, 5, 5 — from none at all to
+  more than one and a half times the mean. The spread is roughly the square root
+  of the mean, so at these counts the day-to-day variation is comparable to the
+  signal.
+- A day with no new infections is uncommon but not startling: it happens with
+  probability $(1 - p)^{990} \approx 0.007$, about one day in 140. Seed 7 landing
+  on it in a sample of twelve is luck.
+- The million-draw check recovers the probability to within half a percent, so
+  the machinery is right and the variation is real randomness rather than a bug.
+
+**Against the deterministic answer**
+
+- Part A's corresponding quantity is the flow *into* $I$, $\lambda S = 4.95$ per
+  day. That is `du[1]` with its sign flipped, not `du[2] = 2.45`, which is the
+  *net* change in $I$ after recoveries.
+- The simulation's mean is $990 \times 0.004988 = 4.938$. The two agree to first
+  order because $1 - e^{-x} \approx x$ for small $x$, and they would separate as
+  the hazard or the window grew.
+- Neither average says how far a single realisation strays from it. With counts
+  this small an outbreak started from a handful of cases can die out entirely,
+  which no deterministic model started from the same state will predict. The
+  jump-process session makes this concrete.
+
+**Local versus default generators**
+
+- The generator `rand` reaches for when none is named is shared state for the
+  running task. Every draw anywhere advances it, so a result depends on how much
+  random work happened *before* the function ran: a line added elsewhere, or two
+  cells reordered, changes the numbers.
+- Passing an explicit `rng` makes that dependence visible and controllable. It
+  does not make the function repeat itself: an RNG is mutable and
+  drawing from it moves it along, which is why `next_five` differs from
+  `first_five` even though both came out of the seeded `rng_demo`.
+- Only a freshly seeded generator replays the stream, so the cells above build a
+  new `StableRNG(1)` and `StableRNG(2)` at each call site rather than reusing one.
+- `StableRNGs` adds the last piece: its stream is fixed across Julia versions and
+  platforms, whereas the built-in generator may legitimately change between
+  releases.

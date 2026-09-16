@@ -1,0 +1,279 @@
+## Foundations: SIR theory and the Julia workflow — Day 1, Session 2
+
+Worksheet: `worksheets/chapters/01-foundations.qmd`. The chapter is
+[Foundations](../chapters/01-foundations.qmd).
+
+```{julia}
+#| label: ws-ch01-setup
+using OrdinaryDiffEq
+using NonlinearSolve
+using CairoMakie
+
+check(name, condition) =
+    println(condition ? "✓ $name" : "✗ $name — not right yet, see the hint")
+
+function sir_ode!(du, u, p, t)
+    S, I, R = u
+    λ = p.β * p.c * I / p.N
+    du[1] = -λ * S
+    du[2] = λ * S - p.γ * I
+    du[3] = p.γ * I
+    return nothing
+end
+
+u0    = [990.0, 10.0, 0.0]                          # S(0), I(0), R(0)
+p     = (β = 0.05, c = 10.0, γ = 0.25, N = 1000.0)
+tspan = (0.0, 80.0)
+
+println("kernel ready; R₀ = ", p.β * p.c / p.γ)
+```
+
+### Part A — solve it, then read the answer
+
+```{julia}
+#| label: ws-ch01-a1
+prob = ODEProblem(sir_ode!, u0, tspan, p)
+sol  = solve(prob, Tsit5(); saveat = 0.5)
+
+check("the solver ran", sol.retcode == ReturnCode.Success)
+check("it stored one state every half day", length(sol.t) == 161)
+
+sol.u[end]
+```
+
+The kernel goes in by name: `sir_ode!`, not `sir_ode!(...)`. The solver calls it
+thousands of times with its own arguments, so what it needs is the function
+itself.
+
+```{julia}
+#| label: ws-ch01-a2
+t = sol.t
+S = sol[1, :]
+I = sol[2, :]
+R = sol[3, :]
+
+check("one value of I per stored time", length(I) == length(t))
+check("the epidemic took off", maximum(I) > u0[2])
+check("nobody is created or destroyed",
+      all(u -> isapprox(sum(u), p.N; atol = 1e-6), sol.u))
+
+println("peak infectious: ", round(maximum(I), digits = 1),
+        " on day ", round(t[argmax(I)], digits = 1))
+println("largest conservation error: ", maximum(abs(sum(u) - p.N) for u in sol.u))
+```
+
+```{julia}
+#| label: fig-ws-ch01-sir
+#| fig-cap: "Baseline SIR epidemic: susceptible, infectious and recovered over 80 days."
+fig = Figure(size = (720, 400))
+ax  = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "number of individuals")
+lines!(ax, t, S; color = :steelblue, linewidth = 3, label = "S")
+lines!(ax, t, I; color = :firebrick, linewidth = 3, label = "I")
+lines!(ax, t, R; color = :seagreen, linewidth = 3, label = "R")
+axislegend(ax; position = :rc)
+fig
+```
+
+#### A1. Interpret
+
+- `lines!` needs a plain list of numbers, one per time, which is what
+  `sol[2, :]` gives. `sol.u` is a vector of 161 *state vectors*, so its first
+  element is `[990.0, 10.0, 0.0]`, not a number. Both hold the same data:
+  `sol.u` slices it by time, `sol[i, :]` by compartment.
+- The conservation error is arithmetic, not modelling. `Tsit5` combines several
+  derivative evaluations per step with floating-point weights, and the rounding
+  does not cancel, so $S + I + R$ drifts from $N$ by order $10^{-13}$ people over
+  80 days — a few parts in $10^{16}$ of $N$, the floor set by double precision.
+- The cell prints the largest drift rather than quoting a figure, because the
+  exact value moves with the solver, its tolerances and the package versions.
+- The check's $10^{-6}$ tolerance is six orders of magnitude looser than that
+  floor: it is there to catch a mistyped equation, not to measure the solver.
+  Tightening `reltol`/`abstol` shrinks the discretisation error but not the
+  rounding floor.
+- Conservation holds because it is a property of the equations, not something the
+  code enforces. The three right-hand sides sum to zero by construction, since
+  every flow leaves one compartment and enters another, and a quantity with zero
+  derivative does not change. A typo in `du[2]` almost always breaks it.
+
+### Part B — the threshold, and when nothing happens
+
+```{julia}
+#| label: ws-ch01-b1
+R₀ = p.β * p.c / p.γ
+
+peak_index = argmax(I)
+S_over_N_at_peak = S[peak_index] / p.N
+
+check("R₀ is 2 for the baseline", isapprox(R₀, 2.0; atol = 1e-9))
+check("the peak sits on the threshold",
+      isapprox(S_over_N_at_peak, 1 / R₀; rtol = 0.01))   # 1% relative
+
+(R₀ = R₀, threshold = 1 / R₀, S_over_N_at_peak = S_over_N_at_peak)
+```
+
+- The susceptible fraction at the peak lands on $0.5 = 1/R_0$ within tolerance.
+  It is inexact only because the solution was stored every half day, so `argmax`
+  finds the largest *stored* value; the ordinary differential equations session
+  locates the peak exactly with a callback.
+- The equality describes a run that grows before it turns over, here
+  $R_0 S(0)/N = 1.98$. The $c = 4$ run below has no such crossing: $I$ falls from
+  day zero, its largest stored value is $I(0)$, and $S/N$ there is $0.99$.
+
+```{julia}
+#| label: ws-ch01-b2
+contact_rates = [4.0, 6.0, 8.0, 10.0]
+results = map(contact_rates) do c_val
+    p_c = merge(p, (c = c_val,))
+    s   = solve(ODEProblem(sir_ode!, u0, tspan, p_c), Tsit5(); saveat = 0.5)
+    (c = c_val,
+     R₀ = round(p_c.β * p_c.c / p_c.γ; digits = 2),
+     peak_I = round(maximum(s[2, :]); digits = 1),
+     infected_by_80 = round(1 - s[1, end] / p_c.N; digits = 3))   # no longer susceptible
+end
+
+check("each run used its own contact rate",
+      length(unique(r.R₀ for r in results)) == 4)
+check("c = 4 gives R₀ below 1", results[1].R₀ < 1)
+check("prevalence does not grow at c = 4", results[1].peak_I <= u0[2])
+check("the day-80 total climbs with contact rate",
+      let a = [r.infected_by_80 for r in results]; issorted(a) && allunique(a) end)
+
+results
+```
+
+```{julia}
+#| label: fig-ws-ch01-threshold
+#| fig-cap: "Infectious curves across contact rates. Below c ≈ 5.05 the initial infections fade without an epidemic: with 99% susceptible at the start, growth needs R₀S(0)/N > 1, which is a little more than R₀ > 1."
+fig2 = Figure(size = (720, 400))
+ax2  = Axis(fig2[1, 1]; xlabel = "time (days)", ylabel = "infectious I(t)",
+            title = "Contact rate and the epidemic threshold")
+for c_val in contact_rates
+    s = solve(ODEProblem(sir_ode!, u0, tspan, merge(p, (c = c_val,))), Tsit5();
+              saveat = 0.5)
+    lines!(ax2, s.t, s[2, :]; linewidth = 3, label = "c = $(Int(c_val))")
+end
+axislegend(ax2; position = :rt)
+fig2
+```
+
+#### B1. Interpret
+
+- At $c = 4$ the ten initial infectious people do infect others before they
+  recover, so the attack rate is not zero. What is missing is *growth*: each
+  infection produces fewer than one further infection, so each generation is
+  smaller and the chain dies out. "No epidemic" means no self-sustaining
+  transmission, not no transmission — and early case counts look similar either
+  way, so what separates them is the trend, not the level.
+- $R_0 = 1$ at $c = 5$, but that is the threshold for a *fully* susceptible
+  population. With 1% already infectious, prevalence grows only when
+  $R_0 S(0)/N > 1$, needing $c > \gamma/(\beta s_0) \approx 5.05$ where
+  $s_0 = 0.99$. At $c = 5$ the product is $0.99$ and $I$ declines from day zero.
+- The threshold depends on how many remain susceptible, not on how many are
+  currently infectious. So a falling case count and a controlled epidemic are
+  different claims: a fall caused by using up susceptibles holds as long as $S/N$
+  stays below the $1/R_0$ that returns when control ends, while a fall bought by
+  control can reverse, because the susceptibles it protected are still there.
+  Case counts alone do not separate the two.
+- The steepest gains are near $R_0 = 1$. Between $c = 4$ and $c = 6$ the day-80
+  total moves from 4.5% to 32.7%; the same step from $c = 8$ to $c = 10$ moves it
+  from 65% to 80%, and adding $c = 20$ reaches 98%, so doubling transmission from
+  the baseline buys only 18 more points.
+- Final size is not the whole story. Over that same $c = 8$ to $c = 10$ range the
+  *peak* goes from 88 to 158, and the peak is what determines whether hospitals
+  cope. Cutting $c$ from 10 to 8 leaves $R_0$ at 1.6, well above 1, yet spares
+  about 15% of the population an infection while nearly halving the peak. An
+  intervention too weak to reach the threshold still changes the picture, and a
+  decision usually rests on both numbers.
+
+::: {.callout-note}
+The column is `infected_by_80`, computed as $1 - S(80)/N$, rather than
+`attack_rate`, and the distinction is not cosmetic.
+
+- It counts everyone no longer susceptible at day 80, whether recovered or still
+  infectious. $R(80)/N$ would miss the ones still infectious, which matters
+  exactly when the epidemic has not finished.
+- At $c = 6$ the three numbers separate: $R(80)/N = 0.321$, infected by day 80 is
+  $0.327$, and the eventual attack rate is $0.348$. At $c = 10$ the epidemic is
+  over by day 80 and all three agree to three figures.
+- Part C computes the final size directly, without simulating.
+:::
+
+### Part C — the final size, without simulating
+
+```{julia}
+#| label: ws-ch01-c1
+s₀ = u0[1] / p.N
+
+residual(s, R0) = s - s₀ * exp(-R0 * (1 - s))
+fs_prob = NonlinearProblem(residual, 0.2, R₀)
+
+s_inf = solve(fs_prob, NewtonRaphson()).u
+attack_rate = 1 - s_inf
+
+check("s∞ is a fraction, smaller than s₀", 0 < s_inf < s₀)
+check("it really is a root", isapprox(residual(s_inf, R₀), 0.0; atol = 1e-8))
+
+sol_long = solve(ODEProblem(sir_ode!, u0, (0.0, 400.0), p), Tsit5();
+                 reltol = 1e-10, abstol = 1e-10, save_everystep = false)
+simulated = sol_long.u[end][1] / p.N
+
+check("analytic and simulated agree", isapprox(s_inf, simulated; atol = 1e-3))
+
+(s_infinity = round(s_inf; digits = 4),
+ simulated = round(simulated; digits = 4),
+ attack_rate = round(attack_rate; digits = 4))
+```
+
+The starting guess is not a free choice: the equation has a second root above 1,
+and a large guess such as $0.9$ converges to that one.
+
+```{julia}
+#| label: ws-ch01-c2
+turning_point = 1 - log(s₀ * R₀) / R₀
+
+for guess in (0.2, 0.65, turning_point, 0.9)
+    s = solve(NonlinearProblem(residual, guess, R₀), NewtonRaphson())
+    println("guess ", rpad(round(guess; digits = 4), 8),
+            " value ", rpad(round(s.u; digits = 6), 10),
+            " residual ", rpad(round(residual(s.u, R₀); digits = 6), 10),
+            " ", s.retcode)
+end
+```
+
+- The residual turns over at $s = 1 - \ln(s_0 R_0)/R_0 \approx 0.658$, which is
+  what puts two roots there. That explains why there are two roots, not which
+  guess ends at which one.
+- Starting exactly on the turning point shows the difference: the slope is zero,
+  Newton's first step is undefined, and the solve fails instead of reaching
+  either root — the value returned is the guess itself, with a residual of $0.16$.
+- The value and the residual are what identify a root. The return code is a
+  useful signal alongside them, though which code a failure produces can change
+  between package versions, which makes it a weak thing to build a check
+  around.
+- Both converged values solve the equation, but only one can be a susceptible
+  fraction: $s_\infty = 1.010$ would mean more people finished susceptible than
+  started. That is why the worksheet checks $0 < s_\infty < s_0$, a stronger test
+  than `retcode = Success`, which the root above 1 earns too. Deciding which root
+  is the epidemic is the modeller's job, not the solver's.
+
+#### C1. Interpret
+
+- The epidemic ran out of *infectious people*, not susceptible ones. Once enough
+  of the population sits in $R$, the susceptible fraction drops below $1/R_0$ and
+  every infection produces less than one replacement, so prevalence falls even
+  though 20% could still in principle be infected.
+- It overshoots first — transmission does not stop the instant $S/N$ crosses
+  $1/R_0$, because a large infectious pool is still working through — and then
+  stops well before everyone is reached. The remaining susceptibles are protected
+  by the immunity around them, not by anything about themselves.
+- The final-size relation collapses $\beta$, $c$ and $\gamma$ into
+  $R_0 = \beta c/\gamma$, so any parameter set with the same $R_0$ gives the same
+  total. What it discards is *time*.
+- Doubling $\beta c$ and $\gamma$ together leaves $R_0$ and the initial state
+  alone, so the epidemic traces the same path through $(S, I, R)$ and reaches the
+  same peak of 158, but on day 8.8 instead of day 17.5. The wave is narrower, not
+  taller: rescaling the rates rescales the clock.
+- A wave half as long is a different problem for a health service than one twice
+  as long with the same crest, and the final-size relation is silent about both.
+  It answers "how many, in the end", not "how fast, and how bad at once", which
+  is usually the operational question.
