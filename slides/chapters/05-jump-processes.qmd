@@ -98,7 +98,7 @@ The propensities are rates, not probabilities.  The waiting time is continuous
 even though the state changes by integer increments.
 :::
 
-## A visible Julia kernel
+## A visible Julia kernel {.smaller}
 
 ```{julia}
 using Random, StableRNGs
@@ -128,9 +128,10 @@ The state update is the stoichiometric change vector in code.  The local
 StableRNG makes the result reproducible without relying on global state.
 :::
 
-## One path, and the ODE through it
+## One path, and the ODE through it {.center .smaller}
 
 ```{julia}
+#| echo: false
 #| label: fig-slide-ch04-path
 #| fig-cap: "One exact CTMC path (steps) against the mean-field ODE (dashed)."
 using CairoMakie, OrdinaryDiffEq
@@ -150,7 +151,7 @@ grid = collect(0.0:0.2:40.0)
 ode = Array(solve(ODEProblem(sir_drift!, [990.0, 10.0, 0.0], (0.0, 40.0),
     (0.05*10/1000, 0.25)), Tsit5(); saveat = grid))
 
-fig = Figure(size = (900, 380))
+fig = Figure(size = (880, 320))
 ax = Axis(fig[1, 1], xlabel = "time (days)", ylabel = "people",
     title = "$(length(path.times)-1) events, peak I = $(maximum(states[2, :]))")
 for (j, (name, col)) in enumerate(zip(["S", "I", "R"],
@@ -201,7 +202,7 @@ the variance decomposition in the last session all live on this slide. Nobody
 needs the probability prerequisite for it.
 :::
 
-## From model to package API
+## From model to package API {.smaller}
 
 The same reaction structure, in current SciML packages, executed here:
 
@@ -236,9 +237,10 @@ also records stoichiometry explicitly, which is what lets the same object become
 an ODE, an SDE, or a jump model later in the course.
 :::
 
-## Twenty paths and the ODE
+## Twenty paths and the ODE {.center .smaller}
 
 ```{julia}
+#| echo: false
 #| label: fig-slide-ch04-ensemble
 #| fig-cap: "Twenty CTMC paths of infectious prevalence with the mean-field ODE."
 using Statistics

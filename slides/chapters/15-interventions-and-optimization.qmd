@@ -84,9 +84,15 @@ This is a deterministic, continuous-time, continuous-state, population model.
 The control is a population-level coefficient, not an individual simulation.
 :::
 
-## A callback defines one policy
+## A callback defines one policy {.center .smaller}
+
+```julia
+affect!(integrator) = (integrator.p[4] = integrator.t < stop ? reduction : 0.0)
+cb = PresetTimeCallback([start, stop], affect!)
+```
 
 ```{julia}
+#| echo: false
 #| label: fig-slide-ch11-scenario
 #| fig-cap: "A callback-defined policy compared with no intervention."
 using CairoMakie
@@ -115,7 +121,7 @@ none11 = solve(ODEProblem(policy11!, u011, (0.0, 45.0),
     [β11, c11, γ11, 0.0, N11]), Tsit5(); saveat = grid11)
 policy11 = scenario11(8.0)
 a11, b11 = Array(none11), Array(policy11)
-fig11 = Figure(size = (820, 600))
+fig11 = Figure(size = (820, 430))
 ax11a = Axis(fig11[1, 1], xlabel = "time", ylabel = "infectious")
 lines!(ax11a, grid11, a11[2, :], label = "none")
 lines!(ax11a, policy11.t, b11[2, :], label = "50% reduction")
@@ -158,14 +164,15 @@ ODE solve. `solve` is the same verb as for an ODEProblem: a different problem
 type selects a different method.
 :::
 
-## The grid confirms the optimizer
+## The grid confirms the optimizer {.center .smaller}
 
 ```{julia}
+#| echo: false
 #| label: fig-slide-ch11-objective
 #| fig-cap: "Final cumulative incidence across admissible intervention starts, with the optimizer's answer marked."
 starts11 = collect(0.0:1.0:25.0)
 values11 = [Array(scenario11(t))[4, end] for t in starts11]
-fig11o = Figure(size = (780, 400))
+fig11o = Figure(size = (780, 320))
 ax11o = Axis(fig11o[1, 1], xlabel = "start time", ylabel = "C(45)")
 lines!(ax11o, starts11, values11, color = :darkorange)
 scatter!(ax11o, [starts11[argmin(values11)]],

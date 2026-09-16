@@ -44,7 +44,7 @@ session. Point back to it explicitly: the pair $(V,a)$ was already the model, we
 were just writing it out by hand each time.
 :::
 
-## The same network, three solvers
+## The same network, three solvers {.smaller}
 
 ```{julia}
 #| label: slide-ch06-lowerings
