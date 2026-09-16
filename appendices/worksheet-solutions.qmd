@@ -1,0 +1,17 @@
+# Worksheet solutions
+
+These are the worked worksheets from the live sessions, not the numbered chapter
+exercises. The two sets ask different questions on purpose: the chapter exercises
+in [Appendix G](solutions.qmd) are reading-and-study material, while the
+worksheets are what participants fill in during a session. Each part below keeps
+the worksheet's code and condenses the written answers to the points that matter.
+
+Day 1 is covered here; Day 2 and Day 3 will follow.
+
+{{< include worksheet-solutions/day1-julia-essentials.qmd >}}
+
+{{< include worksheet-solutions/day1-foundations.qmd >}}
+
+{{< include worksheet-solutions/day1-ordinary-differential-equations.qmd >}}
+
+{{< include worksheet-solutions/day1-discrete-time-models.qmd >}}
