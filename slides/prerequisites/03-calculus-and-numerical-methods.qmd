@@ -109,5 +109,5 @@ learners to try the midpoint method in the notebook to see order 2.
 ## Learn more
 
 - Book chapter: [Calculus and numerical methods](../../prerequisites/03-calculus-and-numerical-methods.html)
-- Pluto notebook: [`03-calculus-and-numerical-methods.jl`](../../notebooks/prerequisites/03-calculus-and-numerical-methods.pluto.jl)
+- Pluto notebook: [`03-calculus-and-numerical-methods.pluto.jl`](../../notebooks/prerequisites/03-calculus-and-numerical-methods.pluto.jl)
 - [OrdinaryDiffEq solvers](https://docs.sciml.ai/OrdinaryDiffEq/stable/)
