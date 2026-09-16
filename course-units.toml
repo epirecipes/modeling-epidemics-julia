@@ -207,7 +207,7 @@ day = 2
 session = 3
 time_minutes = 90
 environment = "root"
-packages = ["SciMLSensitivity", "GlobalSensitivity", "StructuralIdentifiability", "ModelingToolkit", "CairoMakie"]
+packages = ["SciMLSensitivity", "GlobalSensitivity", "StructuralIdentifiability", "ModelingToolkit", "CairoMakie", "QuasiMonteCarlo"]
 sources = ["../sir-julia/tutorials/ode_local_sensitivity/ode_local_sensitivity.jmd", "../sir-julia/tutorials/ode_global_sensitivity2/ode_global_sensitivity2.jmd", "../sir-julia/tutorials/ode_identifiability/ode_identifiability.jmd"]
 
 [[units]]
