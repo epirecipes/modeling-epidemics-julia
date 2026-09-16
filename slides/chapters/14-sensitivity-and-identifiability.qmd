@@ -145,6 +145,60 @@ derivative is not an uncertainty interval and not a posterior; a large derivativ
 means a parameter matters, not that we know it badly.
 :::
 
+## Where the derivatives come from
+
+The augmented system solves the model and its Jacobian together. Differentiating
+$\dot x = f(x,\theta)$ with respect to $\theta$ gives the **variational
+equations**
+
+$$
+\frac{\mathrm d}{\mathrm dt}\frac{\partial x}{\partial\theta}
+= \frac{\partial f}{\partial x}\,\frac{\partial x}{\partial\theta}
++ \frac{\partial f}{\partial\theta},
+$$
+
+solved alongside the states rather than by re-running the model.
+
+- **Forward** (`ODEForwardSensitivityProblem`): cost grows with the number of
+  *parameters*. Good here — three of them.
+- **Adjoint**: cost grows with the number of *outputs*. Use it when fitting a
+  neural component or a model with hundreds of parameters.
+
+::: {.notes}
+Six minutes. The distinction is worth drawing on the board as two rectangles: forward
+solves one extra trajectory per parameter, adjoint solves one extra backwards pass per
+output. With three parameters and a whole trajectory as output, forward wins easily;
+invert those numbers and it reverses.
+
+Stress that this is not a finite difference. There is no perturbation size to choose and
+no cancellation to worry about, which is exactly why the agreement check later matters:
+it confirms the finite difference we plotted was fine, not that the library was.
+:::
+
+## A derivative is not an uncertainty
+
+Three things the left-hand panel cannot tell you:
+
+- **Not an interval.** A large $\partial I/\partial\beta$ says $I$ moves when
+  $\beta$ moves — not that $\beta$ is poorly known.
+- **Not global.** It holds near $\theta_0$. The sign of every curve flips after
+  the peak, because raising transmission moves the epidemic *earlier* as well as
+  higher.
+- **Not identifiability.** $\beta$ and $c$ have perfectly good, large
+  derivatives, and are still impossible to separate.
+
+::: {.notes}
+Four minutes, and it is the slide people misremember most often. Say the third bullet
+twice: sensitivity and identifiability are routinely conflated, and the rest of the
+session is built on keeping them apart. A parameter can be highly influential and
+completely unidentifiable at the same time — beta and c are the proof, sitting right
+there in the previous figure.
+
+The sign flip is worth pausing on too, because it looks like a bug the first time you
+see it. Late in the window a larger beta means fewer people still infectious, since the
+epidemic has already burned through.
+:::
+
 ## Global variation: sharing out the variance
 
 Vary all three parameters across a plausible box and ask how much of the
@@ -222,6 +276,61 @@ worksheet repeats this at 32 and shows the indices are unstable, even negative,
 when the sample is too small.
 :::
 
+## The design is part of the answer
+
+Sobol indices are estimates, and small designs lie:
+
+| samples | $S_1$ for $c$ |
+|---|---|
+| 32 | ≈ 0.19 |
+| 16384 | ≈ 0.26 |
+
+Two further choices that silently enter every sample:
+
+- **The box.** Widen the bounds and the ranking can change. The indices are
+  conditional on ranges you chose.
+- **The output definition.** The peak is read from dense output on a sub-daily
+  grid: the daily grid gives $158.09$ at day 18, the continuous peak $158.45$
+  near $t=17.5$. A discretisation artefact would enter every evaluation.
+
+::: {.notes}
+Seven minutes. The table is the part to dwell on, because it is a live trap. At 32
+samples the indices are not merely imprecise, they can come out negative, which is
+impossible for a variance share and is the clearest possible sign the design is too
+small. The worksheet has them reproduce that.
+
+The output-definition point sounds pedantic until you notice it applies to every sample
+in the design, not just the baseline. A quarter of a person is nothing; a systematic
+quarter of a person, sampled the same wrong way thousands of times, becomes a bias in
+the variance attribution rather than noise that averages out.
+:::
+
+## What Sobol assumes
+
+$$
+\operatorname{Var}(z)=\sum_i V_i+\sum_{i<j}V_{ij}+\dots
+$$
+
+The decomposition requires the inputs to be **independent**, and we sampled them
+as independent uniforms over the box.
+
+But the model only ever uses $k=\beta c$. Sampling $\beta$ and $c$ independently
+factorises a single quantity into two artificial ones, so their separate bars are
+an artefact of that choice — their relative size follows from the two box widths.
+
+**Sobol answers**: which input *ranges* drive the spread in this output.
+**Sobol does not answer**: which parameters could be *estimated*.
+
+::: {.notes}
+Six minutes, and this is the hinge of the whole session. Everything so far has been
+about variation; everything after is about information. The bridge is that beta and c
+have separate Sobol bars and yet no data could ever separate them.
+
+If someone asks whether correlated sampling would fix it: it changes the numbers but not
+the problem, because the confounding is structural. You cannot sample your way out of a
+model that only contains the product.
+:::
+
 ## The observation map
 
 Only incidence is observed:
@@ -256,6 +365,107 @@ the equations alone.
 Contrast with the beta-c case above, which no amount of external knowledge about
 population size repairs. There you need contact data or an independently
 measured c.
+:::
+
+## Proving it, not arguing it
+
+The symmetry argument generalises badly by hand. `StructuralIdentifiability`
+settles it with differential algebra — on a **symbolic** model, where `~` records
+an equation and nothing is solved:
+
+```{julia}
+#| label: ch14-structural
+using ModelingToolkit
+using StructuralIdentifiability
+
+@parameters b c g
+@independent_variables t
+@variables S(t) I(t) R(t) y(t)
+D = Differential(t)
+
+sys = ODESystem([D(S) ~ -b*c*S*I,
+                 D(I) ~  b*c*S*I - g*I,
+                 D(R) ~  g*I], t; name = :SIRIdentifiability)
+
+Logging.disable_logging(Logging.Info)
+result = assess_identifiability(sys;
+    measured_quantities = [y ~ b*c*S*I],
+    funcs_to_check = [b, c, g, b*c])
+Logging.disable_logging(Logging.BelowMinLevel)
+result
+```
+
+`b` and `c` come back **nonidentifiable**; `b*c` and `g` are **globally
+identifiable**.
+
+::: {.notes}
+Eight minutes. The key conceptual move is that this model object is not the `sir10!`
+function we have been solving. `@parameters` makes symbols, not numbers, and the tilde
+records a relationship rather than assigning a value. Because it stays symbolic, the
+package reasons about every trajectory at once, not about one numerical solution.
+
+`funcs_to_check` is what makes the result useful rather than merely discouraging. Asking
+only about `b` and `c` returns two "nonidentifiable" verdicts and nothing actionable;
+asking additionally about the product tells you precisely what the data *can* pin down.
+That is the quantity to report, and the quantity to put a prior on.
+
+If it is slow to appear, say why: this compiles for tens of seconds on a cold session,
+which is why it is rendered here rather than typed live.
+:::
+
+## What background knowledge can and cannot buy
+
+Two confoundings that look alike and behave differently:
+
+| | Observed | Fixed by knowing the initial state? |
+|---|---|---|
+| $(\beta,c)\mapsto(a\beta,\,c/a)$ | $y=\beta cSI/N$ | **No** |
+| $(\rho,\beta c)$ | $y=\rho C(t)$ | **Yes** |
+
+The reporting fraction is rescued because declaring $S(0),I(0),R(0),C(0)$ breaks
+the scaling symmetry. The $\beta$–$c$ confounding is not, because
+$(\beta,c)\mapsto(a\beta,c/a)$ leaves **every trajectory** unchanged — there is
+nothing left for an initial condition to pin down.
+
+Without `known_ic`, `assess_identifiability` treats initial conditions as generic
+unknowns, which is the stricter question.
+
+::: {.notes}
+Seven minutes, and the contrast is the most useful thing in the session for anyone who
+fits models. Both are "two parameters we cannot separate", and the fixes are completely
+different: one needs an assumption you already hold, the other needs new measurement —
+contact data, or a c measured independently.
+
+Be precise about the wording: "the initial state", not "the population size". The
+worksheet marks all four initial values known, which is a stronger assumption than
+knowing N alone, and the distinction matters if anyone tries to reproduce it.
+
+No optimiser repairs the second row. If the information is absent from the observation
+map, a confident-looking estimate is an artefact of the prior or of the stopping rule.
+:::
+
+## Three questions, three tools
+
+| Question | Tool | Depends on |
+|---|---|---|
+| How does the output move *here*? | local sensitivity | one $\theta_0$ |
+| What drives the *spread* over a range? | Sobol indices | the box, the design |
+| What can the data *distinguish at all*? | structural identifiability | the observation map |
+
+$\beta$ and $c$ run through all three: a 200-fold spurious gap in raw
+derivatives, two separate Sobol bars, and provably inseparable.
+
+Only the third question is about the data.
+
+::: {.notes}
+Five minutes. Draw the thread explicitly, because it is the spine of the session and the
+thing worth remembering a year later. The same pair of parameters looked dramatically
+different, then merely different, then identical — and only the last verdict is a fact
+about what the data contain. The first two were facts about units and about sampling
+choices we made.
+
+Ask the room which of the three they have seen reported in a paper without the third. It
+is usually all of them.
 :::
 
 ## API and validation

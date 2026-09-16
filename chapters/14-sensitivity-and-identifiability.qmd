@@ -22,6 +22,8 @@ By the end of this chapter you should be able to:
 
 - distinguish local sensitivity analysis, global sensitivity analysis, and
   structural identifiability analysis;
+- run a Latin hypercube parameter sweep with an `EnsembleProblem`, and read
+  both sensitivity and confounding directly off the resulting trajectories;
 - compute local state sensitivities with the current
   [SciMLSensitivity.jl API](https://docs.sciml.ai/SciMLSensitivity/stable/);
 - use a small Sobol analysis with
@@ -118,6 +120,138 @@ function sir_kernel!(du, u, p, t)
     return nothing
 end
 ```
+
+### The direct approach: sweep and look
+
+Before any of the machinery below, there is an approach that needs no theory at
+all: choose parameter sets, run the model for each, and look at what comes out.
+It is the most computationally expensive method in this chapter and the most
+honest starting point, because it commits to nothing about the model's structure.
+
+Sampling a box on a regular grid scales badly — three parameters at ten levels is
+already a thousand runs, and most of them differ from a neighbour in only one
+coordinate. A **Latin hypercube** spreads the design more evenly: each parameter's
+range is divided into $n$ equiprobable strata and sampled once per stratum, so
+every one-dimensional projection is covered uniformly with $n$ points rather than
+$n^{1/3}$.
+
+```{julia}
+#| label: code-ch14-design
+using QuasiMonteCarlo
+using StableRNGs
+using Statistics
+
+lower = [0.02, 5.0, 0.15]     # β, c, γ
+upper = [0.08, 15.0, 0.40]
+n_samples = 200
+
+# The design is random, so it carries a seed: an unseeded sweep would change
+# every figure and every number below on each render.
+design = QuasiMonteCarlo.sample(n_samples, lower, upper,
+                                LatinHypercubeSample(StableRNG(20250916)))
+(size = size(design), first_three = round.(design[:, 1:3]; digits = 3))
+```
+
+`design` is a $3\times n$ matrix, one column per parameter set. `EnsembleProblem`
+runs the same model once per column. The `prob_func` receives a context object
+carrying the trajectory index in `sim_id`, and `remake` swaps in that column's
+parameters.
+
+```{julia}
+#| label: code-ch14-ensemble
+base_problem = ODEProblem(sir_kernel!, u0, (0.0, 40.0), p0)
+ensemble_problem = EnsembleProblem(
+    base_problem;
+    prob_func = (prob, ctx) -> remake(prob, p = design[:, ctx.sim_id]),
+)
+ensemble = solve(
+    ensemble_problem,
+    Tsit5();
+    trajectories = n_samples,
+    saveat = tgrid,
+    abstol = 1e-9,
+    reltol = 1e-9,
+)
+(trajectories = length(ensemble.u), saved_times = length(first(ensemble.u).t))
+```
+
+::: {.callout-note appearance="simple"}
+## Three API details
+
+The widely circulated `prob_func = (prob, i, repeat)` signature is out of date:
+in the resolved SciMLBase it is called as `(prob, ctx)` with an
+`EnsembleContext` whose fields are `sim_id`, `repeat`, `worker_id`, `sim_seed`,
+`rng` and `master_rng`. Iterating an `EnsembleSolution` flattens it, so the
+trajectories are `ensemble.u`, not `ensemble` itself. And the ensemble algorithm
+argument is omitted here because `EnsembleThreads` is exported by several loaded
+`OrdinaryDiffEq` subpackages and does not resolve unambiguously; the default is
+threaded anyway.
+:::
+
+Now summarise each run by a scalar and ask which inputs move it.
+
+```{julia}
+#| label: code-ch14-sweep-summary
+peaks = [maximum(solution[2, :]) for solution in ensemble.u]
+β_samples = design[1, :]
+c_samples = design[2, :]
+γ_samples = design[3, :]
+k_samples = β_samples .* c_samples          # the product the model actually uses
+R₀_samples = k_samples ./ γ_samples
+
+(β = round(cor(peaks, β_samples); digits = 3),
+ c = round(cor(peaks, c_samples); digits = 3),
+ βc = round(cor(peaks, k_samples); digits = 3),
+ γ = round(cor(peaks, γ_samples); digits = 3),
+ R₀ = round(cor(peaks, R₀_samples); digits = 3))
+```
+
+Read those five numbers carefully, because between them they contain both of this
+chapter's themes. Neither $\beta$ nor $c$ predicts the peak well on its own, yet
+their *product* does better than either, and $R_0=\beta c/\gamma$ predicts it
+almost perfectly. The sweep has discovered, with no algebra whatsoever, that the
+model does not depend on $\beta$ and $c$ separately — exactly the confounding that
+@eq-sensitivity-chain derives from the equations and that the structural analysis
+later proves.
+
+```{julia}
+#| label: fig-ch14-sweep
+#| fig-cap: "Two hundred Latin hypercube parameter sets. Left: the resulting prevalence trajectories, coloured by the basic reproduction number. Right: peak prevalence against β alone and against the product βc. Neither β nor c orders the outcomes on its own; the product very nearly does, and R₀ does so almost exactly."
+figure = Figure(size = (940, 380))
+
+axis1 = Axis(figure[1, 1], xlabel = "time", ylabel = "infectious",
+             title = "Trajectories, coloured by R₀")
+palette = cgrad(:viridis)
+R₀_range = extrema(R₀_samples)
+for (k, solution) in enumerate(ensemble.u)
+    shade = (R₀_samples[k] - R₀_range[1]) / (R₀_range[2] - R₀_range[1])
+    lines!(axis1, tgrid, solution[2, :]; color = palette[shade], linewidth = 0.8)
+end
+
+axis2 = Axis(figure[1, 2], xlabel = "parameter value", ylabel = "peak infectious",
+             title = "Peak against β and against βc")
+scatter!(axis2, β_samples ./ maximum(β_samples), peaks; color = (:steelblue, 0.6),
+         markersize = 7, label = "β (scaled)")
+scatter!(axis2, k_samples ./ maximum(k_samples), peaks; color = (:firebrick, 0.6),
+         markersize = 7, label = "βc (scaled)")
+axislegend(axis2; position = :lt, framevisible = false)
+Colorbar(figure[1, 3]; colormap = :viridis, limits = R₀_range, label = "R₀")
+figure
+```
+
+The left panel is the sensitivity result: the spread of outcomes across the box is
+large, and it is organised almost entirely by a single derived quantity. The right
+panel is the identifiability result: the blue cloud shows that fixing $\beta$
+leaves the peak largely undetermined, while the red points collapse towards a
+curve.
+
+What this costs is the point. Two hundred solves bought a qualitative picture and
+one scalar summary. A local derivative gives the same information near one
+parameter vector for the price of a single augmented solve; Sobol indices
+apportion the variance properly for a few thousand; and the structural question —
+whether $\beta$ and $c$ could *ever* be separated — is answered exactly, in
+seconds, by symbolic algebra. The rest of the chapter is, in effect, a sequence of
+ways to stop paying for this sweep.
 
 ### Local sensitivities
 
