@@ -314,4 +314,4 @@ life expectancy $L$.
 
 - [Slides](../slides/chapters/04-partial-differential-equations.html)
 - [Pluto preview](../notebook-exports/chapters/04-partial-differential-equations.html)
-- [Pluto source](../notebooks/chapters/04-partial-differential-equations.jl)
+- [Pluto source](../notebooks/chapters/04-partial-differential-equations.pluto.jl)

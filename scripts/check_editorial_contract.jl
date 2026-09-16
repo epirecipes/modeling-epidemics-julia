@@ -20,7 +20,7 @@ for unit in units
     stem = unit_stem(unit)
     book_path = joinpath(ROOT, section, "$stem.qmd")
     slide_path = joinpath(ROOT, "slides", section, "$stem.qmd")
-    notebook_path = joinpath(ROOT, "notebooks", section, "$stem.jl")
+    notebook_path = joinpath(ROOT, "notebooks", section, "$stem.pluto.jl")
     book = read(book_path, String)
     slide = read(slide_path, String)
     notebook = read(notebook_path, String)

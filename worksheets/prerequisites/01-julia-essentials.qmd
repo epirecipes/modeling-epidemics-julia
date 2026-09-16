@@ -493,7 +493,7 @@ The whole project stays available to you afterwards.
 - [The chapter](../../prerequisites/01-julia-essentials.qmd) — the same material
   worked through in full, plus comprehensions and multiple dispatch, which this
   worksheet leaves out.
-- [The Pluto notebook](../../notebooks/prerequisites/01-julia-essentials.jl) —
+- [The Pluto notebook](../../notebooks/prerequisites/01-julia-essentials.pluto.jl) —
   the same ideas with sliders.
 - The [Julia documentation](https://docs.julialang.org/en/v1/), and its
   [noteworthy differences from R](https://docs.julialang.org/en/v1/manual/noteworthy-differences/#Noteworthy-differences-from-R)

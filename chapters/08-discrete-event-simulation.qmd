@@ -283,4 +283,4 @@ compartmental model of @sec-ordinary-differential-equations.
 
 - [Slides](../slides/chapters/08-discrete-event-simulation.html)
 - [Pluto preview](../notebook-exports/chapters/08-discrete-event-simulation.html)
-- [Pluto source](../notebooks/chapters/08-discrete-event-simulation.jl)
+- [Pluto source](../notebooks/chapters/08-discrete-event-simulation.pluto.jl)

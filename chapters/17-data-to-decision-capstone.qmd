@@ -557,4 +557,4 @@ needed before treating that range as decision uncertainty.
 
 - [Slides](../slides/chapters/17-data-to-decision-capstone.html)
 - [Pluto preview](../notebook-exports/chapters/17-data-to-decision-capstone.html)
-- [Pluto source](../notebooks/chapters/17-data-to-decision-capstone.jl)
+- [Pluto source](../notebooks/chapters/17-data-to-decision-capstone.pluto.jl)

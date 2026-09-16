@@ -323,4 +323,4 @@ of it.
 
 - [Slides](../slides/appendices/05-symbolic-analysis.html)
 - [Pluto preview](../notebook-exports/appendices/05-symbolic-analysis.html)
-- [Pluto source](../notebooks/appendices/05-symbolic-analysis.jl)
+- [Pluto source](../notebooks/appendices/05-symbolic-analysis.pluto.jl)

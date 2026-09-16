@@ -327,4 +327,4 @@ your answer to the bias–variance trade-off.
 
 - [Slides](../slides/appendices/01-universal-differential-equations.html)
 - [Pluto preview](../notebook-exports/appendices/01-universal-differential-equations.html)
-- [Pluto source](../notebooks/appendices/01-universal-differential-equations.jl)
+- [Pluto source](../notebooks/appendices/01-universal-differential-equations.pluto.jl)

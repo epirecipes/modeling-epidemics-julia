@@ -443,7 +443,7 @@ Nothing here is assigned. The whole project stays available to you afterwards.
 - [The chapter](../../chapters/06-stochastic-differential-equations.qmd): the
   Langevin approximation derived from the Poisson counts, and why
   `noise_rate_prototype` is a mathematical statement rather than an API detail.
-- [The Pluto notebook](../../notebooks/chapters/06-stochastic-differential-equations.jl):
+- [The Pluto notebook](../../notebooks/chapters/06-stochastic-differential-equations.pluto.jl):
   sliders over the same model.
 - [Model composition and structured populations](../../appendices/04-model-composition.qmd):
   the self-study unit that takes this construction to multi-group populations.

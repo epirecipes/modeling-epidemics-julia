@@ -494,7 +494,7 @@ Nothing here is assigned. The whole project stays available to you afterwards.
 - [The chapter](../../chapters/11-observation-models.qmd): three ways to get
   daily incidence out of a solver, and why differencing the cumulative state is
   the one to trust.
-- [The Pluto notebook](../../notebooks/chapters/11-observation-models.jl):
+- [The Pluto notebook](../../notebooks/chapters/11-observation-models.pluto.jl):
   sliders for the reporting fraction and the dispersion.
 - [Frequentist parameter estimation](../../chapters/12-parameter-estimation.qmd)
   and [Bayesian inference](../../chapters/13-bayesian-inference.qmd): the

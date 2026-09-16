@@ -1018,4 +1018,4 @@ would count it twice.
 - [Slides](../slides/chapters/09-agent-based-models.html)
 - [Slides: awareness and behaviour](../slides/chapters/09-agent-based-models-awareness.html)
 - [Pluto preview](../notebook-exports/chapters/09-agent-based-models.html)
-- [Pluto source](../notebooks/chapters/09-agent-based-models.jl)
+- [Pluto source](../notebooks/chapters/09-agent-based-models.pluto.jl)

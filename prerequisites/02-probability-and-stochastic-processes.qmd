@@ -311,4 +311,4 @@ steps change the discrete-time dynamics.
 
 - [Slides](../slides/prerequisites/02-probability-and-stochastic-processes.html)
 - [Pluto preview](../notebook-exports/prerequisites/02-probability-and-stochastic-processes.html)
-- [Pluto source](../notebooks/prerequisites/02-probability-and-stochastic-processes.jl)
+- [Pluto source](../notebooks/prerequisites/02-probability-and-stochastic-processes.pluto.jl)

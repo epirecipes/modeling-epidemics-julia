@@ -109,5 +109,5 @@ learners to open the notebook and vary the seed range and step width.
 ## Learn more
 
 - Book chapter: [Probability and stochastic processes](../../prerequisites/02-probability-and-stochastic-processes.html)
-- Pluto notebook: [`02-probability-and-stochastic-processes.jl`](../../notebooks/prerequisites/02-probability-and-stochastic-processes.jl)
+- Pluto notebook: [`02-probability-and-stochastic-processes.pluto.jl`](../../notebooks/prerequisites/02-probability-and-stochastic-processes.pluto.jl)
 - [Distributions.jl](https://juliastats.org/Distributions.jl/stable/)

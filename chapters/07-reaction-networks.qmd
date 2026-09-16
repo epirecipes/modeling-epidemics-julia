@@ -454,4 +454,4 @@ change using the argument after @eq-ch06-unclosed.
 
 - [Slides](../slides/chapters/07-reaction-networks.html)
 - [Pluto preview](../notebook-exports/chapters/07-reaction-networks.html)
-- [Pluto source](../notebooks/chapters/07-reaction-networks.jl)
+- [Pluto source](../notebooks/chapters/07-reaction-networks.pluto.jl)

@@ -302,4 +302,4 @@ about the information the incidence data carry about $\gamma$.
 
 - [Slides](../slides/chapters/12-parameter-estimation.html)
 - [Pluto preview](../notebook-exports/chapters/12-parameter-estimation.html)
-- [Pluto source](../notebooks/chapters/12-parameter-estimation.jl)
+- [Pluto source](../notebooks/chapters/12-parameter-estimation.pluto.jl)

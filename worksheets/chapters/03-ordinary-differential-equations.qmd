@@ -25,7 +25,7 @@ not reaching it is completely fine. Worked solutions are posted at the end of
 each day. Run `git pull` to collect them.
 
 **Prefer sliders to typing?** The
-[Pluto notebook](../../notebooks/chapters/03-ordinary-differential-equations.jl)
+[Pluto notebook](../../notebooks/chapters/03-ordinary-differential-equations.pluto.jl)
 for this chapter lets you drag the lockdown parameters and watch the curve
 respond. Some people find it easier to get the intuition there first and then
 come back here. 
@@ -342,7 +342,7 @@ Nothing here is assigned. The whole project stays available to you afterwards.
 - [The chapter](../../chapters/03-ordinary-differential-equations.qmd) — the
   lockdown example in full, plus dense interpolation `sol(t)` and using
   `ContinuousCallback` to locate a smooth epidemic peak by root-finding.
-- [The Pluto notebook](../../notebooks/chapters/03-ordinary-differential-equations.jl)
+- [The Pluto notebook](../../notebooks/chapters/03-ordinary-differential-equations.pluto.jl)
   — sliders for the lockdown's strength, start day, and duration.
 - The chapter's own exercises, with worked solutions, if you want more practice on
   the material rather than these variations.

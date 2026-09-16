@@ -577,7 +577,7 @@ Nothing here is assigned. The whole project stays available to you afterwards.
 - [The chapter](../../chapters/15-interventions-and-optimization.qmd): the same
   callback and the same four-piece optimisation, with the scenario and
   optimisation layers separated explicitly.
-- [The Pluto notebook](../../notebooks/chapters/15-interventions-and-optimization.jl):
+- [The Pluto notebook](../../notebooks/chapters/15-interventions-and-optimization.pluto.jl):
   sliders over the start time and the reduction.
 - [Advanced optimal control](../../chapters/16-advanced-optimal-control.qmd):
   what replaces a single start time when the decision variable is a whole

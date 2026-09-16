@@ -461,4 +461,4 @@ policy, which is worth noticing rather than reporting as a comparison.
 
 - [Slides](../slides/chapters/15-interventions-and-optimization.html)
 - [Pluto preview](../notebook-exports/chapters/15-interventions-and-optimization.html)
-- [Pluto source](../notebooks/chapters/15-interventions-and-optimization.jl)
+- [Pluto source](../notebooks/chapters/15-interventions-and-optimization.pluto.jl)

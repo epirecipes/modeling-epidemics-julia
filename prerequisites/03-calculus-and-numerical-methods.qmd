@@ -202,4 +202,4 @@ keeps every compartment nonnegative over $[0, 40]$.
 
 - [Slides](../slides/prerequisites/03-calculus-and-numerical-methods.html)
 - [Pluto preview](../notebook-exports/prerequisites/03-calculus-and-numerical-methods.html)
-- [Pluto source](../notebooks/prerequisites/03-calculus-and-numerical-methods.jl)
+- [Pluto source](../notebooks/prerequisites/03-calculus-and-numerical-methods.pluto.jl)

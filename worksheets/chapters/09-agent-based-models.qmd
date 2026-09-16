@@ -763,5 +763,5 @@ Nothing here is assigned. The whole project stays available to you afterwards.
 
 - The next session takes this model and gives the agents something to do about what they can see around them.
 - [The chapter](../../chapters/09-agent-based-models.qmd): the same rules without a space, the ensemble comparison, and the Agents.jl v7 API in full. Exercise 1 derives a reproduction number for the grid model, and Exercise 2 revisits the timestep using a deterministic map in place of replicate runs.
-- [The Pluto notebook](../../notebooks/chapters/09-agent-based-models.jl): sliders over the contact and recovery parameters.
+- [The Pluto notebook](../../notebooks/chapters/09-agent-based-models.pluto.jl): sliders over the contact and recovery parameters.
 - [Jump processes](../../chapters/05-jump-processes.qmd): the continuous-time version of this model, where extinction and the $1/R_0$ argument first appear and no timestep has to be chosen.

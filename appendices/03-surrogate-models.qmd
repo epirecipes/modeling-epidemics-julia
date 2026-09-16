@@ -270,4 +270,4 @@ more training points even though the underlying ODE is smooth.
 
 - [Slides](../slides/appendices/03-surrogate-models.html)
 - [Pluto preview](../notebook-exports/appendices/03-surrogate-models.html)
-- [Pluto source](../notebooks/appendices/03-surrogate-models.jl)
+- [Pluto source](../notebooks/appendices/03-surrogate-models.pluto.jl)

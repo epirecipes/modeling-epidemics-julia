@@ -30,7 +30,7 @@ reaching it is completely fine. Worked solutions are posted at the end of each
 day. Run `git pull` to collect them.
 
 **Prefer sliders to typing?** The
-[Pluto notebook](../../notebooks/chapters/01-foundations.jl) for this chapter
+[Pluto notebook](../../notebooks/chapters/01-foundations.pluto.jl) for this chapter
 lets you drag $\beta$, $c$ and $\gamma$ and watch $R_0$ and the curve respond.
 Some people find the intuition easier there first. Either order is fine.
 
@@ -440,7 +440,7 @@ The whole project stays available to you afterwards.
 - [The chapter](../../chapters/01-foundations.qmd) — the derivation of the SIR
   equations from mass-action transmission, the threshold argument in full, and a
   roadmap of how every later chapter relaxes one of the five assumptions.
-- [The Pluto notebook](../../notebooks/chapters/01-foundations.jl) — sliders for
+- [The Pluto notebook](../../notebooks/chapters/01-foundations.pluto.jl) — sliders for
   $\beta$, $c$ and $\gamma$, with $R_0$ and the final size recomputing as you
   drag.
 - The chapter's own exercises, with worked solutions — Exercise 1 computes the

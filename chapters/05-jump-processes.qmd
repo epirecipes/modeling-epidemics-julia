@@ -410,4 +410,4 @@ jump type or simulation setup.
 
 - [Slides](../slides/chapters/05-jump-processes.html)
 - [Pluto preview](../notebook-exports/chapters/05-jump-processes.html)
-- [Pluto source](../notebooks/chapters/05-jump-processes.jl)
+- [Pluto source](../notebooks/chapters/05-jump-processes.pluto.jl)

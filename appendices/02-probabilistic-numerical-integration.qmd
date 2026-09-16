@@ -265,4 +265,4 @@ estimation.
 
 - [Slides](../slides/appendices/02-probabilistic-numerical-integration.html)
 - [Pluto preview](../notebook-exports/appendices/02-probabilistic-numerical-integration.html)
-- [Pluto source](../notebooks/appendices/02-probabilistic-numerical-integration.jl)
+- [Pluto source](../notebooks/appendices/02-probabilistic-numerical-integration.pluto.jl)
