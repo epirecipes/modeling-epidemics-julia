@@ -56,7 +56,7 @@ because the sensitivity and Sobol APIs index parameters by position. The
 worksheet flags this too.
 :::
 
-## Local sensitivity: a derivative, not an uncertainty interval
+## Local sensitivity: a derivative, not an uncertainty interval {.center .smaller}
 
 For a small perturbation,
 
@@ -72,6 +72,7 @@ $(\theta_j/I)\,\partial I/\partial\theta_j$ is dimensionless and comparable
 across parameters.
 
 ```{julia}
+#| echo: false
 #| label: fig-slide-ch10-local
 #| fig-cap: "Centered local derivatives of infectious prevalence, raw and as dimensionless elasticities."
 using CairoMakie
@@ -103,7 +104,7 @@ for j in 1:3
     minus = copy(p010); minus[j] -= δ
     local10[:, j] = (solve10(plus)[2, :] .- solve10(minus)[2, :]) ./ (2δ)
 end
-fig10 = Figure(size = (980, 380))
+fig10 = Figure(size = (880, 300))
 ax10 = Axis(fig10[1, 1], xlabel = "time", ylabel = "∂I/∂θⱼ",
     title = "Raw: unit-dependent")
 ax10e = Axis(fig10[1, 2], xlabel = "time", ylabel = "(θⱼ/I) ∂I/∂θⱼ",
@@ -145,7 +146,7 @@ derivative is not an uncertainty interval and not a posterior; a large derivativ
 means a parameter matters, not that we know it badly.
 :::
 
-## Where the derivatives come from
+## Where the derivatives come from {.smaller}
 
 The augmented system solves the model and its Jacobian together. Differentiating
 $\dot x = f(x,\theta)$ with respect to $\theta$ gives the **variational
@@ -199,7 +200,7 @@ see it. Late in the window a larger beta means fewer people still infectious, si
 epidemic has already burned through.
 :::
 
-## Global variation: sharing out the variance
+## Global variation: sharing out the variance {.center .smaller}
 
 Vary all three parameters across a plausible box and ask how much of the
 *variance* in peak prevalence each one accounts for:
@@ -211,6 +212,7 @@ $S_T > S_1$ means the parameter matters in combination with others;
 $\sum_i S_1^i < 1$ is the part of the variance no single parameter owns.
 
 ```{julia}
+#| echo: false
 #| label: fig-slide-ch10-global
 #| fig-cap: "One-at-a-time swings and Sobol indices over the same parameter box."
 using GlobalSensitivity
@@ -231,7 +233,7 @@ Logging.disable_logging(Logging.Warn)
 sobol10 = gsa(peak10, Sobol(), boxes10; samples = 500)
 Logging.disable_logging(Logging.BelowMinLevel)
 
-fig10g = Figure(size = (980, 350))
+fig10g = Figure(size = (880, 300))
 ax10a = Axis(fig10g[1, 1], xticks = (1:3, ["β", "c", "γ"]),
     ylabel = "change in peak I", title = "One at a time")
 barplot!(ax10a, 1:3, oat10; color = :grey65)
@@ -276,7 +278,7 @@ worksheet repeats this at 32 and shows the indices are unstable, even negative,
 when the sample is too small.
 :::
 
-## The design is part of the answer
+## The design is part of the answer {.smaller}
 
 Sobol indices are estimates, and small designs lie:
 
@@ -331,7 +333,7 @@ the problem, because the confounding is structural. You cannot sample your way o
 model that only contains the product.
 :::
 
-## The observation map
+## The observation map {.smaller}
 
 Only incidence is observed:
 
@@ -367,7 +369,7 @@ population size repairs. There you need contact data or an independently
 measured c.
 :::
 
-## Proving it, not arguing it
+## Proving it, not arguing it {.smaller}
 
 The symmetry argument generalises badly by hand. `StructuralIdentifiability`
 settles it with differential algebra — on a **symbolic** model, where `~` records
@@ -413,7 +415,7 @@ If it is slow to appear, say why: this compiles for tens of seconds on a cold se
 which is why it is rendered here rather than typed live.
 :::
 
-## What background knowledge can and cannot buy
+## What background knowledge can and cannot buy {.smaller}
 
 Two confoundings that look alike and behave differently:
 
@@ -444,7 +446,7 @@ No optimiser repairs the second row. If the information is absent from the obser
 map, a confident-looking estimate is an artefact of the prior or of the stopping rule.
 :::
 
-## Three questions, three tools
+## Three questions, three tools {.smaller}
 
 | Question | Tool | Depends on |
 |---|---|---|
@@ -468,7 +470,7 @@ Ask the room which of the three they have seen reported in a paper without the t
 is usually all of them.
 :::
 
-## API and validation
+## API and validation {.smaller}
 
 The derivatives above came from finite differences. The library computes them
 directly, by solving the variational equations alongside the model:
