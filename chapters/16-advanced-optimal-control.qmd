@@ -317,4 +317,4 @@ removing susceptibles permanently and suppressing transmission temporarily.
 
 - [Slides](../slides/chapters/16-advanced-optimal-control.html)
 - [Pluto preview](../notebook-exports/chapters/16-advanced-optimal-control.html)
-- [Pluto source](../notebooks/chapters/16-advanced-optimal-control.jl)
+- [Pluto source](../notebooks/chapters/16-advanced-optimal-control.pluto.jl)

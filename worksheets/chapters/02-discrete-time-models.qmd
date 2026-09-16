@@ -30,7 +30,7 @@ reaching it is completely fine. Worked solutions are posted at the end of each
 day. Run `git pull` to collect them.
 
 **Prefer sliders to typing?** The
-[Pluto notebook](../../notebooks/chapters/02-discrete-time-models.jl) for this
+[Pluto notebook](../../notebooks/chapters/02-discrete-time-models.pluto.jl) for this
 chapter lets you drag $\delta t$ and the ensemble size and watch the map and the
 chain separate.
 
@@ -553,7 +553,7 @@ The whole project stays available to you afterwards.
 - [The chapter](../../chapters/02-discrete-time-models.qmd) — the map and the
   binomial chain side by side, and the numerical demonstration that the map
   converges to the ODE at first order.
-- [The Pluto notebook](../../notebooks/chapters/02-discrete-time-models.jl) —
+- [The Pluto notebook](../../notebooks/chapters/02-discrete-time-models.pluto.jl) —
   sliders for the step size and the ensemble.
 - [The probability prerequisite](../../prerequisites/02-probability-and-stochastic-processes.qmd)
   — where $1 - e^{-r\delta t}$ comes from, and what it means for a step to be

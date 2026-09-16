@@ -373,4 +373,4 @@ the period distributions match.
 
 - [Slides](../slides/chapters/10-non-exponential-periods.html)
 - [Pluto preview](../notebook-exports/chapters/10-non-exponential-periods.html)
-- [Pluto source](../notebooks/chapters/10-non-exponential-periods.jl)
+- [Pluto source](../notebooks/chapters/10-non-exponential-periods.pluto.jl)

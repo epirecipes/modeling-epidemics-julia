@@ -325,4 +325,4 @@ choice of `N` and initial counts affects the approximation.
 
 - [Slides](../slides/appendices/04-model-composition.html)
 - [Pluto preview](../notebook-exports/appendices/04-model-composition.html)
-- [Pluto source](../notebooks/appendices/04-model-composition.jl)
+- [Pluto source](../notebooks/appendices/04-model-composition.pluto.jl)

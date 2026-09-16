@@ -544,7 +544,7 @@ Nothing here is assigned. The whole project stays available to you afterwards.
 
 - [The chapter](../../chapters/14-sensitivity-and-identifiability.qmd): the same
   three tools, with the local, global and structural distinctions spelled out.
-- [The Pluto notebook](../../notebooks/chapters/14-sensitivity-and-identifiability.jl):
+- [The Pluto notebook](../../notebooks/chapters/14-sensitivity-and-identifiability.pluto.jl):
   sliders over the sensitivity calculation.
 - [Frequentist parameter estimation](../../chapters/12-parameter-estimation.qmd):
   the self-study chapter where a non-identifiable parameter shows up as a flat

@@ -418,7 +418,7 @@ Nothing here is assigned. The whole project stays available to you afterwards.
 
 - [The chapter](../../chapters/05-jump-processes.qmd) — the direct method derived
   in full, and the same model built with Catalyst reaction networks.
-- [The Pluto notebook](../../notebooks/chapters/05-jump-processes.jl) — sliders
+- [The Pluto notebook](../../notebooks/chapters/05-jump-processes.pluto.jl) — sliders
   over the session's SIR model.
 - [The probability prerequisite](../../prerequisites/02-probability-and-stochastic-processes.qmd)
   — where the exponential waiting time and the competing-events rule come from.

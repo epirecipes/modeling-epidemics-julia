@@ -407,4 +407,4 @@ and show why the total-population increment now has nonzero variance.
 
 - [Slides](../slides/chapters/06-stochastic-differential-equations.html)
 - [Pluto preview](../notebook-exports/chapters/06-stochastic-differential-equations.html)
-- [Pluto source](../notebooks/chapters/06-stochastic-differential-equations.jl)
+- [Pluto source](../notebooks/chapters/06-stochastic-differential-equations.pluto.jl)

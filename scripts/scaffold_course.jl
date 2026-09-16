@@ -90,7 +90,7 @@ function book_stub(unit, paths)
 
     - [Slides](../slides/$(paths.section)/$(paths.stem).html)
     - [Pluto preview](../notebook-exports/$(paths.section)/$(paths.stem).html)
-    - [Pluto source](../notebooks/$(paths.section)/$(paths.stem).jl)
+    - [Pluto source](../notebooks/$(paths.section)/$(paths.stem).pluto.jl)
     """
 end
 
@@ -212,7 +212,7 @@ for unit in units
     println(resources, "- [Book]($(paths.section)/$(paths.stem).html)")
     println(resources, "- [Slides](slides/$(paths.section)/$(paths.stem).html)")
     println(resources, "- [Pluto preview](notebook-exports/$(paths.section)/$(paths.stem).html)")
-    println(resources, "- [Pluto source](notebooks/$(paths.section)/$(paths.stem).jl)")
+    println(resources, "- [Pluto source](notebooks/$(paths.section)/$(paths.stem).pluto.jl)")
 end
 resources_path = joinpath(ROOT, "resources.qmd")
 write_if_missing(resources_path, String(take!(resources))) && push!(created, relpath(resources_path, ROOT))

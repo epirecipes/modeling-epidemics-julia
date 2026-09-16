@@ -434,4 +434,4 @@ comes near equidispersion.
 
 - [Slides](../slides/chapters/11-observation-models.html)
 - [Pluto preview](../notebook-exports/chapters/11-observation-models.html)
-- [Pluto source](../notebooks/chapters/11-observation-models.jl)
+- [Pluto source](../notebooks/chapters/11-observation-models.pluto.jl)

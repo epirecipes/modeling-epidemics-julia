@@ -562,4 +562,4 @@ separate contact rate credible.
 
 - [Slides](../slides/chapters/14-sensitivity-and-identifiability.html)
 - [Pluto preview](../notebook-exports/chapters/14-sensitivity-and-identifiability.html)
-- [Pluto source](../notebooks/chapters/14-sensitivity-and-identifiability.jl)
+- [Pluto source](../notebooks/chapters/14-sensitivity-and-identifiability.pluto.jl)

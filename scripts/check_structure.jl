@@ -115,7 +115,7 @@ for unit in units
 
     book_path = joinpath(ROOT, section, "$stem.qmd")
     slide_path = joinpath(ROOT, "slides", section, "$stem.qmd")
-    notebook_path = joinpath(ROOT, "notebooks", section, "$stem.jl")
+    notebook_path = joinpath(ROOT, "notebooks", section, "$stem.pluto.jl")
 
     book = read_required(book_path)
     slide = read_required(slide_path)

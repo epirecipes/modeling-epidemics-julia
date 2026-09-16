@@ -358,4 +358,4 @@ increments recovers the final cumulative incidence $C(80)$.
 
 - [Slides](../slides/chapters/03-ordinary-differential-equations.html)
 - [Pluto preview](../notebook-exports/chapters/03-ordinary-differential-equations.html)
-- [Pluto source](../notebooks/chapters/03-ordinary-differential-equations.jl)
+- [Pluto source](../notebooks/chapters/03-ordinary-differential-equations.pluto.jl)

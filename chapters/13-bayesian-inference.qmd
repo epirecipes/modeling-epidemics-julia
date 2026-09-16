@@ -298,4 +298,4 @@ discussion in this chapter and in @sec-parameter-estimation.
 
 - [Slides](../slides/chapters/13-bayesian-inference.html)
 - [Pluto preview](../notebook-exports/chapters/13-bayesian-inference.html)
-- [Pluto source](../notebooks/chapters/13-bayesian-inference.jl)
+- [Pluto source](../notebooks/chapters/13-bayesian-inference.pluto.jl)

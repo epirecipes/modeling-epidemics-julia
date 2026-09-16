@@ -840,4 +840,4 @@ not.
 
 - [Slides](../slides/prerequisites/01-julia-essentials.html)
 - [Pluto preview](../notebook-exports/prerequisites/01-julia-essentials.html)
-- [Pluto source](../notebooks/prerequisites/01-julia-essentials.jl)
+- [Pluto source](../notebooks/prerequisites/01-julia-essentials.pluto.jl)

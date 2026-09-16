@@ -24,7 +24,7 @@ The **Pluto preview** is a saved copy of the notebook: it shows the model at its
 - [Book](prerequisites/01-julia-essentials.html)
 - [Slides](slides/prerequisites/01-julia-essentials.html)
 - [Worksheet](worksheets/prerequisites/01-julia-essentials.qmd)
-- Optional: [Pluto preview](notebook-exports/prerequisites/01-julia-essentials.html) · [Pluto source](notebooks/prerequisites/01-julia-essentials.jl)
+- Optional: [Pluto preview](notebook-exports/prerequisites/01-julia-essentials.html) · [Pluto source](notebooks/prerequisites/01-julia-essentials.pluto.jl)
 
 ### Foundations: SIR theory and the Julia workflow — Day 1, Session 2
 
@@ -32,14 +32,14 @@ The **Pluto preview** is a saved copy of the notebook: it shows the model at its
 - [Alternative slides](slides/lectures/01-foundations.html)
 - [Slides](slides/chapters/01-foundations.html)
 - [Worksheet](worksheets/chapters/01-foundations.qmd)
-- Optional: [Pluto preview](notebook-exports/chapters/01-foundations.html) · [Pluto source](notebooks/chapters/01-foundations.jl)
+- Optional: [Pluto preview](notebook-exports/chapters/01-foundations.html) · [Pluto source](notebooks/chapters/01-foundations.pluto.jl)
 
 ### Ordinary differential equations — Day 1, Session 3
 
 - [Book](chapters/03-ordinary-differential-equations.html)
 - [Slides](slides/chapters/03-ordinary-differential-equations.html)
 - [Worksheet](worksheets/chapters/03-ordinary-differential-equations.qmd)
-- Optional: [Pluto preview](notebook-exports/chapters/03-ordinary-differential-equations.html) · [Pluto source](notebooks/chapters/03-ordinary-differential-equations.jl)
+- Optional: [Pluto preview](notebook-exports/chapters/03-ordinary-differential-equations.html) · [Pluto source](notebooks/chapters/03-ordinary-differential-equations.pluto.jl)
 
 ### Discrete-time models — Day 1, Session 4
 
@@ -47,7 +47,7 @@ The **Pluto preview** is a saved copy of the notebook: it shows the model at its
 - [Alternative slides](slides/lectures/02-discrete-time-models.html)
 - [Slides](slides/chapters/02-discrete-time-models.html)
 - [Worksheet](worksheets/chapters/02-discrete-time-models.qmd)
-- Optional: [Pluto preview](notebook-exports/chapters/02-discrete-time-models.html) · [Pluto source](notebooks/chapters/02-discrete-time-models.jl)
+- Optional: [Pluto preview](notebook-exports/chapters/02-discrete-time-models.html) · [Pluto source](notebooks/chapters/02-discrete-time-models.pluto.jl)
 
 ## Day 2
 
@@ -56,28 +56,28 @@ The **Pluto preview** is a saved copy of the notebook: it shows the model at its
 - [Book](chapters/05-jump-processes.html)
 - [Slides](slides/chapters/05-jump-processes.html)
 - [Worksheet](worksheets/chapters/05-jump-processes.qmd)
-- Optional: [Pluto preview](notebook-exports/chapters/05-jump-processes.html) · [Pluto source](notebooks/chapters/05-jump-processes.jl)
+- Optional: [Pluto preview](notebook-exports/chapters/05-jump-processes.html) · [Pluto source](notebooks/chapters/05-jump-processes.pluto.jl)
 
 ### Reaction networks and moment closure — Day 2, Session 2
 
 - [Book](chapters/07-reaction-networks.html)
 - [Slides](slides/chapters/07-reaction-networks.html)
 - [Worksheet](worksheets/chapters/07-reaction-networks.qmd)
-- Optional: [Pluto preview](notebook-exports/chapters/07-reaction-networks.html) · [Pluto source](notebooks/chapters/07-reaction-networks.jl)
+- Optional: [Pluto preview](notebook-exports/chapters/07-reaction-networks.html) · [Pluto source](notebooks/chapters/07-reaction-networks.pluto.jl)
 
 ### Sensitivity and identifiability — Day 2, Session 3
 
 - [Book](chapters/14-sensitivity-and-identifiability.html)
 - [Slides](slides/chapters/14-sensitivity-and-identifiability.html)
 - [Worksheet](worksheets/chapters/14-sensitivity-and-identifiability.qmd)
-- Optional: [Pluto preview](notebook-exports/chapters/14-sensitivity-and-identifiability.html) · [Pluto source](notebooks/chapters/14-sensitivity-and-identifiability.jl)
+- Optional: [Pluto preview](notebook-exports/chapters/14-sensitivity-and-identifiability.html) · [Pluto source](notebooks/chapters/14-sensitivity-and-identifiability.pluto.jl)
 
 ### Interventions and optimization — Day 2, Session 4
 
 - [Book](chapters/15-interventions-and-optimization.html)
 - [Slides](slides/chapters/15-interventions-and-optimization.html)
 - [Worksheet](worksheets/chapters/15-interventions-and-optimization.qmd)
-- Optional: [Pluto preview](notebook-exports/chapters/15-interventions-and-optimization.html) · [Pluto source](notebooks/chapters/15-interventions-and-optimization.jl)
+- Optional: [Pluto preview](notebook-exports/chapters/15-interventions-and-optimization.html) · [Pluto source](notebooks/chapters/15-interventions-and-optimization.pluto.jl)
 
 ## Day 3
 
@@ -86,7 +86,7 @@ The **Pluto preview** is a saved copy of the notebook: it shows the model at its
 - [Book](chapters/09-agent-based-models.html)
 - [Slides](slides/chapters/09-agent-based-models.html)
 - [Worksheet](worksheets/chapters/09-agent-based-models.qmd)
-- Optional: [Pluto preview](notebook-exports/chapters/09-agent-based-models.html) · [Pluto source](notebooks/chapters/09-agent-based-models.jl)
+- Optional: [Pluto preview](notebook-exports/chapters/09-agent-based-models.html) · [Pluto source](notebooks/chapters/09-agent-based-models.pluto.jl)
 
 ### Agent-based models extended session — Day 3, Session 2
 
