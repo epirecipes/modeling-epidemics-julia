@@ -203,37 +203,144 @@ the variance decomposition in the last session all live on this slide. Nobody
 needs the probability prerequisite for it.
 :::
 
-## From model to package API {.smaller}
+## Three ways to write one model {.smaller}
 
-Describe the *events*, not the loop. Each jump carries two lists: who must be
-present (which sets the propensity) and what the event does to the state.
+The model has not changed since the last slide. Only the *notation* changes.
 
+| | what you write | who writes the code |
+|---|---|---|
+| **Day 1** | a function: every term, by hand | you |
+| **Today** | a macro: the model as stated | the library |
+
+A hand-written function works in any language, and that is its virtue. It is
+also longer than the mathematics it encodes, and every extra line is somewhere a
+sign can go wrong. Macros let Julia read the model the way it is written on
+paper and generate the loop for you — which is what makes a fifty-compartment
+model tractable.
+
+Two toolkits do this in SciML, and today uses both: **ModelingToolkit.jl** and
+**Catalyst.jl**.
+
+::: {.notes}
+This is the framing slide for the rest of the day, so do not rush it. The point
+is not that macros are clever; it is that all three representations are the same
+process. The hand-written kernel earlier was deliberately the Day 1 style: it
+could have been C or R, and you had to be the one who got the stoichiometry
+right. Everything from here on states the model and lets the library write the
+loop. Stress that this is a claim we are about to check, not a promise.
+:::
+
+## The same model, two toolkits {.smaller}
+
+:::: {.columns}
+
+::: {.column width="54%"}
 ```{julia}
-#| label: ch04-jumpsystem
+#| label: ch04-mtk
 #| echo: true
 using ModelingToolkit, JumpProcesses
-using ModelingToolkit: t_nounits as t, D_nounits as D
+using ModelingToolkit: t_nounits as t,
+                       D_nounits as D
 
 @parameters κ γ
 @variables S(t) I(t) R(t)
 
 @named jumpsys = JumpSystem(
-    [MassActionJump(κ, [S => 1, I => 1], [S => -1, I => 1]; scale_rates = false),
-     MassActionJump(γ, [I => 1], [I => -1, R => 1]; scale_rates = false)],
+    [MassActionJump(κ, [S => 1, I => 1],
+        [S => -1, I => 1]; scale_rates = false),
+     MassActionJump(γ, [I => 1],
+        [I => -1, R => 1]; scale_rates = false)],
     t, [S, I, R], [κ, γ])
 ```
+:::
 
-One rate constant per transition, so the $\beta cSI/N$ above becomes $\kappa SI$
-with $\kappa=\beta c/N$; $R_0=\beta c/\gamma=2$ is unchanged.
+::: {.column width="46%"}
+```{julia}
+#| label: ch04-catalyst
+#| echo: true
+using Catalyst
+
+sir_network = @reaction_network begin
+    κ, S + I --> 2I
+    γ, I --> R
+end
+```
+:::
+
+::::
+
+Who must be present sets the propensity; what the event does sets the state
+change. Catalyst reads both off the arrow.
 
 ::: {.notes}
-Four lines against the hand-written kernel three slides back. Point at the two
-lists rather than reading the code: `[S => 1, I => 1]` is why the propensity is a
-product, and `[S => -1, I => 1]` is the stoichiometric change vector we wrote by
-hand. The kappa note matters because the book chapter uses kappa from here on.
-Because the events are recorded symbolically, the same description can later
-become an ODE, an SDE or a jump model — that is the next slide, and it is the
-whole argument for writing models this way.
+Read the two columns against each other rather than line by line. On the left
+you say the two lists explicitly: `[S => 1, I => 1]` is why the propensity is a
+product, `[S => -1, I => 1]` is the stoichiometric change vector. On the right
+the arrow says both at once — that is the whole saving, and it is why a
+reaction list stays readable at fifty reactions where a jump list does not.
+
+One rate constant per transition, so the beta-c-S-I-over-N from this morning
+becomes kappa-S-I with kappa equal to beta c over N. R nought is still 2. The
+book chapter uses kappa from here on.
+:::
+
+## Equivalent, to the last event {.smaller}
+
+```{julia}
+#| label: ch04-equivalence
+#| echo: true
+using StableRNGs
+
+start = [S => 990, I => 10, R => 0, κ => 0.05*10/1000, γ => 0.25]
+
+mtk_path = solve(JumpProblem(complete(jumpsys), start, (0.0, 40.0);
+                             rng = StableRNG(3001)), SSAStepper())
+
+catalyst_path = solve(JumpProblem(sir_network,
+                          [:S => 990, :I => 10, :R => 0], (0.0, 40.0),
+                          [:κ => 0.05*10/1000, :γ => 0.25];
+                          aggregator = Direct(), rng = StableRNG(3001)),
+                      SSAStepper())
+
+mtk_path(grid, idxs = I) == catalyst_path(grid, idxs = sir_network.I)
+```
+
+Not merely similar — given the same seed, the same sequence of events.
+
+::: {.notes}
+This is the slide that earns the word "equivalent". Both toolkits build the same
+two mass-action jumps, hand them to the same Direct aggregator, and draw from
+the same seeded stream, so the paths agree event for event, not just in
+distribution. Lowered to ODEs instead, the two peaks agree to about 1e-16, which
+is floating-point noise. If a comparison like this ever came out false you would
+have found a real bug in one of the two descriptions, so it is worth running.
+:::
+
+## Which toolkit, and when? {.smaller}
+
+| | ModelingToolkit.jl | Catalyst.jl |
+|---|---|---|
+| You describe | variables, equations, jumps | reactions |
+| Stoichiometry | written out per jump | read off the arrow |
+| Rate laws | any expression you write | mass action by default |
+| Covers | ODEs, SDEs, jumps, DAEs, control | reaction networks |
+| Comes with | structural simplification | network and conservation analysis |
+| Reach for it when | the model is not a reaction network | it is |
+
+Neither is a wrapper around the other, and neither is the "advanced" one. The
+question is only whether your model is naturally a set of reactions.
+
+::: {.notes}
+The honest summary: if you can draw your model as arrows between boxes,
+Catalyst will say it in fewer lines and give you network analysis for free.
+Ageing, waning, vaccination schedules and contact matrices are all still
+reactions, so that covers most of epidemiology. The moment you want a term that
+is not a reaction — a delay, an optimal control, a mass-matrix constraint — you
+are in ModelingToolkit, and Catalyst systems convert into it anyway.
+
+Do not let anyone leave thinking they must pick one. The worksheet this
+afternoon uses ModelingToolkit because jumps are the topic; the reaction
+networks session later in the week is entirely Catalyst.
 :::
 
 ## One `solve`, two processes {.smaller}
@@ -242,8 +349,6 @@ whole argument for writing models this way.
 #| label: ch04-dispatch
 #| echo: true
 @named odesys = System([D(S) ~ -κ*S*I, D(I) ~ κ*S*I - γ*I, D(R) ~ γ*I], t)
-
-start = [S => 990, I => 10, R => 0, κ => 0.05*10/1000, γ => 0.25]
 
 ode_problem  = ODEProblem(complete(odesys),   start, (0.0, 40.0))
 jump_problem = JumpProblem(complete(jumpsys), start, (0.0, 40.0);
@@ -406,6 +511,7 @@ hybrid methods earn their place.
 ## Takeaways
 
 - Propensities determine both waiting times and event probabilities.
+- Two notations, one process: ModelingToolkit and Catalyst give the same events.
 - Exact jumps preserve integer states and population conservation.
 - Ensemble summaries are needed for comparison with an ODE.
 - Exactness is paid for per event, so cost follows the event count.
