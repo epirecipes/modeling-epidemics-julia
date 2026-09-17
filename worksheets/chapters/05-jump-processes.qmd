@@ -200,14 +200,39 @@ wrong if you moved it?
 
 ## Part B — does the latent period matter? (~15 min)
 
-One realisation tells you very little. To compare two models you need the
-*distribution* over realisations, and an `EnsembleProblem` runs many at once.
+One realisation tells you very little. A stochastic model has to be run many
+times — the *same* model with the *same* parameters, differing only in the
+random stream — and an `EnsembleProblem` says that in three lines instead of a
+loop you write yourself.
 
-Two hooks matter. `prob_func` builds the problem for trajectory `ctx.sim_id`,
-which is where each run gets its own seed — without that every trajectory would
-share one random stream. `EnsembleSummary` then reduces the runs to a mean and
-a band on a common time grid, which the trajectories do not otherwise share,
-because each one stops at its own last event.
+`prob_func` builds the problem for trajectory `ctx.sim_id`, which is where each
+run gets its own seed. Without it every trajectory would share one random
+stream, which is a real trap once the runs are threaded.
+
+```{julia}
+#| label: ws-ch04-b0
+seir_ensemble = EnsembleProblem(seir_problem(100);
+    prob_func = (prob, ctx) -> seir_problem(100 + ctx.sim_id))
+
+seir_runs = solve(seir_ensemble, SSAStepper(), EnsembleThreads();
+                  trajectories = 30, saveat = grid)
+
+peaks = [maximum(r[I]) for r in seir_runs.u]
+
+check("thirty runs came back", length(seir_runs.u) == 30)
+check("the runs differ from each other", std(peaks) > 0)
+println("peak infectious over 30 runs: mean ", round(mean(peaks); digits = 1),
+        ", sd ", round(std(peaks); digits = 1))
+```
+
+Note what did *not* change: the model, the parameters, the solver. Only
+`trajectories` says how much simulation you want, so asking for 3000 instead of
+30 is a one-character edit rather than a rewrite.
+
+To compare two models you also need them on a common time grid, which the
+trajectories do not otherwise share — each one stops at its own last event.
+`EnsembleSummary` does that reduction, and `summarise` below is just the three
+lines above with the model left as an argument.
 
 ```{julia}
 #| label: ws-ch04-b1

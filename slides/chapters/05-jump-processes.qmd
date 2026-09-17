@@ -432,21 +432,83 @@ instead of learning a new interface each time. It is also why swapping a model
 class is usually a two-line change, not a rewrite.
 :::
 
+## Day 1: many runs, by hand {.smaller}
+
+One path tells you almost nothing, so we need twenty. Yesterday's answer was a
+comprehension:
+
+```{julia}
+#| label: ch04-byhand
+#| echo: true
+using Statistics
+
+run_once(seed) = solve(
+    JumpProblem(complete(jumpsys), start, (0.0, 40.0); rng = StableRNG(seed)),
+    SSAStepper())(grid, idxs = I)
+
+paths_by_hand = [run_once(3000 + k) for k in 1:20]
+
+(runs = length(paths_by_hand),
+ mean_peak = round(mean(maximum.(paths_by_hand)); digits = 1))
+```
+
+You wrote the loop, the seeding and the storage — and nothing here says the runs
+are independent, so nothing exploits it.
+
+::: {.notes}
+Nothing is wrong with this code and everybody has written it. Point at what it
+costs: three decisions you had to make and get right, none of which are about
+epidemiology. Where do seeds come from, so runs are reproducible and not
+identical. What shape do you store results in. And who computes the summary.
+
+The deeper problem is the last clause on the slide. A comprehension is a
+sequential instruction, so the fact that twenty independent epidemics could run
+on twenty cores is information you have and the machine does not.
+:::
+
+## `EnsembleProblem`: declare the runs {.smaller}
+
+```{julia}
+#| label: ch04-ensemble
+#| echo: true
+jump_at(seed) = JumpProblem(complete(jumpsys), start, (0.0, 40.0);
+                            rng = StableRNG(seed))
+
+ensemble = EnsembleProblem(jump_at(3001);
+    prob_func = (prob, ctx) -> jump_at(3000 + ctx.sim_id))
+
+runs = solve(ensemble, SSAStepper(), EnsembleThreads(); trajectories = 20)
+
+length(runs.u)
+```
+
+`prob_func` says how trajectory `ctx.sim_id` differs — here, its seed. The
+number of runs moves out of the code and into the call.
+
+::: {.notes}
+Read it as a description rather than a loop. The ensemble problem says *what a
+trajectory is*; `trajectories = 20` says how many you want; `EnsembleThreads()`
+says who runs them. Change twenty to twenty thousand and no code changes.
+
+`prob_func` is the hook that matters. Here it only varies the seed, which is the
+pure stochastic-replication case: same model, same parameters, different random
+stream. Give it a different parameter instead and the identical machinery
+becomes a parameter sweep, which is exactly what the sensitivity session does on
+Thursday with Latin hypercube samples. One interface, two uses.
+
+Say the thing about seeding explicitly: without `prob_func` every trajectory
+would share one random stream, which is a genuine trap under threading.
+:::
+
 ## Twenty paths and the ODE {.center .smaller}
 
 ```{julia}
 #| echo: false
 #| label: fig-slide-ch04-ensemble
 #| fig-cap: "Twenty CTMC paths of infectious prevalence with the mean-field ODE."
-using Statistics
-
-simulate_jump(seed) = solve(
-    JumpProblem(complete(jumpsys), start, (0.0, 40.0); rng = StableRNG(seed)),
-    SSAStepper())(grid, idxs = I)
-
-M = 20
-paths = [simulate_jump(3000 + k) for k in 1:M]
+paths = [r(grid, idxs = I) for r in runs.u]
 peaks = maximum.(paths)
+M = length(paths)
 
 fig2 = Figure(size = (900, 380))
 ax2 = Axis(fig2[1, 1], xlabel = "time (days)", ylabel = "infectious",
@@ -473,6 +535,46 @@ epidemics varying, se is how well twenty runs pin the average down. Note that
 none of these twenty paths fades out. With ten initial infectives and $R_0=2$
 that is expected, since fade-out needs all ten introductions to fail. Fade-out is
 a small-introduction phenomenon, and the worksheet quantifies it.
+:::
+
+## Summaries without a summariser {.center .smaller}
+
+```julia
+summary = EnsembleSummary(runs, grid)        # mean and quantiles, per variable
+```
+
+```{julia}
+#| echo: false
+#| label: fig-slide-ch05-band
+#| fig-cap: "Mean infectious prevalence over the same twenty paths with a 5th-95th percentile band, against the mean-field ODE."
+summary = EnsembleSummary(runs, grid)
+row = findfirst(isequal(I), unknowns(complete(jumpsys)))
+mean_I = reduce(hcat, summary.u.u)[row, :]
+low_I = reduce(hcat, summary.qlow.u)[row, :]
+high_I = reduce(hcat, summary.qhigh.u)[row, :]
+
+fig3 = Figure(size = (880, 320))
+ax3 = Axis(fig3[1, 1], xlabel = "time (days)", ylabel = "infectious",
+    title = "mean of paths peaks at $(round(maximum(mean_I); digits = 1))" *
+            ", ODE at $(round(maximum(ode[2, :]); digits = 1))")
+band!(ax3, grid, low_I, high_I; color = (:firebrick, 0.2))
+lines!(ax3, grid, mean_I; color = :firebrick, linewidth = 2.5, label = "ensemble mean")
+lines!(ax3, grid, ode[2, :]; color = :black, linestyle = :dash, linewidth = 2.5,
+    label = "ODE")
+axislegend(ax3; position = :rt)
+fig3
+```
+
+::: {.notes}
+`EnsembleSummary` is the reason the previous slide stored nothing by hand: mean
+and quantiles across trajectories, on a grid the trajectories do not share,
+because each one stops at its own last event.
+
+Now compare the two curves in the title. The ensemble mean peaks lower than the
+individual paths did on the last slide — averaging asynchronous peaks flattens
+them — and it is *still* not the ODE. The band is the honest picture: wide
+around the peak, where timing varies most, and narrow at both ends where every
+path agrees. If you only ever plot a mean, you have thrown that away.
 :::
 
 ## What exactness costs {.smaller}
@@ -568,6 +670,7 @@ hybrid methods earn their place.
 
 - Propensities determine both waiting times and event probabilities.
 - Two notations, one process: ModelingToolkit and Catalyst give the same events.
+- `EnsembleProblem` declares the replicates; `prob_func` seeds them.
 - Exact jumps preserve integer states and population conservation.
 - Ensemble summaries are needed for comparison with an ODE.
 - Exactness is paid for per event, so cost follows the event count.
