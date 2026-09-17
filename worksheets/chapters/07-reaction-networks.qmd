@@ -78,10 +78,10 @@ jump_solution = missing
 if jump_solution === missing
     println("✗ not attempted yet")
 else
-    peak = maximum(jump_solution[2, :])
-    conserved = all(sum(Array(jump_solution(times)); dims = 1) .== N)
-    println(conserved ? "✓ population conserved exactly" : "✗ population not conserved")
-    println("  jump peak infectious = ", peak,
+    total = jump_solution[1, :] .+ jump_solution[2, :] .+ jump_solution[3, :]
+    println(all(total .== N) ? "✓ population conserved exactly"
+                             : "✗ population not conserved")
+    println("  jump peak infectious = ", maximum(jump_solution[2, :]),
             "  |  ODE peak = ", round(maximum(ode_solution[2, :]); digits = 2))
 end
 ```
@@ -93,6 +93,39 @@ end
 then `solve(problem, SSAStepper(); saveat = times)`. The constructor takes the
 network directly — there is no intermediate `DiscreteProblem` to build.
 :::
+
+
+### One path is not an answer
+
+A single stochastic run tells you very little. `EnsembleProblem` runs the *same*
+network with the *same* parameters many times over, differing only in the random
+stream, and `EnsembleSummary` reduces the runs to a mean on a common time grid.
+
+Nothing to fill in here — read it and run it.
+
+```{julia}
+jump_at(seed) = JumpProblem(sir_network, [:S => 990, :I => 10, :R => 0], tspan,
+                            parameter_map; aggregator = Direct(), rng = StableRNG(seed))
+
+runs = solve(
+    EnsembleProblem(jump_at(100); prob_func = (prob, ctx) -> jump_at(100 + ctx.sim_id)),
+    SSAStepper(), EnsembleThreads(); trajectories = 100, saveat = times)
+
+ensemble_mean = reduce(hcat, EnsembleSummary(runs, times).u.u)[2, :]
+
+println("ensemble mean peak = ", round(maximum(ensemble_mean); digits = 1),
+        "  |  ODE peak = ", round(maximum(ode_solution[2, :]); digits = 1))
+println(maximum(ode_solution[2, :]) > maximum(ensemble_mean) ?
+        "✓ the ODE peak sits above the ensemble mean, as the covariance argument predicts" :
+        "✗ unexpected — check the parameters")
+```
+
+`prob_func` is the only new idea: it says how trajectory `ctx.sim_id` differs
+from the others. Here it differs only by its seed, which is what "run the same
+model again" means for a stochastic model.
+
+Note what this cost: a hundred simulations for one mean curve. Part C is about
+the alternative.
 
 ## Part B — add a flow
 
@@ -162,32 +195,30 @@ function closure_gap(population; trajectories = 100, seed0 = 500)
     S₀ = round(Int, 0.99 * population)
     I₀ = max(round(Int, 0.01 * population), 1)
 
-    raw = generate_raw_moment_eqs(sir_network, 2)
-    closed = moment_closure(raw, "normal")
-    solution = solve(ODEProblem(closed, [Float64(S₀), Float64(I₀), 0.0], tspan, parameters_local),
-                     Tsit5(); saveat = times)
+    # Route 1: nine ODEs.
+    closed = moment_closure(generate_raw_moment_eqs(sir_network, 2), "normal")
+    closure = solve(
+        ODEProblem(closed, [Float64(S₀), Float64(I₀), 0.0], tspan, parameters_local),
+        Tsit5(); saveat = times)
     names = string.(unknowns(closed.odes))
-    closure_mean = solution[findfirst(==("μ₀₁₀(t)"), names), :]
+    closure_mean = closure[findfirst(==("μ₀₁₀(t)"), names), :]
 
-    function one_run(seed)
-        problem = JumpProblem(sir_network, [:S => S₀, :I => I₀, :R => 0], tspan,
-                              parameters_local; aggregator = Direct(), rng = StableRNG(seed))
-        return Array(solve(problem, SSAStepper(); saveat = times)(times))
-    end
-    ensemble = cat((one_run(seed0 + k) for k in 1:trajectories)...; dims = 3)
-    ensemble_mean = dropdims(mean(ensemble; dims = 3), dims = 3)[2, :]
-    extinct = mean(ensemble[2, end, :] .== 0)
+    # Route 2: simulate, exactly as in Part A.
+    at(seed) = JumpProblem(sir_network, [:S => S₀, :I => I₀, :R => 0], tspan,
+                           parameters_local; aggregator = Direct(), rng = StableRNG(seed))
+    ensemble = solve(
+        EnsembleProblem(at(seed0); prob_func = (prob, ctx) -> at(seed0 + ctx.sim_id)),
+        SSAStepper(), EnsembleThreads(); trajectories = trajectories, saveat = times)
+    ensemble_mean = reduce(hcat, EnsembleSummary(ensemble, times).u.u)[2, :]
+    extinct = mean(r[2, end] == 0 for r in ensemble.u)
 
-    # The closure is an ODE like any other and its solver can give up early, in
-    # which case `saveat` returns fewer points than `times` asked for. Report the
-    # retcode and compare over the horizon the closure actually reached, rather
-    # than assuming it got to t = 40.
+    # The closure is an ODE like any other and its solver can give up early, so
+    # compare over the horizon it actually reached rather than assuming t = 40.
     horizon = length(closure_mean)
     return (; population,
-            retcode = solution.retcode,
-            reached = solution.t[end],
+            retcode = closure.retcode,
+            reached = closure.t[end],
             relative_gap = maximum(abs.(closure_mean .- ensemble_mean[1:horizon])) / population,
-            smallest_mean = minimum(closure_mean),
             extinct)
 end
 nothing
@@ -208,8 +239,7 @@ else
                 "  ", rpad(g.retcode, 9),
                 "  reached t = ", lpad(g.reached, 4),
                 "  relative gap = ", lpad(round(g.relative_gap; digits = 4), 6),
-                "  extinct = ", lpad(round(g.extinct; digits = 2), 4),
-                "  smallest mean = ", lpad(round(g.smallest_mean; digits = 1), 8))
+                "  extinct = ", lpad(round(g.extinct; digits = 2), 4))
     end
     println("\n✓ read the columns together: the closure degrades, then fails outright,")
     println("  as extinction becomes the common outcome")

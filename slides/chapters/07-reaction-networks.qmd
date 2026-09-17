@@ -6,24 +6,49 @@ status: complete
 
 ## From states to flows
 
-- So far each model was written as *states changing*: a right-hand side, a
-  drift and diffusion, a pair of jump affects.
-- Every change of setting meant rewriting the model.
-- Instead, specify the **flows**: which events happen, at what rate, and what
-  each one changes.
+We have written this same epidemic three times now — as an ODE right-hand side,
+as a drift and diffusion, as a pair of jumps. Three files, one model, and three
+chances to make a typo.
+
+- Writing **states changing** ties the model to one mathematical setting.
+- Writing **flows** — which events happen, at what rate, what each changes —
+  does not.
+
+::: {.notes}
+This is the one idea of the session, so do not let it pass as a style
+preference. Ask them what they would have to change to turn Monday's ODE into
+Tuesday's jump process: not the assumptions, not the parameters, only the
+notation — and yet it meant a rewrite each time, with a fresh opportunity for a
+sign error in every one.
+
+Nothing about the biology changes here: same SIR assumptions, same baseline
+parameters as the previous two sessions.
+:::
+
+## A flow is a rate and a change
 
 $$
 S + I \xrightarrow{\ \kappa\ } 2I, \qquad I \xrightarrow{\ \gamma\ } R,
 \qquad \kappa = \beta c / N.
 $$
 
+A **propensity** and a **stoichiometry**: how fast, and what changes.
+
+That pair is a *description*, not a simulation algorithm — which is why the
+representation becomes a choice you make at the end, not a commitment you make
+at the start.
+
 ::: {.notes}
-This is the one idea of the session. Nothing about the biology changes: the same
-SIR assumptions, the same baseline parameters as the previous two sessions. What
-changes is what we write down, and therefore what we can generate from it.
+The deeper point is about *when* you commit. An ODE file has already decided
+that the state is continuous and the dynamics deterministic. A flow
+specification has decided neither, so the same object can answer a deterministic
+question in the morning and a stochastic one in the afternoon.
+
+Two arrows is the whole model. Say that out loud against the three files we have
+accumulated.
 :::
 
-## One specification, three models
+## One specification, three models {.smaller}
 
 Read off the stoichiometry $V$ and the propensities $a(X)$:
 
@@ -37,11 +62,26 @@ $$
 | ODE | $\dot X = Va(X)$ |
 | SDE | $dX = Va(X)\,dt + V\operatorname{diag}(\sqrt{a})\,dW$ |
 | Jump | event $j$ at rate $a_j$, adding $V_{\cdot j}$ |
+| Moments | $d\,\mathbb{E}[X]/dt = V\,\mathbb{E}[a(X)]$ |
+
+You wrote this pair yesterday:
+
+```julia
+MassActionJump(κ, [S => 1, I => 1], [S => -1, I => 1])
+#               ^ rate    ^ gives a₁       ^ first column of V
+```
 
 ::: {.notes}
-These are exactly the $V$ and $a$ from the stochastic differential equations
-session. Point back to it explicitly: the pair $(V,a)$ was already the model, we
-were just writing it out by hand each time.
+Put the `MassActionJump` line up and say the thing plainly: the two lists you
+filled in yesterday were $a$ and $V$. Nothing about them was specific to jump
+processes. We called it a jump because that is what we then asked for, but the
+description itself never mentioned an algorithm.
+
+That is why the table has four rows and not three. The same $(V,a)$ that
+generates a Gillespie simulation also generates the drift and diffusion of the
+SDE — these are exactly the $V$ and $a$ from the stochastic differential
+equations session — and, as the rest of this session shows, the equations for
+the moments too. One description, four questions.
 :::
 
 ## The same network, three solvers {.smaller}
@@ -73,7 +113,37 @@ Worth pausing here: adding an exposed class would propagate to all three at once
 That is the practical payoff, and it is what the worksheet starts from.
 :::
 
-## Why the moments do not close
+## If it is mass action, use Catalyst {.smaller}
+
+The network above is **mass action**: each propensity is a rate constant times
+the reactants present. Assume that, and `Catalyst.jl` gives you three things
+that are otherwise separate pieces of work.
+
+| | what you get |
+|---|---|
+| **Compact** | one line per event; the arrow carries stoichiometry and rate law |
+| **Plural** | ODE, SDE, jump — and the CME — from the one object |
+| **Analysable** | the network is data, so packages can read it: conservation laws, and moment equations |
+
+`MomentClosure.jl` is the third of these, and it is the rest of this session: it
+takes the network itself, not your code, and derives equations from it.
+
+::: {.notes}
+Be precise about what the mass-action assumption buys and what it costs. It
+costs you the freedom to write an arbitrary rate law — a saturating force of
+infection or an explicit delay is not a reaction, and then you are back in
+ModelingToolkit writing the equation yourself. Catalyst does allow custom rate
+expressions, but the moment the rate stops being mass action you also lose the
+automatic moment equations, which is the part that matters today.
+
+What it buys is that the model stops being code and becomes *data*. That is the
+enabling step for the third row: `MomentClosure` does not parse your Julia
+function, it reads the stoichiometry and propensities, which is only possible
+because the arrow told it both. Most of epidemiology is reactions — ageing,
+waning, vaccination, treatment — so this is a wide assumption, not a narrow one.
+:::
+
+## Why the moments do not close {.smaller}
 
 Exact equation for the mean:
 $$
@@ -118,19 +188,107 @@ this is an uncontrolled approximation — there is no step size to refine that
 guarantees convergence, unlike everything else in the course so far.
 :::
 
-## Does it match an ensemble?
+## Two routes to the scatter {.smaller}
 
-- 200 jump trajectories versus the closed moment equations.
-- Closure recovers both the **mean** and the **spread**, at a fraction of the cost.
-- The ODE peak sits above the ensemble mean, as the covariance argument predicts.
+We want more than a mean: we want the *spread* of outcomes. There are two ways
+to get it.
 
-See the [book chapter](../../chapters/07-reaction-networks.html) for the figure and
-the full comparison.
+| | ensemble of simulations | moment equations |
+|---|---|---|
+| What you solve | $M$ exact trajectories | one system of 9 ODEs |
+| Set-up | none | derive and compile, once per model |
+| Each query | $M \times$ events, and events grow with $N$ | independent of $M$ and of $N$ |
+| Accuracy | exact, up to Monte Carlo error | biased by the closure assumption |
+| To halve the error | run $4M$ trajectories | nothing you can turn |
+
+Monte Carlo error falls as $1/\sqrt{M}$, so precision is bought in
+quadruplicate. Closure has no such dial — and no such cost.
 
 ::: {.notes}
-Run the chapter's figure live if time allows. The headline numbers: closure mean
-and ensemble mean for the infectious class agree closely, and the closure
-standard deviation tracks the ensemble band.
+The last row is the honest asymmetry and it cuts both ways. With an ensemble you
+always know how to do better: run more. It costs four times the compute for two
+times the precision, but it is a knob, and it converges to the truth.
+
+Closure has no knob at all. There is no step size to refine, no trajectory count
+to raise; the bias from assuming a shape is simply there. So it is not that
+closure is a cheap approximation to simulation — it is a different kind of
+answer, one you must validate against simulation at least once before you trust
+it in a regime where you cannot afford to simulate.
+
+Be fair about the set-up row: deriving and compiling the moment equations takes
+a couple of seconds, which is real but paid once per model. What you buy is that
+every subsequent solve is essentially free, and that is the property that
+matters when the model sits inside a sweep or a likelihood.
+:::
+
+## Does it match an ensemble? {.center .smaller}
+
+```{julia}
+#| echo: false
+#| label: fig-slide-ch06-closure
+#| fig-cap: "Infectious prevalence: mean and one standard deviation from 200 jump trajectories (band) against the normal moment closure (lines), with the wall-clock cost of each route."
+using MomentClosure, Statistics, CairoMakie
+
+times = collect(0.0:0.5:40.0)
+
+# Derivation and compilation are one-off, so they are warmed up before timing:
+# what is compared is the cost of *asking the question again*.
+closed_equations = moment_closure(generate_raw_moment_eqs(sir_network, 2), "normal")
+closure_problem = ODEProblem(closed_equations, [990.0, 10.0, 0.0], tspan, ps)
+solve(closure_problem, Tsit5(); saveat = times)
+closure_time = @elapsed closure_solution = solve(closure_problem, Tsit5(); saveat = times)
+closure_names = string.(unknowns(closed_equations.odes))
+closure_mean = closure_solution[findfirst(==("μ₀₁₀(t)"), closure_names), :]
+closure_sd = sqrt.(max.(
+    closure_solution[findfirst(==("μ₀₂₀(t)"), closure_names), :] .- closure_mean .^ 2, 0.0))
+
+jump_at(seed) = JumpProblem(sir_network, [:S => 990, :I => 10, :R => 0], tspan, ps;
+                            aggregator = Direct(), rng = StableRNG(seed))
+solve(jump_at(1), SSAStepper(); saveat = times)
+ensemble_time = @elapsed runs = solve(
+    EnsembleProblem(jump_at(6001);
+        prob_func = (prob, ctx) -> jump_at(6000 + ctx.sim_id)),
+    SSAStepper(), EnsembleThreads(); trajectories = 200, saveat = times)
+summary = EnsembleSummary(runs, times)
+ensemble_mean = reduce(hcat, summary.u.u)[2, :]
+ensemble_sd = sqrt.(reduce(hcat, summary.v.u)[2, :])
+
+fig = Figure(size = (880, 320))
+ax = Axis(fig[1, 1], xlabel = "time (days)", ylabel = "infectious",
+    title = "200 trajectories: $(round(ensemble_time; digits = 2)) s   |   " *
+            "9 moment ODEs: $(round(closure_time * 1000; digits = 2)) ms")
+band!(ax, times, ensemble_mean .- ensemble_sd, ensemble_mean .+ ensemble_sd;
+    color = (:firebrick, 0.2))
+lines!(ax, times, ensemble_mean; color = :firebrick, linewidth = 2.5,
+    label = "ensemble mean ± sd")
+lines!(ax, times, closure_mean; color = :steelblue, linewidth = 2.5,
+    linestyle = :dash, label = "closure mean")
+lines!(ax, times, closure_mean .+ closure_sd; color = :steelblue, linewidth = 1.5,
+    linestyle = :dot, label = "closure ± sd")
+lines!(ax, times, closure_mean .- closure_sd; color = :steelblue, linewidth = 1.5,
+    linestyle = :dot)
+axislegend(ax; position = :rt)
+fig
+```
+
+::: {.notes}
+Nine equations reproduce what two hundred simulations found, for both the centre
+and the width of the distribution, and the two timings in the title are the
+argument. Let them read the gap themselves rather than announcing it.
+
+Say what the timings do and do not include, because someone will ask. Both sides
+are warmed up, so this compares the cost of asking the question again, not of
+asking it the first time. Deriving and compiling the moment equations took a
+couple of seconds before the clock started; the ensemble had one trajectory run
+to compile the stepper. After that the ratio is about four thousand to one, and
+it widens with N, because trajectory cost follows the event count while the nine
+equations do not know how big the population is.
+
+Then be careful about what has been shown. This is one network, at one
+population size, in a regime where the epidemic is large and extinction is not
+in play. It is evidence that the closure works *here*, which is exactly the
+validation the previous slide said you must do once. The next slide is where it
+stops working.
 :::
 
 ## When closure fails
@@ -149,10 +307,11 @@ return code, and always compare against simulation before trusting a closure.
 
 ## Takeaways
 
-- Write **flows**, not states: one specification, every lowering for free.
+- Write **flows**, not states: the representation becomes a choice at the end.
+- Mass action means Catalyst can read the model as data, not as code.
 - The moment hierarchy does not close because transmission is bimolecular.
-- Closure buys ensemble statistics without an ensemble — at the cost of an
-  assumption you must check.
+- Closure buys the spread without the ensemble: no $1/\sqrt{M}$ to pay, but a
+  bias you cannot refine away and must check against simulation once.
 - Mass action is still an assumption; contact structure needs the individual
   level.
 
