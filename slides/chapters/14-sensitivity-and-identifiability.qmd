@@ -56,6 +56,148 @@ because the sensitivity and Sobol APIs index parameters by position. The
 worksheet flags this too.
 :::
 
+## Before any theory: sweep and look {.smaller}
+
+Choose parameter sets, run the model for each, look at what comes out. It
+commits to nothing about the model's structure, and it is the most expensive
+method in the session.
+
+A grid scales badly: three parameters at ten levels is a thousand runs, and most
+differ from a neighbour in one coordinate only. A **Latin hypercube** divides
+each range into $n$ strata and samples each once, so every one-dimensional
+projection gets $n$ distinct values instead of $n^{1/3}$.
+
+```{julia}
+#| label: slide-ch14-design
+#| echo: true
+using QuasiMonteCarlo, OrdinaryDiffEq, StableRNGs, Statistics
+
+lower = [0.02, 5.0, 0.15]        # β, c, γ
+upper = [0.08, 15.0, 0.40]
+
+design = QuasiMonteCarlo.sample(200, lower, upper,
+             LatinHypercubeSample(StableRNG(20250916)))
+size(design)
+```
+
+::: {.notes}
+The seed is not decoration. An unseeded design changes every number on this
+slide at every render, and the same is true of the worksheet.
+
+Make the stratification concrete: with 200 samples and a grid you would get
+about six distinct values per parameter; with a Latin hypercube you get 200.
+Since you usually do not know in advance which parameter matters, spreading the
+budget across every one-dimensional projection is the safer bet.
+:::
+
+## One model, two hundred parameter sets {.smaller}
+
+```{julia}
+#| label: slide-ch14-ensemble
+#| echo: true
+function sweep_sir!(du, u, p, t)
+    β, c, γ = p
+    incidence = β * c * u[1] * u[2] / 1000.0
+    du[1] = -incidence
+    du[2] = incidence - γ * u[2]
+    du[3] = γ * u[2]
+end
+
+sweep_grid = collect(0.0:0.25:40.0)
+base_problem = ODEProblem(sweep_sir!, [990.0, 10.0, 0.0], (0.0, 40.0), [0.05, 10.0, 0.25])
+
+sweep = solve(
+    EnsembleProblem(base_problem;
+        prob_func = (prob, ctx) -> remake(prob, p = design[:, ctx.sim_id])),
+    Tsit5(); trajectories = 200, saveat = sweep_grid, abstol = 1e-9, reltol = 1e-9)
+
+length(sweep.u)
+```
+
+::: {.notes}
+`prob_func` is the same hook as yesterday's jump ensembles; only what it varies
+has changed. There it gave each trajectory a new seed, which is replication;
+here it gives each trajectory a column of the design, which is a sweep. Same
+machinery, and worth saying explicitly, because people file "run it many times"
+and "vary the parameters" as different problems.
+
+Two API details that waste people's time. The signature is `(prob, ctx)` with
+`ctx.sim_id`, not the `(prob, i, repeat)` you will find in older material. And
+the trajectories are `sweep.u`; iterating the solution itself flattens it.
+:::
+
+## What the sweep already knows {.smaller}
+
+```{julia}
+#| label: slide-ch14-correlations
+#| echo: true
+peaks = [maximum(trajectory[2, :]) for trajectory in sweep.u]
+β_s, c_s, γ_s = design[1, :], design[2, :], design[3, :]
+
+(β = round(cor(peaks, β_s); digits = 3),
+ c = round(cor(peaks, c_s); digits = 3),
+ βc = round(cor(peaks, β_s .* c_s); digits = 3),
+ γ = round(cor(peaks, γ_s); digits = 3),
+ R₀ = round(cor(peaks, β_s .* c_s ./ γ_s); digits = 3))
+```
+
+Neither $\beta$ nor $c$ predicts the peak on its own. Their **product** does
+better than either, and $R_0$ predicts it almost exactly.
+
+::: {.notes}
+Stop on this slide. With no algebra at all, two hundred model runs have found
+the result the rest of the session proves: the model does not depend on beta and
+c separately, only on their product. That is the confounding the structural
+identifiability analysis will confirm at the end.
+
+It is worth being honest that correlation is a crude summary — it would miss a
+non-monotone dependence entirely, which is exactly why Sobol indices exist. But
+as a first look it has cost nothing but compute and has already told you where
+to aim.
+:::
+
+## Two hundred runs, one picture {.center .smaller}
+
+```{julia}
+#| echo: false
+#| label: fig-slide-ch14-sweep
+#| fig-cap: "Two hundred Latin hypercube parameter sets: trajectories coloured by R₀, and peak prevalence against β alone and against the product βc."
+using CairoMakie
+
+R₀_s = β_s .* c_s ./ γ_s
+figure = Figure(size = (880, 320))
+
+axis1 = Axis(figure[1, 1], xlabel = "time (days)", ylabel = "infectious",
+             title = "trajectories, coloured by R₀")
+shades = cgrad(:viridis)
+low, high = extrema(R₀_s)
+for (k, trajectory) in enumerate(sweep.u)
+    lines!(axis1, sweep_grid, trajectory[2, :];
+        color = shades[(R₀_s[k] - low) / (high - low)], linewidth = 0.7)
+end
+
+axis2 = Axis(figure[1, 2], xlabel = "parameter value", ylabel = "peak infectious",
+             title = "β alone vs the product βc")
+scatter!(axis2, β_s ./ maximum(β_s), peaks; color = (:grey40, 0.6), markersize = 6,
+    label = "β (scaled)")
+scatter!(axis2, (β_s .* c_s) ./ maximum(β_s .* c_s), peaks; color = (:firebrick, 0.6),
+    markersize = 6, label = "βc (scaled)")
+axislegend(axis2; position = :rb)
+
+figure
+```
+
+::: {.notes}
+Let them look before you speak. On the left, the colouring does the work: the
+trajectories sort almost perfectly by R nought, so one derived number explains
+nearly all the variation among two hundred runs.
+
+On the right is the same point as a scatter. Against beta alone the cloud is
+wide and shapeless; against the product it collapses onto a curve. Both axes are
+scaled to their own maximum so the two can share one panel — the shape is the
+message, not the position.
+:::
+
 ## Local sensitivity: a derivative, not an uncertainty interval {.center .smaller}
 
 For a small perturbation,
@@ -307,7 +449,7 @@ quarter of a person, sampled the same wrong way thousands of times, becomes a bi
 the variance attribution rather than noise that averages out.
 :::
 
-## What Sobol assumes
+## What Sobol assumes {.smaller}
 
 $$
 \operatorname{Var}(z)=\sum_i V_i+\sum_{i<j}V_{ij}+\dots
@@ -376,7 +518,8 @@ settles it with differential algebra — on a **symbolic** model, where `~` reco
 an equation and nothing is solved:
 
 ```{julia}
-#| label: ch14-structural
+#| label: ch14-structural-model
+#| output: false
 using ModelingToolkit
 using StructuralIdentifiability
 
@@ -388,7 +531,14 @@ D = Differential(t)
 sys = ODESystem([D(S) ~ -b*c*S*I,
                  D(I) ~  b*c*S*I - g*I,
                  D(R) ~  g*I], t; name = :SIRIdentifiability)
+```
 
+## The verdict {.smaller}
+
+Ask about the parameters *and* about the combination you suspect:
+
+```{julia}
+#| label: ch14-structural
 Logging.disable_logging(Logging.Info)
 result = assess_identifiability(sys;
     measured_quantities = [y ~ b*c*S*I],
@@ -516,7 +666,7 @@ audience. That is why it lives in the worksheet, and why the warm-up cell during
 the break matters. Say that out loud rather than skipping past it.
 :::
 
-## Takeaways and limitations
+## Takeaways and limitations {.smaller}
 
 - Local: neighborhood behavior around one parameter vector.
 - Global: ranking conditional on ranges and a design.

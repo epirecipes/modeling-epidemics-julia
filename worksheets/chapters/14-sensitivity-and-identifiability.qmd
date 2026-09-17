@@ -22,10 +22,10 @@ given. Each part ends with `✓` / `✗` lines that check your answer; a `✗` i
 information, not failure, and the collapsed hint below it will get you moving.
 An instructor is circulating; ask early rather than staying stuck.
 
-**All three parts are the session**, and Part C is the one the day has been
+**All four parts are the session**, and Part D is the one the day has been
 building towards — it settles a question the observation-models session left
-open. Part B is the longest, so if you are running short, read its output rather
-than tuning it and move on. Worked solutions are posted at the end of each
+open. Part A is a short warm-up that needs no theory; Part C is the longest, so
+if you are running short, read its output rather than tuning it and move on. Worked solutions are posted at the end of each
 day. Run `git pull` to collect them.
 
 ::: {.callout-note}
@@ -97,7 +97,111 @@ println("R₀ = ", p0[1] * p0[2] / p0[3])
 
 ---
 
-## Part A — reading a sensitivity matrix (~15 min)
+## Part A — sweep and look (~10 min)
+
+Before any theory: choose parameter sets, run the model for each, and look at
+what comes out. This assumes nothing about the model's structure, which is
+exactly why it is the honest place to start.
+
+Sampling a box on a grid scales badly — three parameters at ten levels is a
+thousand runs. A **Latin hypercube** divides each parameter's range into $n$
+strata and samples each stratum once, so every one-dimensional projection gets
+$n$ distinct values instead of a handful.
+
+`EnsembleProblem` then runs the same model once per column of the design. Its
+`prob_func` receives a context whose `sim_id` is the trajectory number, and
+`remake` swaps in that column's parameters.
+
+```{julia}
+#| label: ws-ch14-a1
+using QuasiMonteCarlo
+
+lower = [0.02, 5.0, 0.15]        # β, c, γ — the same box Part C will use
+upper = [0.08, 15.0, 0.40]
+
+# Seeded: an unseeded design would change every number below on each run.
+design = QuasiMonteCarlo.sample(200, lower, upper,
+             LatinHypercubeSample(StableRNG(20250916)))
+
+base_problem = ODEProblem(sir_kernel!, u0, (0.0, 40.0), p0)
+
+# TODO: build an EnsembleProblem from `base_problem` whose prob_func gives
+# trajectory ctx.sim_id the parameters in column ctx.sim_id of `design`.
+sweep_problem = missing
+```
+
+```{julia}
+#| label: ws-ch14-a2
+if sweep_problem === missing
+    println("✗ not attempted yet")
+else
+    sweep = solve(sweep_problem, Tsit5(); trajectories = 200, saveat = tgrid,
+                  abstol = 1e-9, reltol = 1e-9)
+    peaks = [maximum(trajectory[2, :]) for trajectory in sweep.u]
+    β_s, c_s, γ_s = design[1, :], design[2, :], design[3, :]
+
+    correlations = (β = cor(peaks, β_s),
+                    c = cor(peaks, c_s),
+                    βc = cor(peaks, β_s .* c_s),
+                    γ = cor(peaks, γ_s),
+                    R₀ = cor(peaks, β_s .* c_s ./ γ_s))
+
+    check("two hundred trajectories came back", length(sweep.u) == 200)
+    check("the product βc predicts the peak better than β alone",
+          abs(correlations.βc) > abs(correlations.β))
+    check("R₀ predicts it better still",
+          abs(correlations.R₀) > abs(correlations.βc))
+    println(map(x -> round(x; digits = 3), correlations))
+end
+```
+
+::: {.callout-tip collapse="true"}
+## Hint — Part A
+
+```julia
+sweep_problem = EnsembleProblem(
+    base_problem;
+    prob_func = (prob, ctx) -> remake(prob, p = design[:, ctx.sim_id]))
+```
+
+Two details that waste people's time. The signature is `(prob, ctx)` with
+`ctx.sim_id` — the `(prob, i, repeat)` form in older material is out of date.
+And the trajectories are `sweep.u`; iterating the solution itself flattens it.
+:::
+
+```{julia}
+#| label: fig-ws-ch14-sweep
+#| fig-cap: "Two hundred Latin hypercube parameter sets, coloured by R₀."
+if sweep_problem !== missing
+    figure = Figure(size = (720, 360))
+    axis = Axis(figure[1, 1]; xlabel = "time (days)", ylabel = "infectious",
+                title = "trajectories, coloured by R₀")
+    R₀_s = β_s .* c_s ./ γ_s
+    shades = cgrad(:viridis)
+    low, high = extrema(R₀_s)
+    for (k, trajectory) in enumerate(sweep.u)
+        lines!(axis, tgrid, trajectory[2, :];
+               color = shades[(R₀_s[k] - low) / (high - low)], linewidth = 0.7)
+    end
+    figure
+end
+```
+
+### A1. Interpret
+
+Neither $\beta$ nor $c$ correlates especially well with the peak, yet their
+product does better than either and $R_0$ does better still.
+
+- What does that tell you about how the model uses $\beta$ and $c$, before any
+  algebra?
+- Correlation is a crude summary. What kind of dependence would it miss
+  completely, and which part of this worksheet is designed to catch that?
+
+> *Your answer here.*
+
+---
+
+## Part B — reading a sensitivity matrix (~15 min)
 
 `ODEForwardSensitivityProblem` solves the model and the derivatives of the
 states with respect to the parameters at the same time. The result is one
@@ -105,7 +209,7 @@ Jacobian per saved time: rows are $S$, $I$, $R$ and columns are $\beta$, $c$,
 $\gamma$.
 
 ```{julia}
-#| label: ws-ch10-a1
+#| label: ws-ch10-b1
 sensitivity_problem = ODEForwardSensitivityProblem(sir_kernel!, u0,
                                                    (0.0, 40.0), p0)
 sensitivity_solution = solve(sensitivity_problem, Tsit5();
@@ -123,7 +227,7 @@ of its own value, how many people would $I$ move by?* That answer is the scaled
 number divided by 100.
 
 ```{julia}
-#| label: ws-ch10-a2
+#| label: ws-ch10-b2
 # TODO: for each parameter j, the derivative of I at t = 40 times that parameter
 scaled = [0.0, 0.0, 0.0]
 
@@ -136,7 +240,7 @@ check("β and c have the same scaled sensitivity",
 ```
 
 ::: {.callout-tip collapse="true"}
-## Hint — Part A, scaling
+## Hint — Part B, scaling
 
 ```julia
 scaled = [final_jacobian[2, j] * p0[j] for j in 1:3]
@@ -149,7 +253,7 @@ A sensitivity is a derivative, and a derivative can always be checked by moving
 the parameter a little and looking. Do that for $\gamma$.
 
 ```{julia}
-#| label: ws-ch10-a3
+#| label: ws-ch10-b3
 ε = 1e-5
 perturbed = copy(p0)
 perturbed[1] += ε                       # TODO: perturb γ rather than β
@@ -169,7 +273,7 @@ check("the finite difference agrees with the Jacobian",
 ```
 
 ::: {.callout-tip collapse="true"}
-## Hint — Part A, finite difference
+## Hint — Part B, finite difference
 
 ```julia
 perturbed[3] += ε
@@ -197,7 +301,7 @@ axislegend(ax; position = :rb)
 fig
 ```
 
-### A1. Interpret
+### B1. Interpret
 
 - The β and c curves lie exactly on top of each other, which is why one is drawn
   dashed. Look at where $\beta$ and $c$ appear in `sir_kernel!` and explain why
@@ -210,7 +314,7 @@ fig
 
 ---
 
-## Part B — global sensitivity and the output you choose (~15 min)
+## Part C — global sensitivity and the output you choose (~15 min)
 
 Local derivatives describe one point in parameter space. A Sobol analysis
 instead varies all the parameters over a box and asks how much of the variance
@@ -235,7 +339,7 @@ points. It returns the time and the prevalence there, so both outputs below come
 from the same event rather than from a grid.
 
 ```{julia}
-#| label: ws-ch10-b1
+#| label: ws-ch10-c1
 function peak_of(p)
     β, c, γ = Float64.(p)
     # I is already falling at t = 0, so its maximum is there.
@@ -273,7 +377,7 @@ check("the measured peak is a time, not a number of people",
 ```
 
 ::: {.callout-tip collapse="true"}
-## Hint — Part B, the output
+## Hint — Part C, the output
 
 ```julia
 return times[argmax(prevalence)]
@@ -286,7 +390,7 @@ position into a time. `maximum` gives the value there.
 Once that works, compare the two definitions at the baseline.
 
 ```{julia}
-#| label: ws-ch10-b2
+#| label: ws-ch10-c2
 println("model peak time : ", round(peak_time(p0); digits = 2))
 for interval in (0.25, 1.0, 7.0)
     println("measured every ", lpad(interval, 4), " days: ",
@@ -300,12 +404,10 @@ one percent of the population starts out non-susceptible, so the no-epidemic
 corner is $\mathcal{R}_0 \le N/S(0) \approx 1.0101$.
 
 ```{julia}
-#| label: ws-ch10-b3
-rng = StableRNG(7)
-draws = 20_000
+#| label: ws-ch10-c3
 no_growth = N / u0[1]
-sampled_R₀ = [(0.02 + 0.06 * rand(rng)) * (5.0 + 10.0 * rand(rng)) /
-              (0.15 + 0.25 * rand(rng)) for _ in 1:draws]
+box = QuasiMonteCarlo.sample(20_000, lower, upper, LatinHypercubeSample(StableRNG(7)))
+sampled_R₀ = box[1, :] .* box[2, :] ./ box[3, :]
 println("share of the box that never grows: ",
         round(100 * mean(sampled_R₀ .<= no_growth); digits = 1), "%")
 println("peak time there: ", peak_time([0.02, 5.0, 0.40]))
@@ -317,7 +419,7 @@ sit quietly for a while. The analysis uses `peak_time`, the model's own peak,
 rather than a reporting grid.
 
 ```{julia}
-#| label: ws-ch10-b4
+#| label: ws-ch10-c4
 size_indices = gsa(peak_size, Sobol(), parameter_bounds; samples = 200)
 println("peak size  | S1 = ", round.(size_indices.S1; digits = 3),
         " | ST = ", round.(size_indices.ST; digits = 3))
@@ -337,7 +439,7 @@ check("the peak time is dominated by interactions",
       sum(time_indices[1000].S1) < 0.5 && all(time_indices[1000].ST .> 0.5))
 ```
 
-### B1. Interpret
+### C1. Interpret
 
 - For the peak size the first-order indices nearly add to one; for the peak time
   they are much smaller than the total-order indices. What does that gap tell
@@ -359,15 +461,15 @@ check("the peak time is dominated by interactions",
 
 ---
 
-## Part C — proving the confounding (~15 min)
+## Part D — proving the confounding (~15 min)
 
-Part A showed numerically that $\beta$ and $c$ move the model identically. That
+Part B showed numerically that $\beta$ and $c$ move the model identically. That
 is a hint, not a proof: it says the derivatives agree at one parameter vector.
 StructuralIdentifiability answers the question for every trajectory at once, and
 symbolically.
 
 ```{julia}
-#| label: ws-ch10-c1
+#| label: ws-ch10-d1
 using ModelingToolkit
 using StructuralIdentifiability
 
@@ -413,7 +515,7 @@ transmission parameter $k = \kappa$, keeping the same observation, and ask
 again.
 
 ```{julia}
-#| label: ws-ch10-c2
+#| label: ws-ch10-d2
 # TODO: replace every b * c_rate below with the single parameter k
 combined = ODESystem([D(S) ~ -b * c_rate * S * I,
                       D(I) ~ b * c_rate * S * I - g * I,
@@ -451,7 +553,7 @@ $C$, and ask twice: once with the initial state treated as unknown, and once
 treating the complete initial state as known.
 
 ```{julia}
-#| label: ws-ch10-c3
+#| label: ws-ch10-d3
 @parameters rho
 
 Logging.disable_logging(Logging.Warn)
@@ -494,7 +596,7 @@ Read the two results side by side before moving on. They differ in one input:
 whether the initial state is treated as known.
 
 ::: {.callout-tip collapse="true"}
-## Hint — Part C
+## Hint — Part D
 
 ```julia
 combined = ODESystem([D(S) ~ -k * S * I,
@@ -511,7 +613,7 @@ unhelpful `MethodError` about `add_outputs`. The package can only report on
 parameters the model actually contains, so both edits go together.
 :::
 
-### C1. Interpret
+### D1. Interpret
 
 - You have not added a single observation, yet `k` is identifiable where `b` and
   `c` were not. What exactly was gained, and what was given up?
