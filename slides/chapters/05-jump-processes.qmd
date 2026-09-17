@@ -230,6 +230,69 @@ right. Everything from here on states the model and lets the library write the
 loop. Stress that this is a claim we are about to check, not a promise.
 :::
 
+## The ODE, by hand and by declaration {.smaller}
+
+:::: {.columns}
+
+::: {.column width="50%"}
+Day 1: a kernel you write.
+
+```{julia}
+#| label: ch04-hand-ode
+#| echo: true
+function sir_ode!(du, u, p, t)
+    S, I, R = u
+    κ, γ = p
+    du[1] = -κ*S*I
+    du[2] =  κ*S*I - γ*I
+    du[3] =  γ*I
+    return nothing
+end
+```
+:::
+
+::: {.column width="50%"}
+Today: the equations, stated.
+
+```{julia}
+#| label: ch04-mtk-ode
+#| echo: true
+using ModelingToolkit
+using ModelingToolkit: t_nounits as t,
+                       D_nounits as D
+
+@parameters κ γ
+@variables S(t) I(t) R(t)
+
+@named odesys = System(
+    [D(S) ~ -κ*S*I,
+     D(I) ~  κ*S*I - γ*I,
+     D(R) ~  γ*I], t)
+```
+:::
+
+::::
+
+Three assignments into a `du` vector you must index correctly, against three
+named equations. Day 1 wrote this with $\beta$, $c$ and $N$; here
+$\kappa=\beta c/N$ throughout.
+
+::: {.notes}
+Put the two columns up and let them look before saying anything. The left is
+exactly what we did yesterday and it is not bad code — it is fast, it is
+explicit, and you could hand it to a C programmer. What it is not is the
+mathematics: `du[2]` is the infectious equation only by a convention you have to
+remember, and nothing stops you writing `du[1]` twice.
+
+On the right `D(S) ~ -kappa*S*I` reads as the equation does, and the name `S`
+travels with the model, which is why the solution object can answer `sol[S]`
+later without you tracking that S was index one. The symbolic form is also what
+lets the library differentiate the model, simplify it, or convert it to another
+kind of process — none of which it can do with a function whose body it cannot
+see. That is the trade: you give up nothing in speed, because the macro
+generates a kernel like the one on the left.
+:::
+
 ## The same model, two toolkits {.smaller}
 
 :::: {.columns}
@@ -238,12 +301,7 @@ loop. Stress that this is a claim we are about to check, not a promise.
 ```{julia}
 #| label: ch04-mtk
 #| echo: true
-using ModelingToolkit, JumpProcesses
-using ModelingToolkit: t_nounits as t,
-                       D_nounits as D
-
-@parameters κ γ
-@variables S(t) I(t) R(t)
+using JumpProcesses
 
 @named jumpsys = JumpSystem(
     [MassActionJump(κ, [S => 1, I => 1],
@@ -348,8 +406,6 @@ networks session later in the week is entirely Catalyst.
 ```{julia}
 #| label: ch04-dispatch
 #| echo: true
-@named odesys = System([D(S) ~ -κ*S*I, D(I) ~ κ*S*I - γ*I, D(R) ~ γ*I], t)
-
 ode_problem  = ODEProblem(complete(odesys),   start, (0.0, 40.0))
 jump_problem = JumpProblem(complete(jumpsys), start, (0.0, 40.0);
                            rng = StableRNG(3001))
