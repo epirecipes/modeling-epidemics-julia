@@ -101,6 +101,7 @@ even though the state changes by integer increments.
 ## A visible Julia kernel {.smaller}
 
 ```{julia}
+#| echo: true
 using Random, StableRNGs
 
 function gillespie_sir(N, I₀, β, c, γ, tmax, rng)
@@ -204,37 +205,70 @@ needs the probability prerequisite for it.
 
 ## From model to package API {.smaller}
 
-The same reaction structure, in current SciML packages, executed here:
+Describe the *events*, not the loop. Each jump carries two lists: who must be
+present (which sets the propensity) and what the event does to the state.
 
 ```{julia}
-#| label: ch04-catalyst
-using Catalyst, JumpProcesses
+#| label: ch04-jumpsystem
+#| echo: true
+using ModelingToolkit, JumpProcesses
+using ModelingToolkit: t_nounits as t, D_nounits as D
 
-sir_network = @reaction_network begin
-    κ, S + I --> 2I
-    γ, I --> R
-end
-u₀ = [:S => 990, :I => 10, :R => 0]
-jump_parameters = [:κ => 0.05*10/1000, :γ => 0.25]
+@parameters κ γ
+@variables S(t) I(t) R(t)
 
-function simulate_jump(seed)
-    problem = JumpProblem(sir_network, u₀, (0.0, 40.0), jump_parameters;
-        aggregator = Direct(), rng = StableRNG(seed))
-    return Array(solve(problem, SSAStepper(); saveat = grid)(grid))
-end
-size(simulate_jump(3001))
+@named jumpsys = JumpSystem(
+    [MassActionJump(κ, [S => 1, I => 1], [S => -1, I => 1]; scale_rates = false),
+     MassActionJump(γ, [I => 1], [I => -1, R => 1]; scale_rates = false)],
+    t, [S, I, R], [κ, γ])
 ```
 
-One rate constant per reaction, so the $\beta cSI/N$ above becomes $\kappa SI$
+One rate constant per transition, so the $\beta cSI/N$ above becomes $\kappa SI$
 with $\kappa=\beta c/N$; $R_0=\beta c/\gamma=2$ is unchanged.
 
 ::: {.notes}
-Two reactions in two lines, against the hand-written kernel three slides back.
-Say that out loud rather than reading the code. The kappa note matters because
-the book chapter uses kappa from here on: a reaction network carries one rate
-constant per reaction, and the baseline scenario has not changed. The network
-also records stoichiometry explicitly, which is what lets the same object become
-an ODE, an SDE, or a jump model later in the course.
+Four lines against the hand-written kernel three slides back. Point at the two
+lists rather than reading the code: `[S => 1, I => 1]` is why the propensity is a
+product, and `[S => -1, I => 1]` is the stoichiometric change vector we wrote by
+hand. The kappa note matters because the book chapter uses kappa from here on.
+Because the events are recorded symbolically, the same description can later
+become an ODE, an SDE or a jump model — that is the next slide, and it is the
+whole argument for writing models this way.
+:::
+
+## One `solve`, two processes {.smaller}
+
+```{julia}
+#| label: ch04-dispatch
+#| echo: true
+@named odesys = System([D(S) ~ -κ*S*I, D(I) ~ κ*S*I - γ*I, D(R) ~ γ*I], t)
+
+start = [S => 990, I => 10, R => 0, κ => 0.05*10/1000, γ => 0.25]
+
+ode_problem  = ODEProblem(complete(odesys),   start, (0.0, 40.0))
+jump_problem = JumpProblem(complete(jumpsys), start, (0.0, 40.0);
+                           rng = StableRNG(3001))
+
+ode_solution  = solve(ode_problem,  Tsit5())        # deterministic
+jump_solution = solve(jump_problem, SSAStepper())   # one exact path
+
+(ode = round(maximum(ode_solution[I]); digits = 1),
+ jump = maximum(jump_solution[I]))
+```
+
+Different problem, different solver — but `solve`, `sol[I]` and `sol(grid)` are
+the same words in both cases.
+
+::: {.notes}
+This is the multiple-dispatch argument, made concrete rather than asserted.
+Everything that *differs* between a deterministic and a stochastic model is in
+how the problem is built: differential equations against jumps, Tsit5 against
+SSAStepper. Everything downstream is identical, because `solve` dispatches on
+the problem type and the solution object answers `sol[I]` the same way whichever
+process produced it. That is why the sensitivity, estimation and intervention
+sessions later in the week can reuse one set of habits across model types
+instead of learning a new interface each time. It is also why swapping a model
+class is usually a two-line change, not a rewrite.
 :::
 
 ## Twenty paths and the ODE {.center .smaller}
@@ -245,16 +279,20 @@ an ODE, an SDE, or a jump model later in the course.
 #| fig-cap: "Twenty CTMC paths of infectious prevalence with the mean-field ODE."
 using Statistics
 
+simulate_jump(seed) = solve(
+    JumpProblem(complete(jumpsys), start, (0.0, 40.0); rng = StableRNG(seed)),
+    SSAStepper())(grid, idxs = I)
+
 M = 20
-ensemble = cat((simulate_jump(3000 + k) for k in 1:M)...; dims = 3)
-peaks = [maximum(ensemble[2, :, k]) for k in 1:M]
+paths = [simulate_jump(3000 + k) for k in 1:M]
+peaks = maximum.(paths)
 
 fig2 = Figure(size = (900, 380))
 ax2 = Axis(fig2[1, 1], xlabel = "time (days)", ylabel = "infectious",
     title = "peak I: mean $(round(Int, mean(peaks))), sd $(round(Int, std(peaks)))" *
             ", se $(round(std(peaks)/sqrt(M); digits = 1))")
-for k in 1:M
-    lines!(ax2, grid, ensemble[2, :, k]; color = (:firebrick, 0.35), linewidth = 1)
+for path in paths
+    lines!(ax2, grid, path; color = (:firebrick, 0.35), linewidth = 1)
 end
 lines!(ax2, grid, ode[2, :]; color = :black, linestyle = :dash, linewidth = 2.5)
 fig2
@@ -263,7 +301,7 @@ fig2
 ::: {.notes}
 Five minutes, and let them look before you talk. Two things to point at. First
 the spread in *timing*: every path has the same shape but peaks somewhere between
-roughly day 13 and day 25. Second, and this is the one worth labouring: the
+roughly day 12 and day 23. Second, and this is the one worth labouring: the
 dashed ODE is not the average of the paths. Its peak is near 158 while the mean
 of the twenty individual peak heights is around 178, because each path peaks at
 its own time and averaging asynchronous peaks flattens the curve. So "the ODE
@@ -276,17 +314,101 @@ that is expected, since fade-out needs all ten introductions to fail. Fade-out i
 a small-introduction phenomenon, and the worksheet quantifies it.
 :::
 
-## Takeaways and links
+## What exactness costs {.smaller}
+
+Every event is simulated individually, so the work is set by the *event count*,
+not by the time horizon. One counting kernel answers both questions:
+
+```{julia}
+#| echo: true
+#| output: false
+function count_events(N, I₀, β, c, γ, tmax, rng; sis = false)
+    t, S, I, n = 0.0, N - I₀, I₀, 0
+    while t < tmax && I > 0
+        infection = β*c*S*I/N
+        a₀ = infection + γ*I
+        t += randexp(rng)/a₀
+        t > tmax && break
+        if rand(rng)*a₀ < infection
+            S -= 1; I += 1
+        else
+            I -= 1; sis && (S += 1)
+        end
+        n += 1
+    end
+    n
+end
+```
+
+Timed over `N` from $10^3$ to $10^7$ with 1% initially infected, and — with
+`sis = true`, so recovery returns to susceptible — over rising contact rates.
+
+::: {.notes}
+The kernel allocates nothing and is written the obvious way — no vectorisation,
+no rewriting in C. That is the "Julia is fast" claim from this morning made
+concrete: ten million events in a scalar loop is a reasonable thing to do here.
+:::
+
+## Cost grows with size and with rates {.center .smaller}
+
+```{julia}
+#| echo: false
+#| label: fig-slide-ch05-cost
+#| fig-cap: "Left: wall-clock time for one exact SIR path against population size, log-log, with a slope-one reference. Right: event count for an SIS model at N = 10⁵ as the contact rate rises."
+count_events(1000, 10, 0.05, 10.0, 0.25, 40.0, StableRNG(1))       # warm up
+
+sizes = [10^3, 10^4, 10^5, 10^6, 10^7]
+cost = [@elapsed(count_events(N, N ÷ 100, 0.05, 10.0, 0.25, 40.0,
+    StableRNG(1))) for N in sizes]
+
+contacts = [5.0, 10.0, 20.0, 40.0]
+recycling = [count_events(10^5, 1000, 0.05, c, 0.25, 40.0,
+    StableRNG(2); sis = true) for c in contacts]
+
+reference = cost[1] .* sizes ./ sizes[1]
+
+fig = Figure(size = (880, 320))
+ax1 = Axis(fig[1, 1], xscale = log10, yscale = log10,
+    xlabel = "population size N", ylabel = "seconds per path",
+    title = "one SIR path: cost ∝ N")
+lines!(ax1, sizes, reference; color = :grey, linestyle = :dash,
+    label = "slope 1")
+scatterlines!(ax1, sizes, cost; color = :firebrick, linewidth = 2,
+    label = "measured")
+axislegend(ax1; position = :lt)
+
+ax2 = Axis(fig[1, 2], xlabel = "contact rate c", ylabel = "events per path",
+    title = "SIS at N = 10⁵: reinfection lifts the 2N ceiling")
+scatterlines!(ax2, contacts, recycling; color = :steelblue, linewidth = 2)
+
+fig
+```
+
+::: {.notes}
+Two different reasons to be slow. Size is the obvious one: each individual is
+moved through the system one event at a time, so the count comes out at about
+1.55N here and the slope-one reference confirms the cost is linear in N.
+
+Rates are the subtler one. In a closed SIR the event count can never exceed 2N,
+because every individual is infected at most once — so raising the contact rate
+only pushes you towards the final-size bound. Allow reinfection and that ceiling
+goes: events then accumulate at roughly 2*gamma*I(t), so cost is driven by
+endemic prevalence, which rises with the contact rate. Crossing the threshold
+from c = 5 (R0 = 1) to c = 10 (R0 = 2) multiplies the work about thirty-fold.
+It does not grow without limit, though: prevalence saturates towards N, so the
+curve flattens off at roughly 2*gamma*N*tmax, which is 2e6 events here.
+
+The honest summary is that exact simulation costs one step per event, and the
+event count is what you have to reason about. That is where tau-leaping and
+hybrid methods earn their place.
+:::
+
+## Takeaways
 
 - Propensities determine both waiting times and event probabilities.
 - Exact jumps preserve integer states and population conservation.
 - Ensemble summaries are needed for comparison with an ODE.
-
-Further reading:
-
-- [JumpProcesses direct stochastic tutorial](https://docs.sciml.ai/JumpProcesses/stable/tutorials/discrete_stochastic_example/)
-- [Catalyst documentation](https://docs.sciml.ai/Catalyst/stable/)
-- [Book chapter](../../chapters/05-jump-processes.html) · [Pluto notebook](../../notebook-exports/chapters/05-jump-processes.html)
+- Exactness is paid for per event, so cost follows the event count.
 
 ::: {.notes}
 Invite readers to open the Pluto companion and change transmission or the
