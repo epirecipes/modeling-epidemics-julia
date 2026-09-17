@@ -11,10 +11,13 @@ status: draft
 
 The [chapter](../../chapters/05-jump-processes.qmd) simulated an SIR epidemic as an
 exact sequence of events: draw a waiting time, pick which event fires, update the
-state, repeat. Here you keep
-that machinery and change the *disease*. Many infections have a **latent
-period**, someone infected but not yet infectious, which adds a fourth
-compartment $E$ and a third transition.
+state, repeat. Here you keep that process and change the *disease*. Many
+infections have a **latent period**, someone infected but not yet infectious,
+which adds a fourth compartment $E$ and a third transition.
+
+You will not write the simulation loop. You will *describe the events* and let
+`JumpSystem` build the process for you, then run many realisations at once with
+an `EnsembleProblem`.
 
 **How to use this file.** Run cells one at a time with `Ctrl+Shift+Enter`. Cells
 marked `# TODO` have a line or two for you to complete; everything else runs as
@@ -63,48 +66,33 @@ Plain ASCII names work exactly as well if you prefer them.
 
 ## Setup
 
-Run this and check `R₀` prints as 2.0. The `gillespie` function is the session's
-loop, written once so it can drive any model you hand it.
+Run this and check `R₀` prints as 2.0.
+
+`@variables` and `@parameters` create *symbols*, not numbers: `S` is the name of
+a compartment, and the numbers arrive later when you build a problem.
 
 ```{julia}
 #| label: ws-ch04-setup
+using ModelingToolkit
+using JumpProcesses
 using CairoMakie
-using Random
 using StableRNGs
 using Statistics
+using ModelingToolkit: t_nounits as t
 
 check(name, condition) =
     println(condition ? "✓ $name" : "✗ $name — not right yet, see the hint")
 
-# `propensities(u, p)` returns one rate per transition, and column j of
-# `stoichiometry` is what transition j does to the state.
-function gillespie(u0, p, tmax, propensities, stoichiometry, rng)
-    u = collect(u0)
-    t = 0.0
-    ts, us = [t], [copy(u)]
-    while true
-        a = propensities(u, p)
-        a₀ = sum(a)
-        a₀ == 0 && break                 # no transition can fire: absorbed
-        t += randexp(rng) / a₀           # τ ~ Exponential(a₀)
-        t > tmax && break
-        target = rand(rng) * a₀          # pick j with probability aⱼ / a₀
-        j = something(findfirst(≥(target), cumsum(a)), length(a))
-        u .+= stoichiometry[:, j]
-        push!(ts, t); push!(us, copy(u))
-    end
-    return ts, us
-end
+@parameters κ σ γ
+@variables S(t) E(t) I(t) R(t)
 
-sample_states(ts, us, grid) =
-    reduce(hcat, (us[searchsortedlast(ts, t)] for t in grid))
-
-κ = 0.05 * 10 / 1000     # β c / N, as in the session
-σ = 0.5                  # progression rate: mean latent period 1/σ = 2 days
-γ = 0.25                 # recovery rate
+κ_value = 0.05 * 10 / 1000   # β c / N, as in the session
+σ_value = 0.5                # progression rate: mean latent period 1/σ = 2 days
+γ_value = 0.25               # recovery rate
 grid = 0.0:0.5:120.0
+tspan = (0.0, last(grid))
 
-println("R₀ = ", 0.05 * 10 / γ)
+println("R₀ = ", 0.05 * 10 / γ_value)
 ```
 
 ---
@@ -119,128 +107,92 @@ The disease now has three transitions rather than two:
 | progression | $E \to I$ | $\sigma E$ |
 | recovery | $I \to R$ | $\gamma I$ |
 
-You supply two things: what each transition does to the new $E$ compartment, and
-the three propensities, in the same order as the columns.
+A `MassActionJump` describes one transition with **two lists**, and the
+difference between them is the whole idea:
+
+- the **reactant** list says who has to be *present* for the event, and so sets
+  the propensity: `[S => 1, I => 1]` means the rate is $\kappa \cdot S \cdot I$;
+- the **net** list says what the event *does* to the state: `[S => -1, E => 1]`
+  moves one person out of $S$ and into $E$.
+
+Recovery is done for you as a worked example. Fix the other two.
 
 ```{julia}
 #| label: ws-ch04-a1
-# Column j says what transition j does to (S, E, I, R).
-#           infection  progression  recovery
-seir_stoichiometry = [
-    -1   0   0     # S
-     0   0   0     # E   TODO: replace this row — what does each transition do to E?
-     0   1  -1     # I
-     0   0   1     # R
-]
+# Present for the event -> propensity        What the event does to the state
+infection = MassActionJump(κ,
+    [S => 1],                                # TODO: who else must be present?
+    [S => -1, E => 1];
+    scale_rates = false)
 
-function seir_propensities(u, p)
-    S, E, I, R = u
-    κ, σ, γ = p
-    return [0.0, 0.0, 0.0]   # TODO: replace the three zeros with the rates above
-end
+progression = MassActionJump(σ,
+    [E => 1],
+    [E => -1, R => 1];                       # TODO: where does an exposed person go?
+    scale_rates = false)
 
-seir_u0 = (990, 0, 10, 0)
-seir_p = (κ, σ, γ)
-ts, us = gillespie(seir_u0, seir_p, last(grid), seir_propensities,
-                   seir_stoichiometry, StableRNG(1))
-path = sample_states(ts, us, grid)
+recovery = MassActionJump(γ,                 # worked example: I --> R at rate γI
+    [I => 1],
+    [I => -1, R => 1];
+    scale_rates = false)
 
-check("population conserved", all(sum(path; dims = 1) .== 1000))
-check("nobody went negative", minimum(path) >= 0)
-check("the exposed compartment is used", maximum(path[2, :]) > 0)
-check("an epidemic happened", path[4, end] > 100)
-println("events = ", length(ts) - 1, ", peak infectious = ", maximum(path[3, :]))
+@named seir = JumpSystem([infection, progression, recovery], t,
+                         [S, E, I, R], [κ, σ, γ])
+seir_system = complete(seir)
+
+# One map carries both the initial state and the parameter values.
+seir_start = [S => 990, E => 0, I => 10, R => 0,
+              κ => κ_value, σ => σ_value, γ => γ_value]
+
+seir_problem(seed; start = seir_start) =
+    JumpProblem(seir_system, start, tspan; rng = StableRNG(seed))
+
+solution = solve(seir_problem(1), SSAStepper(); saveat = grid)
+
+# A second run with nobody infectious: if the propensity is right, nothing at
+# all can happen, because infection needs an infectious person present.
+quiet = solve(seir_problem(2; start = [S => 1000, E => 0, I => 0, R => 0,
+                                       κ => κ_value, σ => σ_value, γ => γ_value]),
+              SSAStepper(); saveat = grid)
+
+check("population conserved",
+      all(solution[S] .+ solution[E] .+ solution[I] .+ solution[R] .== 1000))
+check("nobody went negative", minimum(minimum(solution[x]) for x in (S, E, I, R)) >= 0)
+check("infection needs an infectious person present", all(quiet[S] .== 1000))
+check("exposed individuals go on to become infectious", maximum(solution[I]) > 10)
+check("an epidemic happened", solution[R][end] > 100)
+println("peak infectious = ", maximum(solution[I]),
+        ", ever infected = ", solution[R][end])
 ```
 
 ::: {.callout-tip collapse="true"}
 ## Hint — Part A
 
 ```julia
-     1  -1   0     # E
-...
-return [κ * S * I, σ * E, γ * I]
+infection = MassActionJump(κ, [S => 1, I => 1], [S => -1, E => 1]; scale_rates = false)
+progression = MassActionJump(σ, [E => 1], [E => -1, I => 1]; scale_rates = false)
 ```
 
-Read the $E$ row across the three transitions: infection puts someone *into* $E$
-($+1$), progression takes them *out* ($-1$), and recovery does not touch $E$
-($0$). Every column should sum to zero: nobody is created or destroyed.
+Infection is the only transition that needs *two* people: one susceptible to
+infect and one infectious to do the infecting. That is why its propensity is a
+product, and why `I` belongs in the reactant list even though infection does not
+change `I` — an infectious person is unchanged by infecting someone.
 
-If the conservation check fails, the $E$ row is the place to look. If nothing
-happens at all (zero events, no epidemic), you have probably written
-`κ * S * E` for the first rate. Infection needs someone *infectious* to do the
-infecting, and people in $E$ are not yet infectious.
+Progression moves a person from $E$ to $I$, not from $E$ to $R$; skipping
+straight to recovered would mean nobody new ever becomes infectious.
+
+`scale_rates = false` says the rate constant is already the propensity
+coefficient, with no combinatorial factor applied. Every reaction here involves
+one individual of each species, so there is nothing to scale.
 :::
-
-### The same model, in three lines
-
-Nothing to fill in here: read it and run it. This is the library half of the
-session: the model you just specified as a $4\times3$ matrix plus a propensity
-function, written as three reactions. In the first reaction $I$ appears on both
-sides because an infectious person is unchanged by infecting someone else; the
-transition moves one person from $S$ to $E$. Catalyst reads $\kappa$ as a
-mass-action rate constant, so that reaction's propensity is $\kappa SI$, the
-same expression you wrote by hand.
-
-The two implementations are the same stochastic process but consume randomness
-differently, so identical seeds do not give identical paths and only their
-distributions can be compared. The cell therefore runs 20 of each and asks
-whether the mean peaks differ by more than three standard errors of that
-difference, the comparison from the session's recap slide. Passing means no
-difference was detected at that resolution, not that the two are proven
-identical.
-
-```{julia}
-#| label: ws-ch04-a2
-using Catalyst
-using JumpProcesses
-
-seir_network = @reaction_network begin
-    κ, S + I --> E + I
-    σ, E --> I
-    γ, I --> R
-end
-
-# Species are named, not positional: ask for `seir_network.I` rather than row 3.
-function network_peak(seed)
-    problem = JumpProblem(seir_network,
-                          [:S => 990, :E => 0, :I => 10, :R => 0],
-                          (0.0, last(grid)), [:κ => κ, :σ => σ, :γ => γ];
-                          aggregator = Direct(), rng = StableRNG(seed))
-    return maximum(solve(problem, SSAStepper(); saveat = grid)[seir_network.I])
-end
-
-function hand_peak(seed)
-    ts, us = gillespie(seir_u0, seir_p, last(grid), seir_propensities,
-                       seir_stoichiometry, StableRNG(seed))
-    return maximum(sample_states(ts, us, grid)[3, :])
-end
-
-M = 20
-network_peaks = [network_peak(2000 + k) for k in 1:M]
-hand_peaks = [hand_peak(3000 + k) for k in 1:M]
-
-# Standard error of the difference between two independent ensemble means.
-standard_error = sqrt((var(network_peaks) + var(hand_peaks)) / M)
-
-check("your model and the reaction network agree on the mean peak",
-      abs(mean(network_peaks) - mean(hand_peaks)) < 3 * standard_error)
-println("mean peak infectious: network ", round(mean(network_peaks); digits = 1),
-        ", yours ", round(mean(hand_peaks); digits = 1),
-        " (standard error of the difference ",
-        round(standard_error; digits = 1), ")")
-```
-
-This check compares your Part A model with the reaction network, so it stays ✗
-until the stoichiometry row and the propensities above are right.
 
 ### A1. Interpret
 
 Why is the first propensity a product of two compartments while the other two
 depend on only one?
 
-Then compare the two specifications you now have of one model. Which parts of
-the $4\times3$ matrix are hard to get right by hand, and what does the reaction
-network make impossible to get wrong?
+Then look again at the two lists in each `MassActionJump`. Why does `I` appear
+in the reactant list of `infection` but not in its net list, and what would go
+wrong if you moved it?
 
 > *Your answer here.*
 
@@ -248,34 +200,69 @@ network make impossible to get wrong?
 
 ## Part B — does the latent period matter? (~15 min)
 
-Below, the same machinery runs the session's SIR model so the two can be
-compared. Both have $R_0 = 2$.
+One realisation tells you very little. A stochastic model has to be run many
+times — the *same* model with the *same* parameters, differing only in the
+random stream — and an `EnsembleProblem` says that in three lines instead of a
+loop you write yourself.
+
+`prob_func` builds the problem for trajectory `ctx.sim_id`, which is where each
+run gets its own seed. Without it every trajectory would share one random
+stream, which is a real trap once the runs are threaded.
+
+```{julia}
+#| label: ws-ch04-b0
+seir_ensemble = EnsembleProblem(seir_problem(100);
+    prob_func = (prob, ctx) -> seir_problem(100 + ctx.sim_id))
+
+seir_runs = solve(seir_ensemble, SSAStepper(), EnsembleThreads();
+                  trajectories = 30, saveat = grid)
+
+peaks = [maximum(r[I]) for r in seir_runs.u]
+
+check("thirty runs came back", length(seir_runs.u) == 30)
+check("the runs differ from each other", std(peaks) > 0)
+println("peak infectious over 30 runs: mean ", round(mean(peaks); digits = 1),
+        ", sd ", round(std(peaks); digits = 1))
+```
+
+Note what did *not* change: the model, the parameters, the solver. Only
+`trajectories` says how much simulation you want, so asking for 3000 instead of
+30 is a one-character edit rather than a rewrite.
+
+To compare two models you also need them on a common time grid, which the
+trajectories do not otherwise share — each one stops at its own last event.
+`EnsembleSummary` does that reduction, and `summarise` below is just the three
+lines above with the model left as an argument.
 
 ```{julia}
 #| label: ws-ch04-b1
-function sir_propensities(u, p)
-    S, I, R = u
-    κ, γ = p
-    return [κ * S * I, γ * I]
+sir_start = [S => 990, I => 10, R => 0, κ => κ_value, γ => γ_value]
+
+@named sir = JumpSystem(
+    [MassActionJump(κ, [S => 1, I => 1], [S => -1, I => 1]; scale_rates = false),
+     MassActionJump(γ, [I => 1], [I => -1, R => 1]; scale_rates = false)],
+    t, [S, I, R], [κ, γ])
+sir_system = complete(sir)
+
+sir_problem(seed) = JumpProblem(sir_system, sir_start, tspan; rng = StableRNG(seed))
+
+function summarise(make_problem, seed0; trajectories = 30)
+    ensemble = EnsembleProblem(make_problem(seed0);
+                               prob_func = (prob, ctx) -> make_problem(seed0 + ctx.sim_id))
+    runs = solve(ensemble, SSAStepper(), EnsembleThreads();
+                 trajectories = trajectories, saveat = grid)
+    return EnsembleSummary(runs, grid)
 end
-sir_stoichiometry = [-1 0; 1 -1; 0 1]
 
-function ensemble(u0, p, propensities, stoichiometry, M, seed0)
-    return cat((sample_states(
-                    gillespie(u0, p, last(grid), propensities,
-                              stoichiometry, StableRNG(seed0 + k))...,
-                    grid) for k in 1:M)...; dims = 3)
-end
+seir_summary = summarise(seir_problem, 100)
+sir_summary = summarise(sir_problem, 200)
 
-M = 30
-seir_runs = ensemble(seir_u0, seir_p, seir_propensities, seir_stoichiometry, M, 100)
-sir_runs  = ensemble((990, 10, 0), (κ, γ), sir_propensities, sir_stoichiometry, M, 200)
-
-seir_I = dropdims(mean(seir_runs[3, :, :]; dims = 2), dims = 2)
-sir_I  = dropdims(mean(sir_runs[2, :, :]; dims = 2), dims = 2)
-
-seir_final = mean(seir_runs[4, end, :])
-sir_final  = mean(sir_runs[3, end, :])
+# summary.u holds the mean state at each grid point; row order follows the
+# unknowns of the system, so I is row 3 for SEIR and row 2 for SIR.
+seir_mean = reduce(hcat, seir_summary.u.u)
+sir_mean = reduce(hcat, sir_summary.u.u)
+seir_I, sir_I = seir_mean[3, :], sir_mean[2, :]
+seir_final, sir_final = seir_mean[4, end], sir_mean[3, end]
 
 check("the SEIR peak comes later", grid[argmax(seir_I)] > grid[argmax(sir_I)])
 check("the SEIR peak is lower", maximum(seir_I) < maximum(sir_I))
@@ -288,11 +275,18 @@ check("both reach a similar final size",
    sir_final = round(sir_final; digits = 1))
 ```
 
+This compares your Part A model with a plain SIR, so it stays ✗ until the two
+jumps above are right.
+
 ```{julia}
 #| label: fig-ws-ch04-compare
-#| fig-cap: "Mean infectious curve over 30 exact simulations, with and without a latent period."
+#| fig-cap: "Mean infectious curve over 30 exact simulations, with and without a latent period, with the 10th-90th percentile band for the SEIR model."
+seir_low = reduce(hcat, seir_summary.qlow.u)[3, :]
+seir_high = reduce(hcat, seir_summary.qhigh.u)[3, :]
+
 fig = Figure(size = (720, 400))
 ax = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "mean infectious")
+band!(ax, grid, seir_low, seir_high; color = (:steelblue, 0.2))
 lines!(ax, grid, sir_I; color = :firebrick, linewidth = 3, label = "SIR")
 lines!(ax, grid, seir_I; color = :steelblue, linewidth = 3, label = "SEIR")
 xlims!(ax, 0, 70)
@@ -307,6 +301,7 @@ fig
 - Both models end with about the same number of people ever infected, but the
   curves look very different. What does the latent period change, and what does
   it leave alone?
+- The shaded band is wide near the peak and narrow at the start. Why?
 
 > *Your answer here.*
 
@@ -320,8 +315,11 @@ $\sigma = 0.5$, and watch the peak move.
 latent_rates = Float64[]   # TODO: fill this list — try σ = 1.0, 0.5, and 0.25
 
 for s in latent_rates
-    runs = ensemble(seir_u0, (κ, s, γ), seir_propensities, seir_stoichiometry, 10, 300)
-    mean_I = dropdims(mean(runs[3, :, :]; dims = 2), dims = 2)
+    start = [S => 990, E => 0, I => 10, R => 0,
+             κ => κ_value, σ => s, γ => γ_value]
+    summary = summarise(seed -> seir_problem(seed; start = start), 300;
+                        trajectories = 10)
+    mean_I = reduce(hcat, summary.u.u)[3, :]
     println("mean latent period ", round(1 / s; digits = 1), " days → peak on day ",
             grid[argmax(mean_I)])
 end
@@ -358,21 +356,29 @@ as faded if fewer than 20 people were ever infected rather than asking whether
 transmission stopped. The run is a check on how good an approximation
 $1/R_0$ is here.
 
+Here `output_func` earns its place: each trajectory is reduced to a single
+`true`/`false` the moment it finishes, so 400 full paths are never held in
+memory at once.
+
 ```{julia}
 #| label: ws-ch04-c1
-function fades_out(seed)
-    start = (990, 0, 10, 0)   # TODO: replace this — start from a single infectious individual
-    ts, us = gillespie(start, seir_p, last(grid), seir_propensities,
-                       seir_stoichiometry, StableRNG(seed))
-    # Outcomes are bimodal: a handful of cases, or hundreds. Any cut between the
-    # two modes gives the same answer, so 20 is not a delicate choice.
-    return last(us)[4] < 20
-end
+single_case = [S => 990, E => 0, I => 10, R => 0,      # TODO: start from ONE infectious individual
+               κ => κ_value, σ => σ_value, γ => γ_value]
+
+# Outcomes are bimodal: a handful of cases, or hundreds. Any cut between the
+# two modes gives the same answer, so 20 is not a delicate choice.
+fade_ensemble = EnsembleProblem(
+    seir_problem(5000; start = single_case);
+    prob_func = (prob, ctx) -> seir_problem(5000 + ctx.sim_id; start = single_case),
+    output_func = (sol, ctx) -> (sol[R][end] < 20, false))
 
 trials = 400
-fade_fraction = count(fades_out, 1:trials) / trials
-predicted = γ / (0.05 * 10)   # 1 / R₀, the branching-process approximation
+faded = solve(fade_ensemble, SSAStepper(), EnsembleThreads(); trajectories = trials)
+fade_fraction = count(faded.u) / trials
+predicted = γ_value / (0.05 * 10)   # 1 / R₀, the branching-process approximation
 
+infectious_at_start = only(x.second for x in single_case if isequal(x.first, I))
+check("started from a single infectious individual", infectious_at_start == 1)
 check("fade-out is close to the branching prediction",
       abs(fade_fraction - predicted) < 0.05)
 (; fade_fraction, predicted)
@@ -382,7 +388,8 @@ check("fade-out is close to the branching prediction",
 ## Hint — Part C
 
 ```julia
-start = (999, 0, 1, 0)
+single_case = [S => 999, E => 0, I => 1, R => 0,
+               κ => κ_value, σ => σ_value, γ => γ_value]
 ```
 
 Keep the population at 1000: one infectious individual means 999 susceptible
@@ -417,8 +424,10 @@ A clean render means every cell ran top to bottom in a fresh session.
 Nothing here is assigned. The whole project stays available to you afterwards.
 
 - [The chapter](../../chapters/05-jump-processes.qmd) — the direct method derived
-  in full, and the same model built with Catalyst reaction networks.
+  in full, including the hand-written kernel that `JumpSystem` replaces here.
 - [The Pluto notebook](../../notebooks/chapters/05-jump-processes.pluto.jl) — sliders
   over the session's SIR model.
 - [The probability prerequisite](../../prerequisites/02-probability-and-stochastic-processes.qmd)
   — where the exponential waiting time and the competing-events rule come from.
+- [Reaction networks](../../chapters/07-reaction-networks.qmd) — later in the
+  course, the same three transitions written as three reactions.

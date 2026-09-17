@@ -101,6 +101,7 @@ even though the state changes by integer increments.
 ## A visible Julia kernel {.smaller}
 
 ```{julia}
+#| echo: true
 using Random, StableRNGs
 
 function gillespie_sir(N, I₀, β, c, γ, tmax, rng)
@@ -202,39 +203,301 @@ the variance decomposition in the last session all live on this slide. Nobody
 needs the probability prerequisite for it.
 :::
 
-## From model to package API {.smaller}
+## Three ways to write one model {.smaller}
 
-The same reaction structure, in current SciML packages, executed here:
+The model has not changed since the last slide. Only the *notation* changes.
+
+| | what you write | who writes the code |
+|---|---|---|
+| **Day 1** | a function: every term, by hand | you |
+| **Today** | a macro: the model as stated | the library |
+
+A hand-written function works in any language, and that is its virtue. It is
+also longer than the mathematics it encodes, and every extra line is somewhere a
+sign can go wrong. Macros let Julia read the model the way it is written on
+paper and generate the loop for you — which is what makes a fifty-compartment
+model tractable.
+
+Two toolkits do this in SciML, and today uses both: **ModelingToolkit.jl** and
+**Catalyst.jl**.
+
+::: {.notes}
+This is the framing slide for the rest of the day, so do not rush it. The point
+is not that macros are clever; it is that all three representations are the same
+process. The hand-written kernel earlier was deliberately the Day 1 style: it
+could have been C or R, and you had to be the one who got the stoichiometry
+right. Everything from here on states the model and lets the library write the
+loop. Stress that this is a claim we are about to check, not a promise.
+:::
+
+## The ODE, by hand and by declaration {.smaller}
+
+:::: {.columns}
+
+::: {.column width="50%"}
+Day 1: a kernel you write.
 
 ```{julia}
+#| label: ch04-hand-ode
+#| echo: true
+function sir_ode!(du, u, p, t)
+    S, I, R = u
+    κ, γ = p
+    du[1] = -κ*S*I
+    du[2] =  κ*S*I - γ*I
+    du[3] =  γ*I
+    return nothing
+end
+```
+:::
+
+::: {.column width="50%"}
+Today: the equations, stated.
+
+```{julia}
+#| label: ch04-mtk-ode
+#| echo: true
+using ModelingToolkit
+using ModelingToolkit: t_nounits as t,
+                       D_nounits as D
+
+@parameters κ γ
+@variables S(t) I(t) R(t)
+
+@named odesys = System(
+    [D(S) ~ -κ*S*I,
+     D(I) ~  κ*S*I - γ*I,
+     D(R) ~  γ*I], t)
+```
+:::
+
+::::
+
+Three assignments into a `du` vector you must index correctly, against three
+named equations. Day 1 wrote this with $\beta$, $c$ and $N$; here
+$\kappa=\beta c/N$ throughout.
+
+::: {.notes}
+Put the two columns up and let them look before saying anything. The left is
+exactly what we did yesterday and it is not bad code — it is fast, it is
+explicit, and you could hand it to a C programmer. What it is not is the
+mathematics: `du[2]` is the infectious equation only by a convention you have to
+remember, and nothing stops you writing `du[1]` twice.
+
+On the right `D(S) ~ -kappa*S*I` reads as the equation does, and the name `S`
+travels with the model, which is why the solution object can answer `sol[S]`
+later without you tracking that S was index one. The symbolic form is also what
+lets the library differentiate the model, simplify it, or convert it to another
+kind of process — none of which it can do with a function whose body it cannot
+see. That is the trade: you give up nothing in speed, because the macro
+generates a kernel like the one on the left.
+:::
+
+## The same model, two toolkits {.smaller}
+
+:::: {.columns}
+
+::: {.column width="54%"}
+```{julia}
+#| label: ch04-mtk
+#| echo: true
+using JumpProcesses
+
+@named jumpsys = JumpSystem(
+    [MassActionJump(κ, [S => 1, I => 1],
+        [S => -1, I => 1]; scale_rates = false),
+     MassActionJump(γ, [I => 1],
+        [I => -1, R => 1]; scale_rates = false)],
+    t, [S, I, R], [κ, γ])
+```
+:::
+
+::: {.column width="46%"}
+```{julia}
 #| label: ch04-catalyst
-using Catalyst, JumpProcesses
+#| echo: true
+using Catalyst
 
 sir_network = @reaction_network begin
     κ, S + I --> 2I
     γ, I --> R
 end
-u₀ = [:S => 990, :I => 10, :R => 0]
-jump_parameters = [:κ => 0.05*10/1000, :γ => 0.25]
-
-function simulate_jump(seed)
-    problem = JumpProblem(sir_network, u₀, (0.0, 40.0), jump_parameters;
-        aggregator = Direct(), rng = StableRNG(seed))
-    return Array(solve(problem, SSAStepper(); saveat = grid)(grid))
-end
-size(simulate_jump(3001))
 ```
+:::
 
-One rate constant per reaction, so the $\beta cSI/N$ above becomes $\kappa SI$
-with $\kappa=\beta c/N$; $R_0=\beta c/\gamma=2$ is unchanged.
+::::
+
+Who must be present sets the propensity; what the event does sets the state
+change. Catalyst reads both off the arrow.
 
 ::: {.notes}
-Two reactions in two lines, against the hand-written kernel three slides back.
-Say that out loud rather than reading the code. The kappa note matters because
-the book chapter uses kappa from here on: a reaction network carries one rate
-constant per reaction, and the baseline scenario has not changed. The network
-also records stoichiometry explicitly, which is what lets the same object become
-an ODE, an SDE, or a jump model later in the course.
+Read the two columns against each other rather than line by line. On the left
+you say the two lists explicitly: `[S => 1, I => 1]` is why the propensity is a
+product, `[S => -1, I => 1]` is the stoichiometric change vector. On the right
+the arrow says both at once — that is the whole saving, and it is why a
+reaction list stays readable at fifty reactions where a jump list does not.
+
+One rate constant per transition, so the beta-c-S-I-over-N from this morning
+becomes kappa-S-I with kappa equal to beta c over N. R nought is still 2. The
+book chapter uses kappa from here on.
+:::
+
+## Equivalent, to the last event {.smaller}
+
+```{julia}
+#| label: ch04-equivalence
+#| echo: true
+using StableRNGs
+
+start = [S => 990, I => 10, R => 0, κ => 0.05*10/1000, γ => 0.25]
+
+mtk_path = solve(JumpProblem(complete(jumpsys), start, (0.0, 40.0);
+                             rng = StableRNG(3001)), SSAStepper())
+
+catalyst_path = solve(JumpProblem(sir_network,
+                          [:S => 990, :I => 10, :R => 0], (0.0, 40.0),
+                          [:κ => 0.05*10/1000, :γ => 0.25];
+                          aggregator = Direct(), rng = StableRNG(3001)),
+                      SSAStepper())
+
+mtk_path(grid, idxs = I) == catalyst_path(grid, idxs = sir_network.I)
+```
+
+Not merely similar — given the same seed, the same sequence of events.
+
+::: {.notes}
+This is the slide that earns the word "equivalent". Both toolkits build the same
+two mass-action jumps, hand them to the same Direct aggregator, and draw from
+the same seeded stream, so the paths agree event for event, not just in
+distribution. Lowered to ODEs instead, the two peaks agree to about 1e-16, which
+is floating-point noise. If a comparison like this ever came out false you would
+have found a real bug in one of the two descriptions, so it is worth running.
+:::
+
+## Which toolkit, and when? {.smaller}
+
+| | ModelingToolkit.jl | Catalyst.jl |
+|---|---|---|
+| You describe | variables, equations, jumps | reactions |
+| Stoichiometry | written out per jump | read off the arrow |
+| Rate laws | any expression you write | mass action by default |
+| Covers | ODEs, SDEs, jumps, DAEs, control | reaction networks |
+| Comes with | structural simplification | network and conservation analysis |
+| Reach for it when | the model is not a reaction network | it is |
+
+Neither is a wrapper around the other, and neither is the "advanced" one. The
+question is only whether your model is naturally a set of reactions.
+
+::: {.notes}
+The honest summary: if you can draw your model as arrows between boxes,
+Catalyst will say it in fewer lines and give you network analysis for free.
+Ageing, waning, vaccination schedules and contact matrices are all still
+reactions, so that covers most of epidemiology. The moment you want a term that
+is not a reaction — a delay, an optimal control, a mass-matrix constraint — you
+are in ModelingToolkit, and Catalyst systems convert into it anyway.
+
+Do not let anyone leave thinking they must pick one. The worksheet this
+afternoon uses ModelingToolkit because jumps are the topic; the reaction
+networks session later in the week is entirely Catalyst.
+:::
+
+## One `solve`, two processes {.smaller}
+
+```{julia}
+#| label: ch04-dispatch
+#| echo: true
+ode_problem  = ODEProblem(complete(odesys),   start, (0.0, 40.0))
+jump_problem = JumpProblem(complete(jumpsys), start, (0.0, 40.0);
+                           rng = StableRNG(3001))
+
+ode_solution  = solve(ode_problem,  Tsit5())        # deterministic
+jump_solution = solve(jump_problem, SSAStepper())   # one exact path
+
+(ode = round(maximum(ode_solution[I]); digits = 1),
+ jump = maximum(jump_solution[I]))
+```
+
+Different problem, different solver — but `solve`, `sol[I]` and `sol(grid)` are
+the same words in both cases.
+
+::: {.notes}
+This is the multiple-dispatch argument, made concrete rather than asserted.
+Everything that *differs* between a deterministic and a stochastic model is in
+how the problem is built: differential equations against jumps, Tsit5 against
+SSAStepper. Everything downstream is identical, because `solve` dispatches on
+the problem type and the solution object answers `sol[I]` the same way whichever
+process produced it. That is why the sensitivity, estimation and intervention
+sessions later in the week can reuse one set of habits across model types
+instead of learning a new interface each time. It is also why swapping a model
+class is usually a two-line change, not a rewrite.
+:::
+
+## Day 1: many runs, by hand {.smaller}
+
+One path tells you almost nothing, so we need twenty. Yesterday's answer was a
+comprehension:
+
+```{julia}
+#| label: ch04-byhand
+#| echo: true
+using Statistics
+
+run_once(seed) = solve(
+    JumpProblem(complete(jumpsys), start, (0.0, 40.0); rng = StableRNG(seed)),
+    SSAStepper())(grid, idxs = I)
+
+paths_by_hand = [run_once(3000 + k) for k in 1:20]
+
+(runs = length(paths_by_hand),
+ mean_peak = round(mean(maximum.(paths_by_hand)); digits = 1))
+```
+
+You wrote the loop, the seeding and the storage — and nothing here says the runs
+are independent, so nothing exploits it.
+
+::: {.notes}
+Nothing is wrong with this code and everybody has written it. Point at what it
+costs: three decisions you had to make and get right, none of which are about
+epidemiology. Where do seeds come from, so runs are reproducible and not
+identical. What shape do you store results in. And who computes the summary.
+
+The deeper problem is the last clause on the slide. A comprehension is a
+sequential instruction, so the fact that twenty independent epidemics could run
+on twenty cores is information you have and the machine does not.
+:::
+
+## `EnsembleProblem`: declare the runs {.smaller}
+
+```{julia}
+#| label: ch04-ensemble
+#| echo: true
+jump_at(seed) = JumpProblem(complete(jumpsys), start, (0.0, 40.0);
+                            rng = StableRNG(seed))
+
+ensemble = EnsembleProblem(jump_at(3001);
+    prob_func = (prob, ctx) -> jump_at(3000 + ctx.sim_id))
+
+runs = solve(ensemble, SSAStepper(), EnsembleThreads(); trajectories = 20)
+
+length(runs.u)
+```
+
+`prob_func` says how trajectory `ctx.sim_id` differs — here, its seed. The
+number of runs moves out of the code and into the call.
+
+::: {.notes}
+Read it as a description rather than a loop. The ensemble problem says *what a
+trajectory is*; `trajectories = 20` says how many you want; `EnsembleThreads()`
+says who runs them. Change twenty to twenty thousand and no code changes.
+
+`prob_func` is the hook that matters. Here it only varies the seed, which is the
+pure stochastic-replication case: same model, same parameters, different random
+stream. Give it a different parameter instead and the identical machinery
+becomes a parameter sweep, which is exactly what the sensitivity session does on
+Thursday with Latin hypercube samples. One interface, two uses.
+
+Say the thing about seeding explicitly: without `prob_func` every trajectory
+would share one random stream, which is a genuine trap under threading.
 :::
 
 ## Twenty paths and the ODE {.center .smaller}
@@ -243,18 +506,16 @@ an ODE, an SDE, or a jump model later in the course.
 #| echo: false
 #| label: fig-slide-ch04-ensemble
 #| fig-cap: "Twenty CTMC paths of infectious prevalence with the mean-field ODE."
-using Statistics
-
-M = 20
-ensemble = cat((simulate_jump(3000 + k) for k in 1:M)...; dims = 3)
-peaks = [maximum(ensemble[2, :, k]) for k in 1:M]
+paths = [r(grid, idxs = I) for r in runs.u]
+peaks = maximum.(paths)
+M = length(paths)
 
 fig2 = Figure(size = (900, 380))
 ax2 = Axis(fig2[1, 1], xlabel = "time (days)", ylabel = "infectious",
     title = "peak I: mean $(round(Int, mean(peaks))), sd $(round(Int, std(peaks)))" *
             ", se $(round(std(peaks)/sqrt(M); digits = 1))")
-for k in 1:M
-    lines!(ax2, grid, ensemble[2, :, k]; color = (:firebrick, 0.35), linewidth = 1)
+for path in paths
+    lines!(ax2, grid, path; color = (:firebrick, 0.35), linewidth = 1)
 end
 lines!(ax2, grid, ode[2, :]; color = :black, linestyle = :dash, linewidth = 2.5)
 fig2
@@ -263,7 +524,7 @@ fig2
 ::: {.notes}
 Five minutes, and let them look before you talk. Two things to point at. First
 the spread in *timing*: every path has the same shape but peaks somewhere between
-roughly day 13 and day 25. Second, and this is the one worth labouring: the
+roughly day 12 and day 23. Second, and this is the one worth labouring: the
 dashed ODE is not the average of the paths. Its peak is near 158 while the mean
 of the twenty individual peak heights is around 178, because each path peaks at
 its own time and averaging asynchronous peaks flattens the curve. So "the ODE
@@ -276,17 +537,143 @@ that is expected, since fade-out needs all ten introductions to fail. Fade-out i
 a small-introduction phenomenon, and the worksheet quantifies it.
 :::
 
-## Takeaways and links
+## Summaries without a summariser {.center .smaller}
+
+```julia
+summary = EnsembleSummary(runs, grid)        # mean and quantiles, per variable
+```
+
+```{julia}
+#| echo: false
+#| label: fig-slide-ch05-band
+#| fig-cap: "Mean infectious prevalence over the same twenty paths with a 5th-95th percentile band, against the mean-field ODE."
+summary = EnsembleSummary(runs, grid)
+row = findfirst(isequal(I), unknowns(complete(jumpsys)))
+mean_I = reduce(hcat, summary.u.u)[row, :]
+low_I = reduce(hcat, summary.qlow.u)[row, :]
+high_I = reduce(hcat, summary.qhigh.u)[row, :]
+
+fig3 = Figure(size = (880, 320))
+ax3 = Axis(fig3[1, 1], xlabel = "time (days)", ylabel = "infectious",
+    title = "mean of paths peaks at $(round(maximum(mean_I); digits = 1))" *
+            ", ODE at $(round(maximum(ode[2, :]); digits = 1))")
+band!(ax3, grid, low_I, high_I; color = (:firebrick, 0.2))
+lines!(ax3, grid, mean_I; color = :firebrick, linewidth = 2.5, label = "ensemble mean")
+lines!(ax3, grid, ode[2, :]; color = :black, linestyle = :dash, linewidth = 2.5,
+    label = "ODE")
+axislegend(ax3; position = :rt)
+fig3
+```
+
+::: {.notes}
+`EnsembleSummary` is the reason the previous slide stored nothing by hand: mean
+and quantiles across trajectories, on a grid the trajectories do not share,
+because each one stops at its own last event.
+
+Now compare the two curves in the title. The ensemble mean peaks lower than the
+individual paths did on the last slide — averaging asynchronous peaks flattens
+them — and it is *still* not the ODE. The band is the honest picture: wide
+around the peak, where timing varies most, and narrow at both ends where every
+path agrees. If you only ever plot a mean, you have thrown that away.
+:::
+
+## What exactness costs {.smaller}
+
+Every event is simulated individually, so the work is set by the *event count*,
+not by the time horizon. One counting kernel answers both questions:
+
+```{julia}
+#| echo: true
+#| output: false
+function count_events(N, I₀, β, c, γ, tmax, rng; sis = false)
+    t, S, I, n = 0.0, N - I₀, I₀, 0
+    while t < tmax && I > 0
+        infection = β*c*S*I/N
+        a₀ = infection + γ*I
+        t += randexp(rng)/a₀
+        t > tmax && break
+        if rand(rng)*a₀ < infection
+            S -= 1; I += 1
+        else
+            I -= 1; sis && (S += 1)
+        end
+        n += 1
+    end
+    n
+end
+```
+
+Timed over `N` from $10^3$ to $10^7$ with 1% initially infected, and — with
+`sis = true`, so recovery returns to susceptible — over rising contact rates.
+
+::: {.notes}
+The kernel allocates nothing and is written the obvious way — no vectorisation,
+no rewriting in C. That is the "Julia is fast" claim from this morning made
+concrete: ten million events in a scalar loop is a reasonable thing to do here.
+:::
+
+## Cost grows with size and with rates {.center .smaller}
+
+```{julia}
+#| echo: false
+#| label: fig-slide-ch05-cost
+#| fig-cap: "Left: wall-clock time for one exact SIR path against population size, log-log, with a slope-one reference. Right: event count for an SIS model at N = 10⁵ as the contact rate rises."
+count_events(1000, 10, 0.05, 10.0, 0.25, 40.0, StableRNG(1))       # warm up
+
+sizes = [10^3, 10^4, 10^5, 10^6, 10^7]
+cost = [@elapsed(count_events(N, N ÷ 100, 0.05, 10.0, 0.25, 40.0,
+    StableRNG(1))) for N in sizes]
+
+contacts = [5.0, 10.0, 20.0, 40.0]
+recycling = [count_events(10^5, 1000, 0.05, c, 0.25, 40.0,
+    StableRNG(2); sis = true) for c in contacts]
+
+reference = cost[1] .* sizes ./ sizes[1]
+
+fig = Figure(size = (880, 320))
+ax1 = Axis(fig[1, 1], xscale = log10, yscale = log10,
+    xlabel = "population size N", ylabel = "seconds per path",
+    title = "one SIR path: cost ∝ N")
+lines!(ax1, sizes, reference; color = :grey, linestyle = :dash,
+    label = "slope 1")
+scatterlines!(ax1, sizes, cost; color = :firebrick, linewidth = 2,
+    label = "measured")
+axislegend(ax1; position = :lt)
+
+ax2 = Axis(fig[1, 2], xlabel = "contact rate c", ylabel = "events per path",
+    title = "SIS at N = 10⁵: reinfection lifts the 2N ceiling")
+scatterlines!(ax2, contacts, recycling; color = :steelblue, linewidth = 2)
+
+fig
+```
+
+::: {.notes}
+Two different reasons to be slow. Size is the obvious one: each individual is
+moved through the system one event at a time, so the count comes out at about
+1.55N here and the slope-one reference confirms the cost is linear in N.
+
+Rates are the subtler one. In a closed SIR the event count can never exceed 2N,
+because every individual is infected at most once — so raising the contact rate
+only pushes you towards the final-size bound. Allow reinfection and that ceiling
+goes: events then accumulate at roughly 2*gamma*I(t), so cost is driven by
+endemic prevalence, which rises with the contact rate. Crossing the threshold
+from c = 5 (R0 = 1) to c = 10 (R0 = 2) multiplies the work about thirty-fold.
+It does not grow without limit, though: prevalence saturates towards N, so the
+curve flattens off at roughly 2*gamma*N*tmax, which is 2e6 events here.
+
+The honest summary is that exact simulation costs one step per event, and the
+event count is what you have to reason about. That is where tau-leaping and
+hybrid methods earn their place.
+:::
+
+## Takeaways
 
 - Propensities determine both waiting times and event probabilities.
+- Two notations, one process: ModelingToolkit and Catalyst give the same events.
+- `EnsembleProblem` declares the replicates; `prob_func` seeds them.
 - Exact jumps preserve integer states and population conservation.
 - Ensemble summaries are needed for comparison with an ODE.
-
-Further reading:
-
-- [JumpProcesses direct stochastic tutorial](https://docs.sciml.ai/JumpProcesses/stable/tutorials/discrete_stochastic_example/)
-- [Catalyst documentation](https://docs.sciml.ai/Catalyst/stable/)
-- [Book chapter](../../chapters/05-jump-processes.html) · [Pluto notebook](../../notebook-exports/chapters/05-jump-processes.html)
+- Exactness is paid for per event, so cost follows the event count.
 
 ::: {.notes}
 Invite readers to open the Pluto companion and change transmission or the
