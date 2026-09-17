@@ -165,11 +165,74 @@ The extinction probability is the one to dwell on. No amount of ODE work gives i
 to you, and it is exactly the quantity a public health question often turns on.
 :::
 
+## The parallel machine you already have
+
+Most of us do not have a cluster.
+
+- A local server or a cloud account is a procurement problem, a queueing system
+  and somebody to administer it.
+- The laptop in front of you has **4 to 12 cores**, and they are idle.
+- Yesterday, every model you ran used one of them.
+
+Today's ensembles are the easy case — 200 independent epidemics that share
+nothing:
+
+```julia
+solve(ensemble, SSAStepper(), EnsembleThreads(); trajectories = 200)
+```
+
+::: {.notes}
+Ask for a show of hands: who has access to a compute cluster? Usually a couple
+of people. Then ask who has at least four cores in the machine they are working
+on. Almost everyone. That gap is the point of this slide.
+
+Stochastic epidemic modelling is unusually well suited to this, because
+replicate simulations are independent by construction. There is no
+communication to arrange and no partial results to combine — the hard part of
+parallel programming simply is not present.
+:::
+
+## Threads, and the one thing to do first
+
+| | shared-memory threading |
+|---|---|
+| **Julia** | built in: `Threads.@threads`, `EnsembleThreads()` |
+| **Python** | the GIL stops threads helping CPU-bound work; you reach for processes, and copy data between them |
+| **R** | no threading in the language; fork or socket workers, and copy data |
+
+You must choose the number of threads **before Julia starts**:
+
+```bash
+export JULIA_NUM_THREADS=auto     # or julia --threads=auto
+```
+
+In VS Code, set `julia.NumThreads`. Then check:
+
+```julia
+Threads.nthreads()     # if this says 1, EnsembleThreads() buys you nothing
+```
+
+::: {.notes}
+Be fair to the other languages rather than scoring a point. Python and R can
+both use every core on the machine; what they cannot easily do is share memory
+while doing it, so you end up copying the model and the data into each worker
+process. For a big model or a big dataset that copy is the expensive part, and
+it is why parallel code in those languages so often runs slower than the serial
+version until it is tuned.
+
+The last line is the one that actually costs people time today. The thread count
+is fixed when the process starts, so it cannot be changed from inside a running
+session, and the default is one. Nothing errors and nothing warns:
+`EnsembleThreads()` on a single-threaded session simply runs the trajectories one
+after another. If somebody reports that threading "did nothing", this is almost
+always why — have them run `Threads.nthreads()` first.
+:::
+
 ## Today, and which promise it pays
 
 | Session | Topic | Pays off |
 |---|---|---|
-| 1 | Jump processes | speed, dispatch |
+| 1 | Jump processes | speed, dispatch, threads |
 | 2 | Reaction networks and moment closure | macros, ecosystem, dispatch |
 | 3 | Sensitivity and identifiability | autodiff, speed |
 | 4 | Interventions and optimization | dispatch, ecosystem |
