@@ -322,9 +322,25 @@ Every worksheet also opens with a table of the symbols it uses, ready to copy.
 julia --project=. -e 'using Pluto; Pluto.run()'
 ```
 
-It opens in your browser. Use *Open a notebook* and give it a path such as `notebooks/chapters/01-foundations.jl`.
+It opens in your browser. Use *Open a notebook* and give it a path such as `notebooks/chapters/01-foundations.pluto.jl`.
 
 A Pluto notebook is not a script that runs top to bottom. Its cells form a network: change one, and every cell that depends on it re-runs by itself. To stop Pluto, press `Ctrl`+`C` in the terminal where it is running.
+
+**Using more than one core.** Several sessions run many simulations at once, and Julia can spread them across the cores your machine already has. You have to say how many threads to use **before Julia starts**, though: the count is fixed when the process launches, the default is one, and nothing warns you if you leave it there.
+
+In VSCode, open settings (`Cmd`/`Ctrl`+`,`), search for `julia.NumThreads`, and set it to `auto`. From a terminal, start Julia with `julia --threads=auto`, or set the environment variable first:
+
+```bash
+export JULIA_NUM_THREADS=auto
+```
+
+Check it took effect:
+
+```julia
+Threads.nthreads()
+```
+
+If that returns `1`, everything in the course still runs and still gives the right answers — the ensembles just will not go any faster.
 
 **A second package set.** One unit, parameter estimation, needs a package that conflicts with the rest of the course, so it has an environment of its own. It is OK to skip this unless and until you work through that chapter:
 

@@ -42,7 +42,7 @@ end
 println("R₀ = ", p0[1] * p0[2] / p0[3])
 ```
 
-### Part A — reading a sensitivity matrix
+### Part B — reading a sensitivity matrix
 
 Scaling each derivative by its own parameter answers a question you can ask of
 all three at once: if this parameter were raised by 1% of its own value, how many
@@ -50,7 +50,7 @@ people would $I$ move by? The finite difference then checks the derivative by
 moving $\gamma$ and looking.
 
 ```{julia}
-#| label: ws-ch14-a1
+#| label: ws-ch14-b1
 sensitivity_problem = ODEForwardSensitivityProblem(sir_kernel!, u0, (0.0, 40.0), p0)
 sensitivity_solution = solve(sensitivity_problem, Tsit5();
                              saveat = tgrid, abstol = 1e-9, reltol = 1e-9)
@@ -67,7 +67,7 @@ check("β and c have the same scaled sensitivity",
 ```
 
 ```{julia}
-#| label: ws-ch14-a2
+#| label: ws-ch14-b2
 ε = 1e-5
 perturbed = copy(p0)
 perturbed[3] += ε
@@ -99,7 +99,7 @@ axislegend(ax; position = :rb)
 fig
 ```
 
-#### A1. Interpret
+#### B1. Interpret
 
 - In `sir_kernel!` the two parameters appear only as the product `β * c`, never
   apart, so $I(t)$ is a function of $\beta c$. The chain rule gives $\partial
@@ -108,7 +108,7 @@ fig
   turns both into $\beta c\,\partial I/\partial(\beta c)$ — which is why the
   scaled values agree to about $10^{-14}$ at every saved time, not just the end.
 - The model cannot distinguish a contact rate of 10 with transmission probability
-  0.05 from a contact rate of 20 with probability 0.025. Part C proves this is a
+  0.05 from a contact rate of 20 with probability 0.025. Part D proves this is a
   property of the model and the observation, not of this parameter vector.
 - The sign change is about what a derivative measures: the effect on the *level
   of $I$ at that time*, not on the epidemic as a whole. Raising transmission makes
@@ -118,7 +118,7 @@ fig
 - A single number like $\partial I(40)/\partial\beta$ is meaningless without
   saying which time it refers to.
 
-### Part B — global sensitivity and the output you choose
+### Part C — global sensitivity and the output you choose
 
 Timing needs a decision that peak size does not: peak of *what*, measured *when*?
 `peak_of` locates the model's own peak with a `ContinuousCallback` watching
@@ -126,7 +126,7 @@ $\beta cS/N - \gamma$, while `scheduled_prevalence_peak` reports what a survey o
 a fixed schedule would say.
 
 ```{julia}
-#| label: ws-ch14-b1
+#| label: ws-ch14-c1
 function peak_of(p)
     β, c, γ = Float64.(p)
     # I is already falling at t = 0, so its maximum is there.
@@ -168,7 +168,7 @@ $\mathcal{R}_0 > 1$, so the no-epidemic corner of the box is
 $\mathcal{R}_0 \le N/S(0) \approx 1.0101$.
 
 ```{julia}
-#| label: ws-ch14-b2
+#| label: ws-ch14-c2
 rng = StableRNG(7)
 draws = 20_000
 no_growth = N / u0[1]
@@ -180,7 +180,7 @@ println("peak time there: ", peak_time([0.02, 5.0, 0.40]))
 ```
 
 ```{julia}
-#| label: ws-ch14-b3
+#| label: ws-ch14-c3
 size_indices = gsa(peak_size, Sobol(), parameter_bounds; samples = 200)
 println("peak size  | S1 = ", round.(size_indices.S1; digits = 3),
         " | ST = ", round.(size_indices.ST; digits = 3))
@@ -199,7 +199,7 @@ check("the peak time is dominated by interactions",
       sum(time_indices[1000].S1) < 0.5 && all(time_indices[1000].ST .> 0.5))
 ```
 
-#### B1. Interpret
+#### C1. Interpret
 
 - For the peak size the first-order indices are about 0.40, 0.27 and 0.25 and add
   to 0.91, so most of the variation is attributable to individual parameters and
@@ -239,16 +239,16 @@ check("the peak time is dominated by interactions",
   An output definition can matter a great deal for a reported number and very
   little for a variance decomposition.
 
-### Part C — proving the confounding
+### Part D — proving the confounding
 
-Part A showed numerically that $\beta$ and $c$ move the model identically, which
+Part B showed numerically that $\beta$ and $c$ move the model identically, which
 says only that the derivatives agree at one parameter vector.
 StructuralIdentifiability answers the question for every trajectory at once, and
 symbolically. Nothing below is integrated: `~` records an equation between
 symbols.
 
 ```{julia}
-#| label: ws-ch14-c1
+#| label: ws-ch14-d1
 using ModelingToolkit
 using StructuralIdentifiability
 t = ModelingToolkit.t_nounits           # the same time symbol used in Session 1
@@ -280,7 +280,7 @@ The remedy is not more data of the same kind; it is to stop asking for the two
 numbers separately.
 
 ```{julia}
-#| label: ws-ch14-c2
+#| label: ws-ch14-d2
 combined = ODESystem([D(S) ~ -k * S * I,
                       D(I) ~ k * S * I - g * I,
                       D(R) ~ g * I,
@@ -310,7 +310,7 @@ so can the reporting fraction $\rho$ be separated from transmission? Observe
 $\rho C$ rather than $C$, and ask twice.
 
 ```{julia}
-#| label: ws-ch14-c3
+#| label: ws-ch14-d3
 @parameters rho
 
 Logging.disable_logging(Logging.Warn)
@@ -349,7 +349,7 @@ check("knowing the initial state makes ρ identifiable",
 (; unknown_initial_state, known_initial_state)
 ```
 
-#### C1. Interpret
+#### D1. Interpret
 
 - Nothing was learnt about the world, and that is the point. The observation
   determines one transmission coefficient; asking for the two factors separately
