@@ -268,7 +268,7 @@ check("the long-horizon benefit is smaller than the T = 45 benefit",
 
 - The infectious curve rises a second time after the window closes. Explain what
   causes that, using `susceptibles_when_policy_lifts` and the reported
-  `R_eff_when_policy_lifts`. (The herd-immunity threshold here is $S^\* = N/R_0$;
+  `R_eff_when_policy_lifts`. (The herd-immunity threshold here is $S^{*} = N/R_0$;
   the epidemic can only grow while $R_{\text{eff}}>1$.)
 - The suppressed first peak looks dramatic. Compare it with `difference_at_45`,
   and then compare *that* with `difference_at_200`. Of the infections the policy
@@ -345,6 +345,8 @@ incidence_problem = OptimizationProblem(
     ub = [25.0],
 )
 incidence_solution = solve(incidence_problem, Fminbox(LBFGS()); maxiters = 30)
+
+# incidence_start refers to the day the intervention switches on.
 incidence_start = incidence_solution.u[1]
 
 check("the solver reported success",
