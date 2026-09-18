@@ -127,7 +127,11 @@ for unit in units
     occursin("course-unit: $full_id", book) || push!(errors, "$id book metadata has the wrong course-unit.")
     occursin("course-unit: $full_id", slide) || push!(errors, "$id slide metadata has the wrong course-unit.")
     occursin("course_unit = \"$full_id\"", notebook) || push!(errors, "$id notebook metadata has the wrong course-unit.")
-    occursin("Pkg.activate", notebook) || push!(errors, "$id notebook does not activate the shared course environment.")
+    # A notebook either carries its own Pluto-managed environment, or activates
+    # the shared course environment. Exactly one of the two must be true: with
+    # neither, Pluto silently resolves packages into a throwaway environment.
+    occursin("Pkg.activate", notebook) || occursin("PLUTO_PROJECT_TOML_CONTENTS", notebook) ||
+        push!(errors, "$id notebook neither embeds its own environment nor activates the shared one.")
 
     # The opening callout on every book page is a further copy of the schedule, so it
     # drifts silently on a reorder unless it is checked against course-units.toml.
