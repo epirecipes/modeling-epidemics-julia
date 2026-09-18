@@ -51,12 +51,23 @@ Plain ASCII names work exactly as well if you prefer them.
 ```{julia}
 #| label: ws-ch06b-setup
 using Agents
+using Base64
 using CairoMakie
 using Distributions
 using Pkg
 using Random
 using StableRNGs
 using Statistics
+
+struct Animation
+    bytes::Vector{UInt8}
+    width::Int
+end
+Base.show(io::IO, ::MIME"text/html", a::Animation) =
+    print(io, "<video controls autoplay loop ",
+        "muted playsinline width=\"$(a.width)\" ",
+        "src=\"data:video/mp4;base64,",
+        base64encode(a.bytes), "\"></video>")
 
 Pkg.status(["Agents", "CairoMakie", "Distributions", "StableRNGs"])
 println("Julia ", VERSION)
@@ -305,6 +316,48 @@ for (j, t) in enumerate((3.0, 8.0, 20.0))
 end
 fig
 ```
+
+### Optional — watch the awareness spread
+
+The three panels above are three moments. This cell plays the same run, one frame
+every fifth of a time unit, so you can watch the orange move.
+
+It uses your `is_aware`, so it is also a check on it: while the `:local` branch
+still returns `false` nobody ever turns orange, and the epidemic you see is the
+one from a population that takes no precautions at all.
+
+```{julia}
+#| label: ws-ch06b-video
+#| error: true
+video_model = initialize_model(7001; information = :local, m = 1, α = 0.5)
+
+# Bound to `video_model` rather than reusing `awareness_colour`, which reads
+# awareness from `snapshot_model`.
+video_colour(p) =
+    p.status === :I ? :firebrick :
+    p.status === :R ? :seagreen :
+    is_aware(p, video_model) ? :orange : :steelblue
+
+video_path = "abm-awareness-run.mp4"
+
+abmvideo(video_path, video_model;
+    agent_color = video_colour, agent_marker = :rect, agent_size = 20,
+    dt = 2, frames = 115, framerate = 15,
+    figure = (; size = (1000, 625)))
+
+Animation(read(video_path), 1000)
+```
+
+Orange tracks red rather than covering the grid, and it thins out as the epidemic
+does: at this seed 425 susceptible people are taking precautions at $t=0$, 223 at
+$t=10$ and 74 at $t=20$, by which point only two people are still infectious. The
+run is over at $t=22.4$ with 51 infections, so the clip covers all of it.
+
+Part C asks what happens when the same behaviour is triggered by a national
+number instead. Watching this one first is what makes that comparison land.
+
+The video is saved as `abm-awareness-run.mp4` next to wherever you are running
+the worksheet from. Running the cell again overwrites it.
 
 ### Does the extra information ring do anything?
 
@@ -642,6 +695,83 @@ resampled seeds.
                       averted_per_aware_day(national_rule); digits = 3),
    interval = contrast_interval(local_rule, national_rule))
 ```
+
+### Optional — watch the two rules side by side
+
+The tables say the two rules take a similar amount of precaution and end in very
+different places. This cell shows both runs at once, same seed, same colours as
+before, with each panel's title carrying the running counts. It uses your
+`θ_matched`, so change that and the right-hand panel changes with it.
+
+Watch two things: **where** the orange is, and **when** it is there at all.
+
+```{julia}
+#| label: ws-ch06b-video-comparison
+#| error: true
+comparison = (
+    (initialize_model(7001; information = :local, m = 1, α = 0.5), "local, m = 1"),
+    (initialize_model(7001; information = :national, θ = θ_matched, α = 0.5),
+     "national, θ = $θ_matched"),
+)
+
+# Nobody moves, so one person stays in each cell for the whole run and the grid
+# can be drawn as a matrix of codes rather than a thousand markers.
+function status_codes(model)
+    codes = Matrix{Int}(undef, 40, 25)
+    for position in positions(model)
+        person = model[id_in_position(position, model)]
+        codes[position...] = person.status === :I ? 3 :
+                             person.status === :R ? 4 :
+                             is_aware(person, model) ? 2 : 1
+    end
+    return codes
+end
+
+comparison_frames = 150
+steps_per_frame = 3
+
+fig = Figure(size = (1100, 380))
+grids = Observable[]
+headings = Observable[]
+for (j, (model, name)) in enumerate(comparison)
+    push!(grids, Observable(status_codes(model)))
+    push!(headings, Observable(name))
+    ax = Axis(fig[1, j]; aspect = DataAspect(), title = headings[j])
+    heatmap!(ax, grids[j];
+        colormap = cgrad([:steelblue, :orange, :firebrick, :seagreen];
+                         categorical = true),
+        colorrange = (0.5, 4.5))
+    hidedecorations!(ax)
+end
+
+comparison_path = "abm-awareness-comparison.mp4"
+record(fig, comparison_path, 1:comparison_frames; framerate = 15) do frame
+    t = round((frame - 1) * steps_per_frame * 0.1; digits = 1)
+    for (j, (model, name)) in enumerate(comparison)
+        grids[j][] = status_codes(model)
+        aware = count(p -> p.status == :S && is_aware(p, model), allagents(model))
+        headings[j][] = "$name — t = $t, infectious $(infected_count(model)), " *
+                        "taking care $aware"
+        step!(model, steps_per_frame)
+    end
+end
+
+Animation(read(comparison_path), 1100)
+```
+
+The clip runs to $t = 44.7$, long enough for the local epidemic to finish and for
+the national threshold to have come and gone.
+
+While `θ_matched` is still the starting 0.10, the right-hand panel never turns
+orange: the epidemic here peaks near 70 infectious people in a thousand, so a
+threshold of 10% is never crossed and the rule does nothing at all. That is worth
+seeing once before you lower it.
+
+If both panels look identical, that is correct rather than a bug. A local rule
+whose `is_aware` still returns `false` and a national rule whose threshold is
+never reached are the same model, and on the same seed they produce the same
+epidemic frame for frame. The panels separate once Part A's `is_aware` is
+finished and `θ_matched` is low enough to fire.
 
 Neither rule has to be used at one setting. Sweeping both gives a curve of what
 each rule achieves for the precaution it asks of people.
