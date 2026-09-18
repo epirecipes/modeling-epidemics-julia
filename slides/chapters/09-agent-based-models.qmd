@@ -218,6 +218,8 @@ A **periodic** grid wraps, so everybody has the same number of neighbours and no
 
 A **bounded** grid has edges, so a corner person would have fewer neighbours than somebody in the middle of the grid.
 
+Fewer neighbours is **not** less risk: we draw contacts at the same rate either way, so a smaller pool raises the *proportion* infectious. The corner is the worst place to stand.
+
 ```{julia}
 #| echo: false
 #| label: fig-slide-ch06-edges
@@ -321,6 +323,10 @@ But if we restrict it, the number of contacts would depend on how many neighbour
 neighbours, so a repeat happens in about 2% of steps, and the final sizes are
 indistinguishable.  Meeting the same neighbour twice is not double counting
 either, because $c$ is a rate of contact *events*, not of distinct people.
+
+Do not confuse this with the binomial rule from the edges slide.  That one
+changes how risk scales when the neighbourhood is small; this one changes only
+whether we can meet the same person twice within a step.
 :::
 
 ## Changes: committing the step
@@ -486,7 +492,7 @@ Constructing the Model World (StandardABM)
 	•	Person: Tells the model that the population consists of our @agent struct Person objects.
 	•	GridSpaceSingle(dims; ...):
 	◦	GridSpaceSingle: Creates a 2D spatial grid where at most one agent can occupy each grid square.
-	◦	periodic=true: Wraps the edges into a torus (donut topology) so agents at the edge don't suffer from "boundary effects."
+	◦	periodic=true: Wraps the edges into a torus (donut topology) so there are no edge agents at all: everybody holds the same neighbourhood, and nobody's risk depends on where they happen to live.
 	◦	metric=:chebyshev: Uses the Chebyshev distance metric (the Moore neighborhood—all 8 surrounding squares including diagonals).
 	•	agent_step!, model_step!: Plugs in our two rule functions that we defined earlier.
 	•	properties=(...): Stores global parameters ($\beta, c, \gamma, \Delta t, \text{radius}$) so any function can look them up via model.β.
