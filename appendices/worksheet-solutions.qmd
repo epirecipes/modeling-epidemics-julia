@@ -6,7 +6,7 @@ in [Appendix G](solutions.qmd) are reading-and-study material, while the
 worksheets are what participants fill in during a session. Each part below keeps
 the worksheet's code and condenses the written answers to the points that matter.
 
-Day 1 is covered here; Day 2 and Day 3 will follow.
+Days 1 and 2 are covered here; Day 3 will follow.
 
 {{< include worksheet-solutions/day1-julia-essentials.qmd >}}
 
@@ -15,3 +15,11 @@ Day 1 is covered here; Day 2 and Day 3 will follow.
 {{< include worksheet-solutions/day1-ordinary-differential-equations.qmd >}}
 
 {{< include worksheet-solutions/day1-discrete-time-models.qmd >}}
+
+{{< include worksheet-solutions/day2-jump-processes.qmd >}}
+
+{{< include worksheet-solutions/day2-reaction-networks.qmd >}}
+
+{{< include worksheet-solutions/day2-sensitivity-and-identifiability.qmd >}}
+
+{{< include worksheet-solutions/day2-interventions-and-optimization.qmd >}}
