@@ -1,0 +1,287 @@
+## Continuous-time Markov chains and jump processes — Day 2, Session 1
+
+Worksheet: `worksheets/chapters/05-jump-processes.qmd`. The chapter is
+[Continuous-time Markov chains and jump
+processes](../chapters/05-jump-processes.qmd).
+
+```{julia}
+#| label: ws-ch05-setup
+using ModelingToolkit
+using JumpProcesses
+using CairoMakie
+using StableRNGs
+using Statistics
+
+# An earlier part of this appendix binds `t` to a vector of solution times, so
+# take the symbolic time variable by assignment rather than by import.
+t = ModelingToolkit.t_nounits
+
+check(name, condition) =
+    println(condition ? "✓ $name" : "✗ $name — not right yet, see the hint")
+
+@parameters κ σ γ
+@variables S(t) E(t) I(t) R(t)
+
+κ_value = 0.05 * 10 / 1000   # β c / N
+σ_value = 0.5                # mean latent period 1/σ = 2 days
+γ_value = 0.25
+grid = 0.0:0.5:120.0
+tspan = (0.0, last(grid))
+
+println("R₀ = ", 0.05 * 10 / γ_value)
+```
+
+### Part A — an exposed compartment
+
+The two gaps are about keeping the `MassActionJump` lists apart: the reactant
+list sets the propensity, the net list says what the event does. Infection needs
+`I` present, and an exposed person becomes infectious rather than recovered.
+
+```{julia}
+#| label: ws-ch05-a1
+infection = MassActionJump(κ,
+    [S => 1, I => 1],                        # infection needs two people
+    [S => -1, E => 1];
+    scale_rates = false)
+
+progression = MassActionJump(σ,
+    [E => 1],
+    [E => -1, I => 1];                       # an exposed person becomes infectious
+    scale_rates = false)
+
+recovery = MassActionJump(γ,
+    [I => 1],
+    [I => -1, R => 1];
+    scale_rates = false)
+
+@named seir = JumpSystem([infection, progression, recovery], t,
+                         [S, E, I, R], [κ, σ, γ])
+seir_system = complete(seir)
+
+seir_start = [S => 990, E => 0, I => 10, R => 0,
+              κ => κ_value, σ => σ_value, γ => γ_value]
+
+seir_problem(seed; start = seir_start) =
+    JumpProblem(seir_system, start, tspan; rng = StableRNG(seed))
+
+solution = solve(seir_problem(1), SSAStepper(); saveat = grid)
+
+# With nobody infectious, a correct propensity makes every event impossible.
+quiet = solve(seir_problem(2; start = [S => 1000, E => 0, I => 0, R => 0,
+                                       κ => κ_value, σ => σ_value, γ => γ_value]),
+              SSAStepper(); saveat = grid)
+
+check("population conserved",
+      all(solution[S] .+ solution[E] .+ solution[I] .+ solution[R] .== 1000))
+check("infection needs an infectious person present", all(quiet[S] .== 1000))
+check("exposed individuals go on to become infectious", maximum(solution[I]) > 10)
+println("peak infectious = ", maximum(solution[I]),
+        ", ever infected = ", solution[R][end])
+```
+
+#### A1. Interpret
+
+- Infection requires a meeting between two people, so its propensity is
+  proportional to the product $SI$ and falls to zero if either compartment
+  empties. Progression and recovery are things an individual does on their own
+  schedule, so each is proportional to the single compartment it drains.
+- `I` belongs in the reactant list because it must be *present*, and not in the
+  net list because an infectious person is unchanged by infecting someone.
+- Moving `I` between the lists breaks the model twice over: the propensity would
+  become $\kappa S$, so infections would fire with nobody infectious present, and
+  the event would create an infectious person directly, bypassing the latent
+  period. The `quiet` run is what catches the first error — without it the curve
+  still looks roughly right.
+- Conservation is exact here for a structural reason rather than a numerical one.
+  Each net list sums to zero, so the total is invariant by construction, which is
+  why the check can use `==` rather than `isapprox`.
+- The state is read symbolically, `solution[I]`, rather than by row number. The
+  SIR system built in Part B has different unknowns, so the same compartment sits
+  in a different row; asking by name cannot pick up the wrong one.
+
+### Part B — does the latent period matter?
+
+`prob_func` is the piece worth pausing on: it gives trajectory `ctx.sim_id` its
+own seed. Without it every trajectory would share one random stream, which is a
+correctness problem once the runs are threaded.
+
+```{julia}
+#| label: ws-ch05-b1
+seir_ensemble = EnsembleProblem(seir_problem(100);
+    prob_func = (prob, ctx) -> seir_problem(100 + ctx.sim_id))
+
+seir_runs = solve(seir_ensemble, SSAStepper(), EnsembleThreads();
+                  trajectories = 30, saveat = grid)
+
+peaks = [maximum(r[I]) for r in seir_runs.u]
+
+check("the runs differ from each other", std(peaks) > 0)
+println("peak infectious over 30 runs: mean ", round(mean(peaks); digits = 1),
+        ", sd ", round(std(peaks); digits = 1))
+```
+
+```{julia}
+#| label: ws-ch05-b2
+sir_start = [S => 990, I => 10, R => 0, κ => κ_value, γ => γ_value]
+
+@named sir = JumpSystem(
+    [MassActionJump(κ, [S => 1, I => 1], [S => -1, I => 1]; scale_rates = false),
+     MassActionJump(γ, [I => 1], [I => -1, R => 1]; scale_rates = false)],
+    t, [S, I, R], [κ, γ])
+sir_system = complete(sir)
+
+sir_problem(seed) = JumpProblem(sir_system, sir_start, tspan; rng = StableRNG(seed))
+
+function summarise(make_problem, seed0; trajectories = 30)
+    ensemble = EnsembleProblem(make_problem(seed0);
+                               prob_func = (prob, ctx) -> make_problem(seed0 + ctx.sim_id))
+    runs = solve(ensemble, SSAStepper(), EnsembleThreads();
+                 trajectories = trajectories, saveat = grid)
+    return EnsembleSummary(runs, grid)
+end
+
+seir_summary = summarise(seir_problem, 100)
+sir_summary = summarise(sir_problem, 200)
+
+# Row order follows the unknowns, so I is row 3 for SEIR and row 2 for SIR.
+seir_mean = reduce(hcat, seir_summary.u.u)
+sir_mean = reduce(hcat, sir_summary.u.u)
+seir_I, sir_I = seir_mean[3, :], sir_mean[2, :]
+seir_final, sir_final = seir_mean[4, end], sir_mean[3, end]
+
+check("the SEIR peak comes later", grid[argmax(seir_I)] > grid[argmax(sir_I)])
+check("the SEIR peak is lower", maximum(seir_I) < maximum(sir_I))
+check("both reach a similar final size",
+      abs(seir_final - sir_final) / sir_final < 0.05)
+(; seir_peak_day = grid[argmax(seir_I)], sir_peak_day = grid[argmax(sir_I)],
+   seir_peak = round(maximum(seir_I); digits = 1),
+   sir_peak = round(maximum(sir_I); digits = 1),
+   seir_final = round(seir_final; digits = 1),
+   sir_final = round(sir_final; digits = 1))
+```
+
+```{julia}
+#| label: fig-ws-ch05-compare
+#| fig-cap: "Mean infectious curve over 30 exact simulations, with and without a latent period, with the 5th-95th percentile band for the SEIR model (the `EnsembleSummary` default)."
+seir_low = reduce(hcat, seir_summary.qlow.u)[3, :]
+seir_high = reduce(hcat, seir_summary.qhigh.u)[3, :]
+
+fig = Figure(size = (720, 400))
+ax = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "mean infectious")
+band!(ax, grid, seir_low, seir_high; color = (:steelblue, 0.2))
+lines!(ax, grid, sir_I; color = :firebrick, linewidth = 3, label = "SIR")
+lines!(ax, grid, seir_I; color = :steelblue, linewidth = 3, label = "SEIR")
+xlims!(ax, 0, 70)
+axislegend(ax; position = :rt)
+fig
+```
+
+#### B1. Interpret
+
+- The SEIR mean peaks at 95.4 on day 31, against 146.6 on day 18.5 for SIR:
+  about a third lower and nearly two weeks later. Both end with approximately the
+  same number ever infected, 793.0 and 802.2.
+- The two "peak" numbers in this part are different quantities. The ensemble
+  reports a mean of each run's *own* maximum, 111.7 with a standard deviation of
+  11.7, while the comparison takes the maximum of the *averaged* curve, 95.4. The
+  first is always the larger, because individual peaks fall on different days and
+  averaging the curves flattens them.
+- Adding $E$ does not change how many people each infectious person infects, so
+  $R_0 = \beta c/\gamma = 2$ and the final size are unchanged. Read that
+  narrowly: for this model and a fixed initial state the deterministic final-size
+  relation involves $R_0$ and nothing about the latent period.
+- What changes is the clock. Every infection now waits an average of two extra
+  days before it can transmit, so the same total number of infections is spread
+  over more time and fewer of them overlap. Prevalence counts overlap, so the
+  peak falls.
+- Two outbreaks with identical $R_0$ and identical final size can place very
+  different demands on a health system, because the peak is what decides whether
+  capacity is exceeded.
+- The band is narrow at the start because every run begins in the same state, and
+  widest near the peak because runs identical in shape but a few days apart in
+  timing are far apart in *level* there. It reports spread in timing more than
+  spread in severity.
+
+#### B2. Experiment
+
+```{julia}
+#| label: ws-ch05-b3
+latent_rates = [1.0, 0.5, 0.25]
+
+for s in latent_rates
+    start = [S => 990, E => 0, I => 10, R => 0,
+             κ => κ_value, σ => s, γ => γ_value]
+    summary = summarise(seed -> seir_problem(seed; start = start), 300;
+                        trajectories = 10)
+    mean_I = reduce(hcat, summary.u.u)[3, :]
+    println("mean latent period ", round(1 / s; digits = 1), " days → peak on day ",
+            grid[argmax(mean_I)])
+end
+
+check("three latent periods tried", length(latent_rates) == 3)
+```
+
+- Peaks land on day 24.5, day 30.5 and day 45.0 for mean latent periods of 1, 2
+  and 4 days.
+- Lengthening the latent period pushes the peak later, and faster than
+  one-for-one: adding two days moved the peak by about 15, because the delay
+  applies once per generation of infection and compounds over successive
+  generations.
+- $R_0$ is unchanged throughout. None of these runs alters how many people a case
+  infects, only how long it takes.
+
+### Part C — how often does an outbreak fizzle out?
+
+The only change is the starting state: one infectious individual means 999
+susceptible ones.
+
+```{julia}
+#| label: ws-ch05-c1
+single_case = [S => 999, E => 0, I => 1, R => 0,
+               κ => κ_value, σ => σ_value, γ => γ_value]
+
+# Outcomes are bimodal — a handful of cases, or hundreds — so the cut at 20 is
+# not a delicate choice.
+fade_ensemble = EnsembleProblem(
+    seir_problem(5000; start = single_case);
+    prob_func = (prob, ctx) -> seir_problem(5000 + ctx.sim_id; start = single_case),
+    output_func = (sol, ctx) -> (sol[R][end] < 20, false))
+
+trials = 400
+faded = solve(fade_ensemble, SSAStepper(), EnsembleThreads(); trajectories = trials)
+fade_fraction = count(faded.u) / trials
+predicted = γ_value / (0.05 * 10)   # 1 / R₀
+
+check("fade-out is close to the branching prediction",
+      abs(fade_fraction - predicted) < 0.05)
+(; fade_fraction, predicted)
+```
+
+#### C1. Interpret
+
+- The 400 trials give a fade-out fraction of 0.4825, against a prediction of
+  $1/R_0 = 0.5$.
+- While cases are few each infectious individual behaves independently of the
+  others, so the early stage is a linear birth–death process. Because infectious
+  lifetimes are exponential here, its extinction probability from one initial
+  case is $q = \gamma/(\beta c) = 1/R_0$ when $R_0 > 1$. The formula belongs to
+  that approximation and is not universal across offspring or infectious-period
+  distributions.
+- The latent period does not change it, because every exposed person eventually
+  progresses to $I$.
+- Two approximations separate the argument from the measurement, and both are
+  small here rather than zero: the branching process never depletes its
+  susceptible pool, while this one has 999 susceptibles, and "died out" was
+  scored as fewer than 20 ever infected. Running 20,000 trials gives 0.4974
+  against 0.500, so the gap at 400 trials is mostly sampling noise.
+- The threshold is not delicate either. Cutting at 10, 20, 50 or 100 ever
+  infected gives 0.4866, 0.4974, 0.4992 and 0.4992 over those 20,000 trials.
+  Cutting at 2 gives 0.3329, which asks a different question — whether the index
+  case infected anyone at all.
+- The deterministic model cannot produce this answer. It has neither random event
+  counts nor the absorbing state $E = I = 0$, so from $I(0) = 1$ it produces the
+  same non-extinguishing trajectory every time. Nor is it the finite-population
+  average: an ensemble mean can fall between the fade-out and major-outbreak
+  branches and resemble neither.
+- Starting from 10 infectious individuals, as Parts A and B do, fade-out has
+  probability $(1/R_0)^{10} \approx 0.001$, which is why it was never seen there.

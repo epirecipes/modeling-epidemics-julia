@@ -1,0 +1,378 @@
+## Sensitivity and identifiability — Day 2, Session 3
+
+Worksheet: `worksheets/chapters/14-sensitivity-and-identifiability.qmd`. The
+chapter is [Sensitivity and
+identifiability](../chapters/14-sensitivity-and-identifiability.qmd).
+
+Parameters travel as the plain vector `p0 = [β, c, γ]` here rather than as a
+named tuple, because sensitivity analysis differentiates with respect to the
+parameter *vector*: column 1 means $\beta$ because $\beta$ is first.
+
+```{julia}
+#| label: ws-ch14-setup
+using CairoMakie
+using GlobalSensitivity
+using Logging
+using OrdinaryDiffEq
+using SciMLSensitivity
+using StableRNGs
+using Statistics
+
+# The Sobol sampler prints a design-matrix warning on every call.
+Logging.disable_logging(Logging.Warn)
+
+check(name, condition) =
+    println(condition ? "✓ $name" : "✗ $name — not right yet, see the hint")
+
+N = 1000.0
+u0 = [990.0, 10.0, 0.0]
+p0 = [0.05, 10.0, 0.25]          # β, c, γ
+tgrid = collect(0.0:0.25:40.0)
+
+function sir_kernel!(du, u, p, t)
+    β, c, γ = p
+    S, I, R = u
+    incidence = β * c * S * I / N
+    du[1] = -incidence
+    du[2] = incidence - γ * I
+    du[3] = γ * I
+    return nothing
+end
+
+println("R₀ = ", p0[1] * p0[2] / p0[3])
+```
+
+### Part B — reading a sensitivity matrix
+
+Scaling each derivative by its own parameter answers a question you can ask of
+all three at once: if this parameter were raised by 1% of its own value, how many
+people would $I$ move by? The finite difference then checks the derivative by
+moving $\gamma$ and looking.
+
+```{julia}
+#| label: ws-ch14-b1
+sensitivity_problem = ODEForwardSensitivityProblem(sir_kernel!, u0, (0.0, 40.0), p0)
+sensitivity_solution = solve(sensitivity_problem, Tsit5();
+                             saveat = tgrid, abstol = 1e-9, reltol = 1e-9)
+states, jacobians = extract_local_sensitivities(sensitivity_solution, true)
+final_jacobian = jacobians[end]
+
+scaled = [final_jacobian[2, j] * p0[j] for j in 1:3]
+
+check("β and c have the same scaled sensitivity",
+      abs(scaled[1] - scaled[2]) < 1e-8)
+
+(; unscaled = round.(final_jacobian[2, :]; digits = 3),
+   scaled = round.(scaled; digits = 3))
+```
+
+```{julia}
+#| label: ws-ch14-b2
+ε = 1e-5
+perturbed = copy(p0)
+perturbed[3] += ε
+
+perturbed_solution = solve(ODEProblem(sir_kernel!, u0, (0.0, 40.0), perturbed),
+                           Tsit5(); saveat = tgrid, abstol = 1e-9, reltol = 1e-9)
+
+finite_difference = (Array(perturbed_solution)[2, end] - states[2, end]) / ε
+jacobian_entry = final_jacobian[2, 3]
+
+check("the finite difference agrees with the Jacobian",
+      abs(finite_difference - jacobian_entry) / (1 + abs(jacobian_entry)) < 1e-3)
+
+(; finite_difference, jacobian_entry)
+```
+
+```{julia}
+#| label: fig-ws-ch14-local
+#| fig-cap: "Local derivatives of the infectious state with respect to each parameter, scaled by the parameter value so the three are comparable."
+fig = Figure(size = (760, 400))
+ax = Axis(fig[1, 1]; xlabel = "time (days)", ylabel = "∂I/∂θ × θ")
+for (j, (name, colour)) in enumerate(zip(["β", "c", "γ"],
+                                         [:steelblue, :darkorange, :seagreen]))
+    lines!(ax, tgrid, [jac[2, j] * p0[j] for jac in jacobians];
+           label = name, linewidth = j == 2 ? 4 : 2,
+           linestyle = j == 2 ? :dash : :solid, color = colour)
+end
+axislegend(ax; position = :rb)
+fig
+```
+
+#### B1. Interpret
+
+- In `sir_kernel!` the two parameters appear only as the product `β * c`, never
+  apart, so $I(t)$ is a function of $\beta c$. The chain rule gives $\partial
+  I/\partial\beta = c\,\partial I/\partial(\beta c)$ and $\partial I/\partial c =
+  \beta\,\partial I/\partial(\beta c)$, and multiplying each by its own parameter
+  turns both into $\beta c\,\partial I/\partial(\beta c)$ — which is why the
+  scaled values agree to about $10^{-14}$ at every saved time, not just the end.
+- The model cannot distinguish a contact rate of 10 with transmission probability
+  0.05 from a contact rate of 20 with probability 0.025. Part D proves this is a
+  property of the model and the observation, not of this parameter vector.
+- The sign change is about what a derivative measures: the effect on the *level
+  of $I$ at that time*, not on the epidemic as a whole. Raising transmission makes
+  the epidemic grow faster, so through the growth phase $I$ is higher; by day 40
+  the faster epidemic has already burned through the susceptibles and has fewer
+  infectious people left, so the derivative is negative.
+- A single number like $\partial I(40)/\partial\beta$ is meaningless without
+  saying which time it refers to.
+
+### Part C — global sensitivity and the output you choose
+
+Timing needs a decision that peak size does not: peak of *what*, measured *when*?
+`peak_of` locates the model's own peak with a `ContinuousCallback` watching
+$\beta cS/N - \gamma$, while `scheduled_prevalence_peak` reports what a survey on
+a fixed schedule would say.
+
+```{julia}
+#| label: ws-ch14-c1
+function peak_of(p)
+    β, c, γ = Float64.(p)
+    # I is already falling at t = 0, so its maximum is there.
+    β * c * u0[1] / N <= γ && return (time = 0.0, size = u0[2])
+    peak = Ref((time = 0.0, size = u0[2]))
+    growth_rate(u, t, integrator) = β * c * u[1] / N - γ
+    record_peak!(integrator) =
+        (peak[] = (time = integrator.t, size = integrator.u[2]))
+    solve(ODEProblem(sir_kernel!, u0, (0.0, 80.0), [β, c, γ]), Tsit5();
+          callback = ContinuousCallback(growth_rate, record_peak!),
+          save_everystep = false, abstol = 1e-8, reltol = 1e-8)
+    return peak[]
+end
+
+peak_time(p) = peak_of(p).time
+peak_size(p) = peak_of(p).size
+
+function scheduled_prevalence_peak(p; measurement_interval = 0.25)
+    times = 0.0:measurement_interval:80.0
+    solution = solve(ODEProblem(sir_kernel!, u0, (0.0, 80.0), Float64.(p)),
+                     Tsit5(); saveat = times, abstol = 1e-8, reltol = 1e-8)
+    prevalence = Array(solution)[2, :]
+    return times[argmax(prevalence)]
+end
+
+parameter_bounds = [[0.02, 0.08],   # β
+                    [5.0, 15.0],    # c
+                    [0.15, 0.40]]   # γ
+
+println("model peak time : ", round(peak_time(p0); digits = 2))
+for interval in (0.25, 1.0, 7.0)
+    println("measured every ", lpad(interval, 4), " days: ",
+            scheduled_prevalence_peak(p0; measurement_interval = interval))
+end
+```
+
+Growth on day zero needs $\mathcal{R}_0 S(0)/N > 1$ rather than
+$\mathcal{R}_0 > 1$, so the no-epidemic corner of the box is
+$\mathcal{R}_0 \le N/S(0) \approx 1.0101$.
+
+```{julia}
+#| label: ws-ch14-c2
+rng = StableRNG(7)
+draws = 20_000
+no_growth = N / u0[1]
+sampled_R₀ = [(0.02 + 0.06 * rand(rng)) * (5.0 + 10.0 * rand(rng)) /
+              (0.15 + 0.25 * rand(rng)) for _ in 1:draws]
+println("share of the box that never grows: ",
+        round(100 * mean(sampled_R₀ .<= no_growth); digits = 1), "%")
+println("peak time there: ", peak_time([0.02, 5.0, 0.40]))
+```
+
+```{julia}
+#| label: ws-ch14-c3
+size_indices = gsa(peak_size, Sobol(), parameter_bounds; samples = 200)
+println("peak size  | S1 = ", round.(size_indices.S1; digits = 3),
+        " | ST = ", round.(size_indices.ST; digits = 3))
+
+time_indices = Dict{Int, Any}()
+for n in (32, 200, 1000)
+    time_indices[n] = gsa(peak_time, Sobol(), parameter_bounds; samples = n)
+    println("peak time, ", lpad(n, 4), " samples | S1 = ",
+            round.(time_indices[n].S1; digits = 3),
+            " | ST = ", round.(time_indices[n].ST; digits = 3))
+end
+
+check("the peak size has substantial first-order effects",
+      sum(size_indices.S1) > 0.7)
+check("the peak time is dominated by interactions",
+      sum(time_indices[1000].S1) < 0.5 && all(time_indices[1000].ST .> 0.5))
+```
+
+#### C1. Interpret
+
+- For the peak size the first-order indices are about 0.40, 0.27 and 0.25 and add
+  to 0.91, so most of the variation is attributable to individual parameters and
+  the ranking $\beta > c > \gamma$ is meaningful — as a statement about *these*
+  bounds. Widen the $c$ range and the order can change without the model changing.
+- For the peak time the first-order indices are near zero, some slightly
+  negative, while every total index is around 0.75. That gap is the interaction:
+  each parameter is involved in most of the variance, but almost none of it
+  belongs to that parameter acting alone.
+- So no single parameter drives the timing. Do not push that to "the first-order
+  effects are zero": a design of 20,000 samples gives first-order indices near
+  $(0.05, 0.01, 0.12)$ summing to about $0.17$, with total indices near $(0.80,
+  0.69, 0.74)$.
+- $R_0$ alone is not the answer either. Rescaling time as $\tau = \gamma t$ leaves
+  a system depending only on $R_0$ and the initial state, so $t_{\text{peak}} =
+  F(R_0, u_0)/\gamma$: timing needs a dimensionless ratio, which fixes the shape,
+  *and* an absolute rate, which fixes how fast the clock runs. Holding $R_0 = 2$
+  and taking $\gamma = 0.125, 0.25, 0.5$ gives peak days of 35.0, 17.5 and 8.75 —
+  the same epidemic played at three speeds.
+- A first-order index is a variance share and cannot be negative. Seeing $-0.05$
+  means the estimator is being asked to resolve something smaller than its own
+  noise: the sums are 0.52 at 32 samples, 0.41 at 200 and 0.04 at 1000, which is
+  evidence of noise rather than convergence. Before reporting any of it, run
+  several design sizes, use a randomized quasi-Monte Carlo design, and quote
+  bootstrap intervals rather than point estimates.
+- About 19% of the box never grows at all (19.1% in the 20,000 draws), and there
+  the peak is at day 0. Which side of that surface a point falls on depends on all
+  three parameters at once, so it contributes interaction — but it is not the
+  cause, and the peak time does not jump across the surface. It leaves day 0
+  continuously.
+- The measurement schedule is a separate effect from the epidemic. The model's own
+  peak is at 17.52; measured every quarter day it is 17.5, every day 18.0, every
+  week 21.0. The first difference belongs to the epidemic and the rest are
+  introduced by the schedule. "Which week had the most new cases" is a third
+  output again, needing $S(t) - S(t+7)$ rather than a snapshot of $I$: the largest
+  weekly window is days 14–21, while instantaneous incidence peaks at day 14.25.
+  An output definition can matter a great deal for a reported number and very
+  little for a variance decomposition.
+
+### Part D — proving the confounding
+
+Part B showed numerically that $\beta$ and $c$ move the model identically, which
+says only that the derivatives agree at one parameter vector.
+StructuralIdentifiability answers the question for every trajectory at once, and
+symbolically. Nothing below is integrated: `~` records an equation between
+symbols.
+
+```{julia}
+#| label: ws-ch14-d1
+using ModelingToolkit
+using StructuralIdentifiability
+t = ModelingToolkit.t_nounits           # the same time symbol used in Session 1
+
+Logging.disable_logging(Logging.Info)
+
+@parameters b c_rate g k
+@variables S(t) I(t) R(t) C(t) y(t)
+D = Differential(t)
+
+# A fourth state accumulates infections, and it is that cumulative count which is
+# observed. Transmission is written as a plain product of states, so `b * c_rate`
+# stands for the effective coefficient κ = βc/N rather than for βc itself.
+separate = ODESystem([D(S) ~ -b * c_rate * S * I,
+                      D(I) ~ b * c_rate * S * I - g * I,
+                      D(R) ~ g * I,
+                      D(C) ~ b * c_rate * S * I],
+                     t; name = :SIRSeparate)
+
+separate_result = assess_identifiability(
+    separate;
+    measured_quantities = [y ~ C],
+    funcs_to_check = [b, c_rate, g, b * c_rate],
+)
+separate_result
+```
+
+The remedy is not more data of the same kind; it is to stop asking for the two
+numbers separately.
+
+```{julia}
+#| label: ws-ch14-d2
+combined = ODESystem([D(S) ~ -k * S * I,
+                      D(I) ~ k * S * I - g * I,
+                      D(R) ~ g * I,
+                      D(C) ~ k * S * I],
+                     t; name = :SIRCombined)
+
+combined_result = assess_identifiability(
+    combined;
+    measured_quantities = [y ~ C],
+    funcs_to_check = [k, g],
+)
+Logging.disable_logging(Logging.BelowMinLevel)
+
+check("β and c are not separately identifiable",
+      separate_result[b] == :nonidentifiable &&
+      separate_result[c_rate] == :nonidentifiable)
+check("their product is identifiable", separate_result[b * c_rate] == :globally)
+check("the combined parameter is identifiable",
+      get(combined_result, k, :not_asked) == :globally)
+
+combined_result
+```
+
+The observation-models chapter leaves a question open: a small epidemic reported
+completely and a large one reported partially give case series of similar size,
+so can the reporting fraction $\rho$ be separated from transmission? Observe
+$\rho C$ rather than $C$, and ask twice.
+
+```{julia}
+#| label: ws-ch14-d3
+@parameters rho
+
+Logging.disable_logging(Logging.Warn)
+
+reported = ODESystem([D(S) ~ -k * S * I,
+                      D(I) ~ k * S * I - g * I,
+                      D(R) ~ g * I,
+                      D(C) ~ k * S * I],
+                     t; name = :SIRReported)
+
+unknown_initial_state = assess_identifiability(
+    reported;
+    measured_quantities = [y ~ rho * C],
+    funcs_to_check = [rho, k, k / rho, g],
+)
+
+# `known_ic` draws a progress bar on stderr; devnull keeps the output clean.
+known_initial_state = redirect_stderr(devnull) do
+    assess_identifiability(
+        reported;
+        measured_quantities = [y ~ rho * C],
+        funcs_to_check = [rho, k, g],
+        known_ic = [S, I, R, C],
+    )
+end
+Logging.disable_logging(Logging.BelowMinLevel)
+
+check("with an unknown initial state, ρ and the transmission rate are confounded",
+      unknown_initial_state[rho] == :nonidentifiable &&
+      unknown_initial_state[k] == :nonidentifiable)
+check("what survives is their ratio, not their product",
+      unknown_initial_state[k / rho] == :globally)
+check("knowing the initial state makes ρ identifiable",
+      known_initial_state[rho] == :globally && known_initial_state[k] == :globally)
+
+(; unknown_initial_state, known_initial_state)
+```
+
+#### D1. Interpret
+
+- Nothing was learnt about the world, and that is the point. The observation
+  determines one transmission coefficient; asking for the two factors separately
+  is asking the data a question it cannot answer, and an optimizer handed that
+  question will still return two numbers.
+- What was gained is a model whose parameters match what the data can determine.
+  What was given up is the interpretation: $k$ is not a contact rate, and no fit
+  of this model can report one.
+- To the colleague who "estimated the contact rate at 9.4 per day": ask what else
+  was in the model and what was observed. If $\beta$ and $c$ both appear and only
+  incidence was seen, 9.4 is whatever the optimizer stopped at along a flat
+  direction — it is determined by the starting guess and the stopping rule, not by
+  the data. Ask for the product, or for the profile.
+- The reporting fraction changes status between the two runs with no new data
+  because identifiability is a property of the model *and* the observation *and*
+  what is assumed known. With an unknown initial state $\rho$ and $k$ are
+  confounded and only the ratio $k/\rho$ survives; declaring the initial state
+  known makes both identifiable.
+- The unknown-initial-state case is much closer to an outbreak analysis, where the
+  number already infected at the first report is exactly what nobody knows. So
+  identifiability came from background knowledge, not from the data.
+- This is a *structural* result: it says the information is present in a
+  noiseless, continuously observed curve, not that forty noisy daily counts will
+  pin $\rho$ down. That gap is practical identifiability. Note also that marking
+  only $C(0)$ as known does not work, because the package reports identifiability
+  for *generic* known values and $C(0) = 0$ is not generic.

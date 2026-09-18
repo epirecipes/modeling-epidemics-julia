@@ -5,7 +5,7 @@ Welcome to the workshop! Below you will find the materials for all ten taught se
 For each session, you will use three resources:
 
 *   **Book:** Each chapter includes a more detailed exploration of the subject with code. You can read this if you are stuck or something is not clear.
-*   **Alternative slides:** For two Day 1 sessions, a second deck that teaches the theory with animations, given before the session slides.
+*   **Alternative slides:** For three sessions, a second deck that teaches the theory with animations, given before the session slides.
 *   **Slides:** The presentation slides shown in the room at the start of each session.
 *   **Worksheet:** The file you will fill in during the workshop. It is in your course folder under `worksheets/`, and that is the copy to open in VS Code. Clicking the link downloads the same Quarto (`.qmd`) file.
 
@@ -82,6 +82,7 @@ the session that demonstrates it.
 ### Interventions and optimization — Day 2, Session 4
 
 - [Book](chapters/15-interventions-and-optimization.html)
+- [Alternative slides](slides/lectures/04-interventions-and-optimization.html)
 - [Slides](slides/chapters/15-interventions-and-optimization.html)
 - [Worksheet](worksheets/chapters/15-interventions-and-optimization.qmd)
 - Optional: [Pluto preview](notebook-exports/chapters/15-interventions-and-optimization.html) · [Pluto source](notebooks/chapters/15-interventions-and-optimization.pluto.jl)

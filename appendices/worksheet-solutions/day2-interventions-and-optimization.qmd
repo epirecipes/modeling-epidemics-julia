@@ -1,0 +1,375 @@
+## Interventions and optimization — Day 2, Session 4
+
+Worksheet: `worksheets/chapters/15-interventions-and-optimization.qmd`. The
+chapter is [Interventions and
+optimization](../chapters/15-interventions-and-optimization.qmd).
+
+The state vector carries a fourth component $C$, cumulative incidence, so a
+question about the whole epidemic becomes a single number to read off. $C(T)$
+counts the infections generated after $t = 0$ and up to the horizon $T$; it
+excludes the ten people already infectious, and it is not the eventual epidemic
+total unless transmission has finished. Parameters travel as a plain vector
+because the callback mutates entry 4 in place, and a `NamedTuple` is immutable.
+
+```{julia}
+#| label: ws-ch15-setup
+using CairoMakie
+using DiffEqCallbacks
+using EpiModelingCourse
+using Optimization
+using OptimizationOptimJL
+using OrdinaryDiffEq
+
+check(name, condition) =
+    println(condition ? "✓ $name" : "✗ $name — not right yet, see the hint")
+
+baseline = BASELINE_PARAMETERS
+u0 = Float64[990.0, 10.0, 0.0, 0.0]        # S, I, R, C
+time_grid = collect(0.0:0.1:45.0)
+intervention_duration = 10.0
+maximum_reduction = 0.5
+
+function policy_sir!(du, u, p, t)
+    β, c, γ, reduction, N = p
+    S, I, R, C = u
+    incidence = β * c * (1 - reduction) * S * I / N
+    du[1] = -incidence
+    du[2] = incidence - γ * I
+    du[3] = γ * I
+    du[4] = incidence
+    return nothing
+end
+
+println("R₀ = ", baseline.beta * baseline.contact_rate / baseline.gamma)
+```
+
+### Part A — one policy, written out
+
+`PresetTimeCallback` stops the integrator at the named times and runs `affect!`,
+which flips the reduction on and back off. The condition is
+`integrator.t < stop_time` rather than `== start_time`, so one closure handles
+both scheduled times.
+
+```{julia}
+#| label: ws-ch15-a1
+function run_scenario(
+    start_time;
+    duration = intervention_duration,
+    reduction = maximum_reduction,
+    horizon = last(time_grid),
+)
+    stop_time = start_time + duration
+    initial_reduction = start_time <= 0.0 < stop_time ? reduction : 0.0
+    parameters = [
+        baseline.beta,           # 1: β
+        baseline.contact_rate,   # 2: c
+        baseline.gamma,          # 3: γ
+        initial_reduction,       # 4: the policy — this is the one that moves
+        baseline.N,              # 5: N
+    ]
+    function affect!(integrator)
+        integrator.p[4] = integrator.t < stop_time ? reduction : 0.0
+        return nothing
+    end
+    callback = PresetTimeCallback(unique([start_time, stop_time]), affect!)
+    problem = ODEProblem(policy_sir!, u0, (0.0, horizon), parameters)
+    return solve(problem, Tsit5(); callback = callback,
+                 saveat = 0.0:0.1:horizon, abstol = 1e-8, reltol = 1e-8)
+end
+
+no_intervention = solve(
+    ODEProblem(policy_sir!, u0, (0.0, last(time_grid)),
+               [baseline.beta, baseline.contact_rate, baseline.gamma, 0.0, baseline.N]),
+    Tsit5(); saveat = time_grid, abstol = 1e-8, reltol = 1e-8)
+
+reference_start = 8.0
+reference_solution = run_scenario(reference_start)
+
+baseline_array = Array(no_intervention)
+# A callback forces extra saved points, so interpolate back onto the grid.
+reference_array = Array(reference_solution(time_grid))
+
+check("S + I + R is conserved",
+      maximum(abs.(vec(sum(reference_array[1:3, :]; dims = 1)) .- baseline.N)) < 1e-6)
+check("a zero-length policy is the same as no policy",
+      Array(run_scenario(0.0; duration = 0.0))[4, end] ≈ baseline_array[4, end])
+
+(; incidence_none = round(baseline_array[4, end]; digits = 2),
+   incidence_reference = round(reference_array[4, end]; digits = 2),
+   difference_at_45 = round(baseline_array[4, end] - reference_array[4, end]; digits = 2))
+```
+
+```{julia}
+#| label: fig-ws-ch15-scenario
+#| fig-cap: "A ten-unit, 50% reduction starting at t = 8 compared with no intervention. The shaded band is the policy window; the second rise after it lifts is a rebound, not a numerical artifact."
+fig = Figure(size = (860, 420))
+ax = Axis(fig[1, 1]; xlabel = "time", ylabel = "infectious people")
+vspan!(ax, reference_start, reference_start + intervention_duration;
+       color = (:grey, 0.2))
+lines!(ax, time_grid, baseline_array[2, :]; color = :firebrick, label = "none")
+lines!(ax, time_grid, reference_array[2, :]; color = :seagreen,
+       label = "50% for 10 units from t = 8")
+axislegend(ax; position = :rt)
+fig
+```
+
+```{julia}
+#| label: ws-ch15-a2
+susceptibles_when_policy_lifts =
+    reference_solution(reference_start + intervention_duration)[1]
+
+long_none = Array(solve(
+    ODEProblem(policy_sir!, u0, (0.0, 200.0),
+               [baseline.beta, baseline.contact_rate, baseline.gamma, 0.0, baseline.N]),
+    Tsit5(); saveat = 0.0:0.1:200.0, abstol = 1e-8, reltol = 1e-8))
+long_reference = Array(run_scenario(reference_start; horizon = 200.0))
+
+difference_at_45 = baseline_array[4, end] - reference_array[4, end]
+difference_at_200 = long_none[4, end] - long_reference[4, end]
+
+check("the long-horizon benefit is smaller than the T = 45 benefit",
+      difference_at_200 < difference_at_45)
+
+(; susceptibles_when_policy_lifts = round(susceptibles_when_policy_lifts; digits = 1),
+   R_eff_when_policy_lifts =
+       round(baseline.beta * baseline.contact_rate / baseline.gamma *
+             susceptibles_when_policy_lifts / baseline.N; digits = 3),
+   difference_at_45 = round(difference_at_45; digits = 2),
+   difference_at_200 = round(difference_at_200; digits = 2),
+   postponed_beyond_45 = round(difference_at_45 - difference_at_200; digits = 2))
+```
+
+#### A1. Interpret
+
+- The intervention postpones most of the epidemic rather than ending it. Inside
+  the window $C$ still climbs by about 104, against about 400 over the same
+  interval with no policy.
+- When the window lifts at $t = 18$ there are still about 778 susceptibles, far
+  above the herd-immunity threshold $S^{*} = N/R_0 = 500$, so
+  $R_{\text{eff}} \approx 1.56$ and the epidemic restarts. It peaks a second time
+  at about 96 around $t = 30$, later and lower than the untouched peak of 158 at
+  $t = 17.5$. The policy protected the susceptible pool rather than depleting it,
+  which is exactly why the rebound is available.
+- The bookkeeping is where the lesson is. By $t = 45$, 785 people have been
+  infected without the policy and 695 with it, a difference of about 91. Run the
+  same comparison to $t = 200$, by which point both epidemics have finished, and
+  the difference is only about 51 — roughly 40 of those 91 cases were pushed past
+  the horizon rather than prevented.
+- Three impressions are available from one run: the suppressed first peak looks
+  like near-total success, $T = 45$ gives 91, and $T = 200$ gives 51. None is
+  wrong. What would be wrong is quoting any of them without saying which horizon
+  it belongs to, because "91 infections averted" will be heard as prevention.
+- A policy that ends while the population is still largely susceptible buys time
+  rather than immunity, and what the time is worth is a judgement the model does
+  not contain.
+
+### Part B — the objective landscape
+
+Nothing about the model changes; what changes is that we are prepared to run it
+many times and compare. The grid is a diagnostic, not the method.
+
+```{julia}
+#| label: ws-ch15-b1
+function incidence_at_horizon(x, _)
+    solution = run_scenario(x[1])
+    return Array(solution)[4, end]
+end
+
+candidate_starts = collect(0.0:0.25:25.0)
+horizon_curve = [incidence_at_horizon([s], nothing) for s in candidate_starts]
+
+check("it agrees with the Part A scenario",
+      incidence_at_horizon([reference_start], nothing) ≈ reference_array[4, end])
+
+(; grid_best_start = candidate_starts[argmin(horizon_curve)],
+   grid_best_value = round(minimum(horizon_curve); digits = 2))
+```
+
+`Fminbox(LBFGS())` is a *local* method, so "it converged" is not the same as "it
+found the best point in the box". Check the retcode, the position and the value
+separately.
+
+```{julia}
+#| label: ws-ch15-b2
+incidence_problem = OptimizationProblem(
+    OptimizationFunction(incidence_at_horizon, AutoFiniteDiff()),
+    [reference_start], nothing; lb = [0.0], ub = [25.0])
+incidence_solution = solve(incidence_problem, Fminbox(LBFGS()); maxiters = 30)
+
+# incidence_start refers to the day the intervention switches on.
+incidence_start = incidence_solution.u[1]
+
+check("the solver reported success", successful_retcode(incidence_solution))
+check("the optimizer agrees with the grid on where",
+      abs(incidence_start - candidate_starts[argmin(horizon_curve)]) < 0.5)
+check("the optimizer agrees with the grid on how good",
+      abs(incidence_solution.objective - minimum(horizon_curve)) < 1.0)
+
+(; incidence_start = round(incidence_start; digits = 3),
+   incidence_value = round(incidence_solution.objective; digits = 2))
+```
+
+```{julia}
+#| label: ws-ch15-b3
+baseline_incidence_rate =
+    baseline.beta * baseline.contact_rate .*
+    baseline_array[1, :] .* baseline_array[2, :] ./ baseline.N
+
+incidence_peak_time = time_grid[argmax(baseline_incidence_rate)]
+prevalence_peak_time = time_grid[argmax(baseline_array[2, :])]
+
+check("incidence peaks before prevalence does",
+      incidence_peak_time < prevalence_peak_time)
+
+(; incidence_peak_time, prevalence_peak_time,
+   optimal_start = round(incidence_start; digits = 2))
+```
+
+#### B1. Interpret
+
+- The curve is U-shaped with a minimum at $t_1 \approx 13.8$, where
+  $C(45) \approx 638$ against 785 with no policy. Both figures are horizon-bound:
+  at $T = 200$ the same two policies give about 680 and 790, so the gap narrows
+  from 147 to 110.
+- Both ends are bad for opposite reasons. Starting at $t_1 = 0$ spends the window
+  while there is almost nothing to suppress, and the epidemic then runs its course
+  from a nearly untouched susceptible pool, giving 756. Starting at $t_1 = 25$
+  suppresses a tail that was going to fade anyway, giving 737.
+- "Act at the peak" is ambiguous, because there are two peaks three units apart.
+  Prevalence peaks at $t = 17.5$, but susceptible depletion runs at the incidence
+  rate $\beta c SI/N$, which peaks at about $t = 14.3$ because $S$ is already
+  falling while $I$ is still rising. The optimum at 13.8 is essentially *at* the
+  peak that matters.
+- What a fixed window is worth is how much depletion it prevents, so the best
+  window is the one covering the interval of fastest depletion.
+- The window does not carry the population through the threshold: $S$ is still
+  about 532 when it closes, and 500 is not reached until about $t = 26.3$. What
+  the policy buys is a smaller *overshoot* — transmission is still supercritical
+  at the close, but with fewer infectious people to drive it, so the epidemic
+  crosses the threshold with less momentum. By $t = 200$ about 310 susceptibles
+  remain under the optimal policy against about 200 with none.
+- "Act slightly before the peak" gets the right answer for the wrong reason; "act
+  across the incidence peak, to cut the overshoot" generalizes. Note the shape is
+  a consequence of holding duration and strength fixed — a policy that could be
+  extended indefinitely would have no interior optimum at all.
+
+### Part C — a different objective, a different answer
+
+```{julia}
+#| label: ws-ch15-c1
+function peak_prevalence(x, _)
+    solution = run_scenario(x[1])
+    return maximum(Array(solution)[2, :])
+end
+
+peak_curve = [peak_prevalence([s], nothing) for s in candidate_starts]
+
+peak_problem = OptimizationProblem(
+    OptimizationFunction(peak_prevalence, AutoFiniteDiff()),
+    [reference_start], nothing; lb = [0.0], ub = [25.0])
+peak_solution = solve(peak_problem, Fminbox(LBFGS()); maxiters = 30)
+peak_start = peak_solution.u[1]
+
+check("the two objectives disagree about when to act",
+      abs(peak_start - incidence_start) > 2.0)
+
+(; peak_start = round(peak_start; digits = 3),
+   peak_value = round(peak_solution.objective; digits = 2),
+   incidence_start = round(incidence_start; digits = 3))
+```
+
+```{julia}
+#| label: ws-ch15-c2
+(
+    no_policy = (peak = round(maximum(baseline_array[2, :]); digits = 1),
+                 C45 = round(baseline_array[4, end]; digits = 1)),
+    min_incidence = (peak = round(peak_prevalence([incidence_start], nothing); digits = 1),
+                     C45 = round(incidence_at_horizon([incidence_start], nothing); digits = 1)),
+    min_peak = (peak = round(peak_prevalence([peak_start], nothing); digits = 1),
+                C45 = round(incidence_at_horizon([peak_start], nothing); digits = 1)),
+)
+```
+
+The peak objective has a flat region, and a gradient method cannot see out of
+one. The same optimisation is started from four different guesses; two of them
+fail, and nothing in the result announces it.
+
+```{julia}
+#| label: ws-ch15-c3
+function optimize_peak_from(guess)
+    problem = OptimizationProblem(
+        OptimizationFunction(peak_prevalence, AutoFiniteDiff()),
+        [guess], nothing; lb = [0.0], ub = [25.0])
+    solution = solve(problem, Fminbox(LBFGS()); maxiters = 30)
+    return (guess = guess, start = round(solution.u[1]; digits = 3),
+            value = round(solution.objective; digits = 2),
+            converged = successful_retcode(solution))
+end
+
+attempts = [optimize_peak_from(g) for g in (8.0, 15.0, 20.0, 24.0)]
+
+plateau_starts = candidate_starts[peak_curve .>= maximum(baseline_array[2, :]) - 1e-6]
+plateau_begins = isempty(plateau_starts) ? 25.0 : minimum(plateau_starts)
+
+check("a late starting guess does not move at all",
+      abs(attempts[3].start - 20.0) < 0.01 && abs(attempts[4].start - 24.0) < 0.01)
+check("every attempt reports success, including the stuck ones",
+      all(a -> a.converged, attempts))
+
+(; attempts, plateau_begins)
+```
+
+```{julia}
+#| label: fig-ws-ch15-objectives
+#| fig-cap: "Two objectives over the same decision variable. The minima fall four time units apart, and the peak objective is exactly flat once the window opens after the untouched peak at t = 17.5 — the shaded region, where a gradient optimizer stops immediately."
+fig = Figure(size = (860, 640))
+ax1 = Axis(fig[1, 1]; ylabel = "C(45), cumulative incidence at t = 45",
+           title = "Same model, same decision variable, two objectives")
+lines!(ax1, candidate_starts, horizon_curve; color = :darkorange, linewidth = 2)
+scatter!(ax1, [incidence_start], [incidence_solution.objective];
+         color = :firebrick, markersize = 14)
+vlines!(ax1, [incidence_start]; color = :firebrick, linestyle = :dash)
+
+ax2 = Axis(fig[2, 1]; xlabel = "intervention start time t₁",
+           ylabel = "peak infectious people")
+vspan!(ax2, plateau_begins, 25.0; color = (:grey, 0.2))
+lines!(ax2, candidate_starts, peak_curve; color = :seagreen, linewidth = 2)
+scatter!(ax2, [peak_start], [peak_solution.objective];
+         color = :firebrick, markersize = 14)
+vlines!(ax2, [incidence_start]; color = :firebrick, linestyle = :dash)
+text!(ax2, 19.0, 120.0; text = "flat: gradient = 0", fontsize = 13)
+linkxaxes!(ax1, ax2)
+fig
+```
+
+#### C1. Interpret
+
+- The two objectives disagree, and not marginally: minimising $C(45)$ says start
+  at $t_1 \approx 13.8$, minimising the peak says $t_1 \approx 9.6$. Minimising
+  the peak nearly halves it, 158 down to 80, at a price of about 35 more
+  infections by $t = 45$; minimising $C(45)$ lowers it by 147 while leaving the
+  peak at 137, barely 13% below doing nothing.
+- Neither is the right answer, because "optimal" is not a property of the
+  epidemic. It is a property of the objective, which encodes a value judgement
+  about whether horizon-specific burden or peak demand is the thing to avoid. A
+  hospital with a hard bed ceiling should act earlier than a planner counting
+  infections by day 45, and both are optimising correctly.
+- Writing the objective down explicitly, as the four-piece assembly forces you to,
+  is what makes that judgement auditable instead of buried.
+- Starting the peak optimisation from $t_1 = 8$ or $15$ finds 9.6; starting from
+  20 or 24 returns the guess unchanged with a "converged" peak of 158.45 —
+  exactly the no-intervention peak, because a window opening after $t = 17.5$
+  cannot touch a maximum that has already occurred. The objective is constant
+  there, the finite-difference gradient is zero, and LBFGS correctly concludes it
+  is at a stationary point.
+- Every diagnostic looks healthy: converged, inside the box, plausible number.
+  Only comparing against the grid reveals the answer is 97% worse than the real
+  optimum. Retcodes tell you the solver finished cleanly, not that it finished
+  anywhere useful.
+- The lesson is not "grid search everything", which does not scale past two or
+  three decision variables. It is that a gradient method assumes a locally
+  informative slope, and that assumption should be checked: sweep the objective in
+  one dimension when you can, restart from several guesses when you cannot, and be
+  suspicious of an optimizer that returns its own starting point. Here the flat
+  region even has a mechanistic explanation — it begins at the untouched peak
+  time, which you can predict before running anything.

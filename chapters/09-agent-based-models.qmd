@@ -306,16 +306,29 @@ do in your head, $(2r+1)^2-1$:
 
 A grid is also either **periodic**, wrapping at the edges so that every agent
 has the same number of neighbours, or **bounded**, in which case agents near an
-edge have fewer. It is tempting to read a smaller neighbourhood as a lower risk,
-but that does not follow: the number of contacts a susceptible makes is drawn
-from $\operatorname{Poisson}(c\Delta t)$ however many neighbours there are, and
-what sets the per-contact risk is the *proportion* infectious nearby, the $p$ of
+edge have fewer. A smaller neighbourhood is not automatically a lower risk, and
+under the rule used here it is a higher one: the number of contacts a
+susceptible makes is drawn from $\operatorname{Poisson}(c\Delta t)$ however many
+neighbours there are, so shrinking the pool leaves the contact rate untouched
+and raises the *proportion* infectious nearby, the $p$ of
 Equation @eq-abm-infection. A corner agent with one infectious neighbour out of
-three faces a higher per-contact risk than a middle agent with one out of eight.
-What edges genuinely change is the number of *distinct* people reachable and the
-uniformity of the population: on a bounded grid, where an agent lives becomes
-part of the model, and the epidemic front can run out of room. Wrapping removes
-both effects, which is why the model below uses it.
+three carries $8/3$ times the hazard of a middle agent with one out of eight,
+which makes the boundary the most dangerous place to live.
+
+That is frequency-dependent transmission — $c$ contacts per unit time whoever is
+available — carried over from the well-mixed model, and it is a choice rather
+than a property of grids. The alternative fixes the *per-neighbour* hazard: let
+each infectious neighbour transmit independently with probability
+$1-\exp(-\beta c\Delta t/n_0)$ for a reference neighbourhood size $n_0$, so the
+number of transmissions a susceptible receives is binomial in its infectious
+neighbour count. On a full neighbourhood the two rules are the same model, both
+giving $1-\exp(-\beta c p\,\Delta t)$ per step; at an edge the binomial rule
+scales risk down with the missing neighbours rather than up. What edges change
+under either rule is the number of *distinct* people reachable and the
+uniformity of the population: where an agent lives becomes part of the model,
+and the epidemic front can run out of room. Every grid model in this chapter
+wraps, which removes those effects and makes the two rules indistinguishable, so
+the Poisson contact loop carries over unchanged.
 
 ```{julia}
 #| label: code-ch06-space

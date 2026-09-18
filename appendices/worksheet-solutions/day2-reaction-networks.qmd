@@ -1,0 +1,245 @@
+## Reaction networks and moment closure — Day 2, Session 2
+
+Worksheet: `worksheets/chapters/07-reaction-networks.qmd`. The chapter is
+[Reaction networks and moment
+closure](../chapters/07-reaction-networks.qmd).
+
+```{julia}
+#| label: ws-ch07-setup
+using Catalyst
+using OrdinaryDiffEq
+using JumpProcesses
+using MomentClosure
+using CairoMakie
+using StableRNGs
+using Statistics
+
+check(name, condition) =
+    println(condition ? "✓ $name" : "✗ $name — not right yet, see the hint")
+
+N = 1000
+κ = 0.05 * 10.0 / N
+γ = 0.25
+tspan = (0.0, 40.0)
+times = collect(0.0:0.5:40.0)
+
+sir_network = @reaction_network begin
+    κ, S + I --> 2I
+    γ, I --> R
+end
+
+parameter_map = [:κ => κ, :γ => γ]
+ode_solution = solve(
+    ODEProblem(sir_network, [:S => 990.0, :I => 10.0, :R => 0.0], tspan, parameter_map),
+    Tsit5(); saveat = times)
+
+println("ODE peak infectious = ", round(maximum(ode_solution[2, :]); digits = 2))
+```
+
+### Part A — one network, three models
+
+The constructor takes the network object directly. There is no `DiscreteProblem`
+to build first and no propensity function to write: `JumpProblem` reads the
+propensities off the reactions and the stoichiometry off the arrows.
+
+```{julia}
+#| label: ws-ch07-a1
+jump_solution = solve(
+    JumpProblem(sir_network, [:S => 990, :I => 10, :R => 0], tspan, parameter_map;
+                aggregator = Direct(), rng = StableRNG(11)),
+    SSAStepper(); saveat = times)
+
+path = Array(jump_solution(times))
+check("population conserved exactly", all(sum(path; dims = 1) .== N))
+println("jump peak infectious = ", maximum(jump_solution[2, :]),
+        "  |  ODE peak = ", round(maximum(ode_solution[2, :]); digits = 2))
+```
+
+#### A1. Interpret
+
+- The integer initial condition is the only thing that changed between the two
+  lowerings. Conservation holds exactly for a structural reason: each column of
+  the stoichiometry matrix sums to zero, so every event moves one individual and
+  creates none. The ODE conserves population only to solver tolerance.
+- The seeded trajectory peaks at 192 against the ODE's 158.45, and that is not
+  evidence of the stochastic model being more explosive. One trajectory is not a
+  mean, and the ensemble of 100 runs used in Part C peaks on average at 146.7,
+  which sits *below* the ODE.
+- That ordering is the chapter's point about the discarded covariance. The
+  mean-field equation propagates $\kappa\,\mathbb{E}[S]\,\mathbb{E}[I]$, while the
+  true mean obeys $\kappa\,\mathbb{E}[SI] = \kappa(\mathbb{E}[S]\mathbb{E}[I] +
+  \operatorname{Cov}(S, I))$. Susceptibles are depleted precisely by the runs with
+  many infectious, so that covariance is negative and the ODE transmits too fast.
+
+### Part B — add a flow
+
+```{julia}
+#| label: ws-ch07-b1
+sirs_network = @reaction_network begin
+    κ, S + I --> 2I
+    γ, I --> R
+    ω, R --> S
+end
+sirs_parameters = [:κ => κ, :γ => γ, :ω => 0.02]
+
+sirs_ode = solve(
+    ODEProblem(sirs_network, [:S => 990.0, :I => 10.0, :R => 0.0], (0.0, 200.0), sirs_parameters),
+    Tsit5(); saveat = 0.0:1.0:200.0)
+
+check("three reactions", length(reactions(sirs_network)) == 3)
+check("settles to an endemic level", sirs_ode[2, end] > 1)
+println("(S, I, R) at t = 200: ",
+        round.((sirs_ode[1, end], sirs_ode[2, end], sirs_ode[3, end]); digits = 2))
+```
+
+The endemic level is worth checking against the algebra rather than taking on
+trust. Setting the right-hand sides to zero gives $S^{*} = \gamma/\kappa$ and
+$I^{*} = \omega(N - S^{*})/(\omega + \gamma)$.
+
+```{julia}
+#| label: ws-ch07-b2
+S_star = γ / κ
+I_star = 0.02 * (N - S_star) / (0.02 + γ)
+
+check("S(200) close to γ/κ", abs(sirs_ode[1, end] - S_star) < 5)
+println("analytic (S*, I*) = ", round.((S_star, I_star); digits = 3),
+        "  |  solver at t = 200: ", round.((sirs_ode[1, end], sirs_ode[2, end]); digits = 3))
+```
+
+```{julia}
+#| label: ws-ch07-b3
+sirs_jump = solve(
+    JumpProblem(sirs_network, [:S => 990, :I => 10, :R => 0], (0.0, 200.0),
+                sirs_parameters; aggregator = Direct(), rng = StableRNG(12)),
+    SSAStepper(); saveat = 0.0:1.0:200.0)
+
+println("jump lowering of the same network, final state = ", sirs_jump.u[end])
+```
+
+#### B1. Interpret
+
+- One line was added and nothing else was touched. Waning immunity is written
+  with the same syntax as recovery because it is the same kind of object — a flow
+  with a rate — and the network does not distinguish "the epidemic part" of the
+  model from "the demography part".
+- $S^{*} = 500$ is $N/R_0$ with $R_0 = \beta c/\gamma = 2$, the usual statement
+  that an endemic equilibrium sits exactly where each infection replaces itself.
+- The solver gives $I(200) = 38.94$ against $I^{*} = 37.04$ because the approach
+  is a damped oscillation and 200 days is not yet the limit, not because either
+  is wrong.
+- The jump lowering ends at `[460, 42, 498]`, near the deterministic equilibrium
+  but not at it, and it will not settle there. The deterministic oscillations damp
+  out; the stochastic model is driven by event noise that keeps exciting the same
+  oscillation, so it fluctuates around the equilibrium indefinitely. A single
+  path's mean over the second half of a run is a poor estimate of $I^{*}$.
+
+### Part C — break the closure
+
+The sweep does not simply produce four numbers that get gradually worse. At the
+smaller populations the closure's own solver gives up partway through and the
+mean it reports goes large and negative, so two of the four rows are not a large
+gap but a broken model.
+
+```{julia}
+#| label: ws-ch07-c1
+#| warning: false
+function closure_gap(population; trajectories = 100, seed0 = 500)
+    κ_local = 0.05 * 10.0 / population
+    parameters_local = [:κ => κ_local, :γ => γ]
+    S₀ = round(Int, 0.99 * population)
+    I₀ = max(round(Int, 0.01 * population), 1)
+
+    raw = generate_raw_moment_eqs(sir_network, 2)
+    closed = moment_closure(raw, "normal")
+    solution = solve(ODEProblem(closed, [Float64(S₀), Float64(I₀), 0.0], tspan, parameters_local),
+                     Tsit5(); saveat = times)
+    names = string.(unknowns(closed.odes))
+    closure_mean = solution[findfirst(==("μ₀₁₀(t)"), names), :]
+
+    function one_run(seed)
+        problem = JumpProblem(sir_network, [:S => S₀, :I => I₀, :R => 0], tspan,
+                              parameters_local; aggregator = Direct(), rng = StableRNG(seed))
+        return Array(solve(problem, SSAStepper(); saveat = times)(times))
+    end
+    ensemble = cat((one_run(seed0 + k) for k in 1:trajectories)...; dims = 3)
+    ensemble_mean = dropdims(mean(ensemble; dims = 3), dims = 3)[2, :]
+    extinct = mean(ensemble[2, end, :] .== 0)
+
+    # The closure is an ODE like any other and its solver can give up early, so
+    # compare over the horizon it actually reached rather than assuming t = 40.
+    horizon = length(closure_mean)
+    return (; population,
+            retcode = solution.retcode,
+            reached = solution.t[end],
+            relative_gap = maximum(abs.(closure_mean .- ensemble_mean[1:horizon])) / population,
+            smallest_mean = minimum(closure_mean),
+            extinct, closure_mean, ensemble_mean)
+end
+
+gaps = [closure_gap(n) for n in (1000, 500, 200, 100)]
+
+for g in gaps
+    println("N = ", lpad(g.population, 5),
+            "  ", rpad(g.retcode, 9),
+            "  reached t = ", lpad(g.reached, 4),
+            "  relative gap = ", lpad(round(g.relative_gap; digits = 4), 6),
+            "  extinct = ", lpad(round(g.extinct; digits = 2), 4),
+            "  smallest mean = ", lpad(round(g.smallest_mean; digits = 1), 8))
+end
+```
+
+```{julia}
+#| label: fig-ws-ch07-closure
+#| fig-cap: "Normal moment closure (red) against the mean of 100 jump trajectories (grey) at four population sizes. The red curve stops where the closure's solver aborted; at N = 200 and N = 100 it leaves the plotted range downwards before it fails."
+fig = Figure(size = (860, 560))
+for (k, g) in enumerate(gaps)
+    row, col = divrem(k - 1, 2) .+ (1, 1)
+    ax = Axis(fig[row, col]; xlabel = "Time", ylabel = "Infectious",
+              title = "N = $(g.population)  ($(g.retcode))")
+    lines!(ax, times, g.ensemble_mean; color = :grey25, linewidth = 2,
+           label = "Ensemble mean")
+    lines!(ax, times[1:length(g.closure_mean)], g.closure_mean; color = :firebrick,
+           linewidth = 2, label = "Normal closure")
+    ylims!(ax, -0.1 * maximum(g.ensemble_mean), 1.35 * maximum(g.ensemble_mean))
+    k == 1 && axislegend(ax; position = :rt, framevisible = false)
+end
+fig
+```
+
+#### C1. Interpret
+
+- The closure does not degrade gracefully. It is accurate at $N = 1000$ (relative
+  gap 0.0042), still usable at $N = 500$ (0.0162), and at $N = 200$ it stops being
+  a model of anything: the mean infectious count runs to −461, the solver drives
+  its step below floating point epsilon just past $t = 21.9$ and gives up with
+  retcode `Unstable`. The gap reported for those rows is a comparison over half a
+  run, and should be read as "the closure did not finish" rather than as a gap of
+  2.4.
+- Extinction is absent at $N = 1000$, rare at $N = 500$ (5% of runs), and the
+  majority outcome at $N = 200$ (52%) and $N = 100$ (81%). The two columns fail
+  together, and the reason is structural: a normal distribution is symmetric,
+  supported on the whole real line and fixed by two numbers, while the true
+  distribution of $I(t)$ has an atom at exactly zero and a skewed lump away from
+  it. Pushing the mean towards zero while the variance is still large forces the
+  fitted normal to put mass at negative counts, which the closure relation feeds
+  back into the moment equations.
+- This is the chapter's log-normal experiment from the other direction. The
+  log-normal closure could not start at all because it cannot represent a count
+  that reaches zero; the normal closure starts happily and breaks once zero
+  becomes likely. Both are statements about the assumed shape, not the solver.
+- Two details in `closure_gap` are the difference between a table and an
+  exception: it returns `solution.retcode` rather than assuming success, and it
+  compares over the horizon actually reached. When the solve aborts at $t = 21.5$
+  there are 44 saved points against the ensemble's 81, and comparing them
+  directly raises `DimensionMismatch` instead of reporting anything.
+- On the discussion question — closure for a model you cannot afford to simulate
+  even once — you cannot. There is no refinement parameter, no analogue of
+  halving a timestep, so nothing internal to the method distinguishes the accurate
+  $N = 1000$ answer from the meaningless $N = 200$ one. Simulation is the only
+  check, which makes the method circular exactly where it is most tempting.
+- That argues for two practices rather than against ever using it: check the
+  retcode and the sign of the fitted moments, which is free; and calibrate on a
+  regime you *can* simulate before extrapolating, treating the boundary you find
+  as a property of that model and parameter set. Note that here it is the mean at
+  −461 and the `Unstable` retcode that give the failure away, not the negative
+  variance the chapter warns about.

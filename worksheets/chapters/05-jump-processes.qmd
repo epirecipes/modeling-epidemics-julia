@@ -36,9 +36,10 @@ opens with an R-to-Julia table, and the
 full one.
 
 ::: {.callout-note}
-The next session replaces these individual events with a continuous
-approximation. You are not being asked to judge which is better yet; today is
-about simulating the events exactly.
+The next session writes these same transitions as a reaction network and
+generates this jump process, an ODE and a moment approximation from one
+description of the flows. You are not being asked to judge which is better yet;
+today is about simulating the events exactly.
 :::
 
 ::: {.callout-note}
@@ -280,7 +281,7 @@ jumps above are right.
 
 ```{julia}
 #| label: fig-ws-ch04-compare
-#| fig-cap: "Mean infectious curve over 30 exact simulations, with and without a latent period, with the 10th-90th percentile band for the SEIR model."
+#| fig-cap: "Mean infectious curve over 30 exact simulations, with and without a latent period, with the 5th-95th percentile band for the SEIR model (the `EnsembleSummary` default)."
 seir_low = reduce(hcat, seir_summary.qlow.u)[3, :]
 seir_high = reduce(hcat, seir_summary.qhigh.u)[3, :]
 

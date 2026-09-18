@@ -23,9 +23,11 @@ information, not failure, and the collapsed hint below it will get you moving.
 An instructor is circulating; ask early rather than staying stuck.
 
 **All four parts are the session**, and Part D is the one the day has been
-building towards — it settles a question the observation-models session left
-open. Part A is a short warm-up that needs no theory; Part C is the longest, so
-if you are running short, read its output rather than tuning it and move on. Worked solutions are posted at the end of each
+building towards — it settles a question the self-study chapter on
+[observation models](../../chapters/11-observation-models.qmd) leaves open.
+Part A is a short warm-up that needs no theory; Part C is the longest, so if
+you are running short, read its output rather than tuning it and move on.
+Worked solutions are posted at the end of each
 day. Run `git pull` to collect them.
 
 ::: {.callout-note}
@@ -482,8 +484,8 @@ Logging.disable_logging(Logging.Info)
 @variables S(t) I(t) R(t) C(t) y(t)
 D = Differential(t)
 
-# A fourth state accumulates infections, exactly as in the observation-model
-# session, and it is that cumulative count which is observed.
+# A fourth state accumulates infections, exactly as in the observation-models
+# chapter, and it is that cumulative count which is observed.
 separate = ODESystem([D(S) ~ -b * c_rate * S * I,
                       D(I) ~ b * c_rate * S * I - g * I,
                       D(R) ~ g * I,
@@ -543,14 +545,17 @@ check("the recovery rate is identifiable either way",
 combined_result
 ```
 
-### The reporting fraction from the previous session
+### The reporting fraction from the observation-models chapter
 
-The observation-models session ended on a question it deferred: a small epidemic
-reported completely and a large one reported partially give case series of
-similar size, so can the reporting fraction $\rho$ be separated from
-transmission? You now have the tool to answer it. Observe $\rho C$ rather than
-$C$, and ask twice: once with the initial state treated as unknown, and once
-treating the complete initial state as known.
+The self-study chapter on
+[observation models](../../chapters/11-observation-models.qmd) leaves this
+question open: a small epidemic reported completely and a large one reported
+partially give case series of similar size, so can the reporting fraction
+$\rho$ be separated from transmission? The chapter answers it only with the
+initial state held fixed, and defers the relaxations to here. You now have the
+tool for them. Observe $\rho C$ rather than $C$, and ask twice: once with the
+initial state treated as unknown, and once treating the complete initial state
+as known.
 
 ```{julia}
 #| label: ws-ch10-d3
@@ -648,6 +653,8 @@ Nothing here is assigned. The whole project stays available to you afterwards.
   three tools, with the local, global and structural distinctions spelled out.
 - [The Pluto notebook](../../notebooks/chapters/14-sensitivity-and-identifiability.pluto.jl):
   sliders over the sensitivity calculation.
+- [Observation models](../../chapters/11-observation-models.qmd): the self-study
+  chapter that raises the reporting-fraction question Part D settles.
 - [Frequentist parameter estimation](../../chapters/12-parameter-estimation.qmd):
   the self-study chapter where a non-identifiable parameter shows up as a flat
   direction in the likelihood.

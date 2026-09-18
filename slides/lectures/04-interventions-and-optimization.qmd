@@ -1,0 +1,766 @@
+---
+title: "Interventions and optimization: choosing a policy with a model"
+engine: markdown
+format:
+  revealjs:
+    width: 1920
+    height: 1080
+    center: true
+    css: lectures.css
+    link-external-newwindow: true
+    code-copy: false
+    code-line-numbers: false
+---
+
+## Talk plan
+
+- A policy as one number you get to choose
+- Turning a whole epidemic into a single number
+- What an optimizer actually does, one step at a time
+- The four pieces of an `Optimization.jl` problem
+- Where it quietly goes wrong: flat objectives, and contested ones
+
+::: {.notes}
+Everything on the model side is yesterday's
+SIR model with yesterday's callback. What is new is the layer on top: a search
+over policies.
+:::
+
+## Let's assume that we can only choose when the lockdown starts
+
+:::: {.columns}
+::: {.column width="38%"}
+- Transmission cut by $v_{\max} = 50\%$, and we can only have a lockdown for a fixed $d = 10$ days
+- Only one coefficient moves, and only inside the window
+- When should we start the lockdown?
+
+::: {.sub}
+$$
+\begin{aligned}
+\dot S &= -\beta c\,(1 - v(t))\,SI/N,\\
+\dot I &= \beta c\,(1 - v(t))\,SI/N - \gamma I,\\
+\dot R &= \gamma I,\\
+\dot C &= \beta c\,(1 - v(t))\,SI/N,
+\end{aligned}
+$$
+
+$$
+v(t; t_1) =
+\begin{cases}
+v_{\max}, & t_1 \le t < t_1 + d,\\
+0, & \text{otherwise}
+\end{cases}
+$$
+:::
+:::
+::: {.column width="62%"}
+```{ojs}
+//| echo: false
+sirBase = ({N: 1000, S0: 990, I0: 10, beta: 0.05, c: 10, gamma: 0.25})
+windowDuration = 10
+vMax = 0.5
+horizonT = 45
+startMin = 0
+startMax = 25
+cols = ({S: "#4682b4", I: "#b22222", R: "#2e8b57", C: "#7a3fa0",
+  J: "#d2691e", ink: "#17242b", grey: "#999999"})
+
+rhs = (u, v) => {
+  const inc = sirBase.beta * sirBase.c * (1 - v) * u[0] * u[1] / sirBase.N;
+  return [-inc, inc - sirBase.gamma * u[1], sirBase.gamma * u[1], inc];
+}
+
+// Piecewise RK4: the switch times are segment boundaries, which is what the
+// callback does to the solver. Integrating through them would smear the edges.
+runPolicy = (t1, tEnd = horizonT, dt = 0.1) => {
+  const stop = t1 + windowDuration;
+  const edges = [0, ...[t1, stop].filter((x) => x > 0 && x < tEnd), tEnd];
+  let u = [sirBase.S0, sirBase.I0, sirBase.N - sirBase.S0 - sirBase.I0, 0];
+  const out = [{t: 0, S: u[0], I: u[1], R: u[2], C: u[3]}];
+  for (let i = 0; i < edges.length - 1; i++) {
+    const a = edges[i], b = edges[i + 1];
+    if (b <= a) continue;
+    const v = (a >= t1 - 1e-9 && a < stop - 1e-9) ? vMax : 0;
+    const n = Math.max(1, Math.ceil((b - a) / dt)), h = (b - a) / n;
+    for (let k = 0; k < n; k++) {
+      const k1 = rhs(u, v);
+      const k2 = rhs(u.map((x, j) => x + h / 2 * k1[j]), v);
+      const k3 = rhs(u.map((x, j) => x + h / 2 * k2[j]), v);
+      const k4 = rhs(u.map((x, j) => x + h * k3[j]), v);
+      u = u.map((x, j) => x + h / 6 * (k1[j] + 2 * k2[j] + 2 * k3[j] + k4[j]));
+      out.push({t: a + (k + 1) * h, S: u[0], I: u[1], R: u[2], C: u[3]});
+    }
+  }
+  return out;
+}
+
+noPolicyStart = 1e6
+summarise = (t1) => {
+  const rows = runPolicy(t1);
+  return {C: rows[rows.length - 1].C, peak: d3.max(rows, (d) => d.I)};
+}
+thin = (rows, k = 5) => rows.filter((_, i) => i % k === 0)
+
+axisX = (label, extra = {}) => ({
+  label, labelAnchor: "center", labelOffset: 52, ...extra
+})
+axisY = (label, extra = {}) => ({
+  label, labelAnchor: "top", labelOffset: 40, ...extra
+})
+plotBase = ({
+  width: 1050, height: 560, marginLeft: 100, marginBottom: 70,
+  marginTop: 40, marginRight: 60, insetTop: 30,
+  style: {fontSize: "24px"}
+})
+panelBase = ({...plotBase, width: 830, height: 600, marginRight: 40})
+band = (a, b, y1, y2, fill = cols.S) =>
+  Plot.rect([{a, b, y1, y2}], {x1: "a", x2: "b", y1: "y1", y2: "y2",
+    fill, fillOpacity: 0.15})
+```
+
+```{ojs}
+//| echo: false
+noPolicyRows = thin(runPolicy(noPolicyStart))
+noPolicy = summarise(noPolicyStart)
+slideStarts = d3.range(0, 25.01, 0.5)
+slideRuns = slideStarts.map((t1) =>
+  ({t1, rows: thin(runPolicy(t1)), s: summarise(t1)}))
+scenarioPlot = (run) => Plot.plot({
+  ...plotBase,
+  title: `Window opens at t₁ = ${run.t1.toFixed(1)} — peak ${
+    run.s.peak.toFixed(0)}, C(45) = ${run.s.C.toFixed(0)}`,
+  x: axisX("time (days)", {domain: [0, 45]}),
+  y: axisY("infectious (people)", {domain: [0, 175]}),
+  marks: [
+    band(run.t1, run.t1 + windowDuration, 0, 175),
+    Plot.line(noPolicyRows, {x: "t", y: "I", stroke: cols.grey,
+      strokeWidth: 3.5}),
+    Plot.line(run.rows, {x: "t", y: "I", stroke: cols.I, strokeWidth: 4.5}),
+    Plot.text([{x: 41, y: noPolicy.peak * 0.62}], {x: "x", y: "y",
+      text: () => "no policy", fill: cols.grey, fontSize: 24,
+      textAnchor: "end"}),
+    Plot.text([{x: run.t1 + windowDuration / 2, y: 170}], {x: "x", y: "y",
+      text: () => "50% cut, 10 days", fill: cols.S, fontSize: 22})
+  ]
+})
+{
+  while (true) {
+    for (const run of slideRuns) {
+      yield scenarioPlot(run);
+      await Promises.delay(230);
+    }
+    await Promises.delay(1600);
+  }
+}
+```
+:::
+::::
+
+::: {.notes}
+Start from what they already have. This is the Day 1 lockdown callback: one
+parameter changed at two known times, nothing else touched.
+
+The window slides from day zero to day twenty-five and the red curve reshapes under it. Early, almost nothing happens. Late, almost nothing happens. Somewhere in between it does the most good, and you can see the peak dip as the shaded band passes over it.
+
+That is the whole problem in one picture: a single number in, a whole epidemic
+out. Everything after this is bookkeeping and search.
+:::
+
+## Three plausible answers, and no way to choose between them
+
+| policy | peak infectious | $C(45)$, infections by day 45 |
+|---|---:|---:|
+| no policy | 158 | 785 |
+| act immediately, $t_1 = 0$ | 146 | 756 |
+| act at $t_1 = 8$ | 96 | 695 |
+| act late, $t_1 = 25$ | 158 | 737 |
+
+::: {.notes}
+Pause on the second row. Acting at once feels like the responsible choice and it
+is close to useless here, and the reason is worth having ready because someone
+always asks.
+
+During the window R_eff is R0 times one minus v times S over N: two times a half
+times zero point nine nine, which is zero point nine nine. The policy holds the
+epidemic exactly at the threshold. Ten days later there are still nine and a half
+infectious people rather than eighty-six, and nine hundred and sixty-six
+susceptibles rather than eight hundred and nineteen.
+
+So it works perfectly while it is on, and that is the problem: it hands back a
+nearly untouched susceptible pool, and the epidemic restarts from almost its
+initial condition ten days later. The peak moves from day seventeen and a half to
+day twenty-eight — the length of the window — and is lower only because the
+restart is from nine hundred and sixty-six rather than nine hundred and ninety.
+Run both to day two hundred and the twenty-nine infection difference at day
+forty-five is worth eight.
+
+That is the case for optimisation. Not that the computer is cleverer, but that
+"try a few and pick the best" is exactly how you convince yourself of something
+false when the good region is narrow and your intuition points elsewhere.
+
+Note also that the two columns already disagree about the ranking. Hold that
+thought; it comes back at the end.
+:::
+
+## If our objective is to reduce the total number of infections
+
+:::: {.columns}
+::: {.column width="38%"}
+- $C$ is the fourth equation, the one that only ever accumulates
+- $C(T)$ counts total infections at time $T$
+- Our objective is to reduce the total number of infections at end time
+
+::: {.sub}
+$$
+J(t_1) = C(T; t_1), \qquad T = 45
+$$
+:::
+:::
+::: {.column width="62%"}
+```{ojs}
+//| echo: false
+accRefRows = thin(runPolicy(8))
+accNoneRows = noPolicyRows
+accPlot = (k) => {
+  const shown = accRefRows.slice(0, k + 1);
+  const shownNone = accNoneRows.slice(0, k + 1);
+  const now = shown[shown.length - 1];
+  const nowNone = shownNone[shownNone.length - 1];
+  return Plot.plot({
+    ...plotBase,
+    title: `t = ${now.t.toFixed(1)} — C so far: ${
+      now.C.toFixed(0)} with the policy, ${nowNone.C.toFixed(0)} without`,
+    x: axisX("time (days)", {domain: [0, 45]}),
+    y: axisY("cumulative incidence C (people)", {domain: [0, 820]}),
+    marks: [
+      band(8, 18, 0, 820),
+      Plot.line(shownNone, {x: "t", y: "C", stroke: cols.grey,
+        strokeWidth: 3.5}),
+      Plot.line(shown, {x: "t", y: "C", stroke: cols.C, strokeWidth: 4.5}),
+      Plot.dot([now], {x: "t", y: "C", r: 10, fill: cols.C}),
+      Plot.dot([nowNone], {x: "t", y: "C", r: 8, fill: cols.grey}),
+      ...(k === accRefRows.length - 1 ? [
+        Plot.ruleX([45], {stroke: cols.ink, strokeDasharray: "6,6"}),
+        Plot.text([{x: 44, y: 400}], {x: "x", y: "y", fill: cols.ink,
+          fontSize: 26, textAnchor: "end", fontWeight: 700,
+          text: () => `J(8) = C(45) = ${now.C.toFixed(0)}`})
+      ] : [])
+    ]
+  });
+}
+{
+  while (true) {
+    for (let k = 0; k < accRefRows.length; k++) {
+      yield accPlot(k);
+      await Promises.delay(k === 0 ? 800 : 55);
+    }
+    await Promises.delay(3000);
+  }
+}
+```
+:::
+::::
+
+::: {.notes}
+The animation shows why the horizon matters. The grey and purple curves are
+still separating at day forty-five — the epidemic is not over, so C(45) is not
+the final size. It is the number of infections by a particular date, and a policy
+can improve it by preventing cases or by postponing them past the line.
+:::
+
+## We could do a sweep on the start time {.center}
+
+Sweep the start time, and keep the number each choice produces.
+
+```{ojs}
+//| echo: false
+sweepStarts = d3.range(0, 25.01, 0.25)
+sweepRuns = sweepStarts.map((t1) =>
+  ({t1, rows: thin(runPolicy(t1)), s: summarise(t1)}))
+objectiveRows = sweepRuns.map((r) => ({t1: r.t1, J: r.s.C, peak: r.s.peak}))
+bestIncidence = objectiveRows.reduce((a, b) => (b.J < a.J ? b : a))
+bestPeak = objectiveRows.reduce((a, b) => (b.peak < a.peak ? b : a))
+
+sweepPanel = (k) => {
+  const run = sweepRuns[k];
+  const left = Plot.plot({
+    ...panelBase,
+    title: `the model: t₁ = ${run.t1.toFixed(2)}`,
+    x: axisX("time (days)", {domain: [0, 45]}),
+    y: axisY("infectious (people)", {domain: [0, 175]}),
+    marks: [
+      band(run.t1, run.t1 + windowDuration, 0, 175),
+      Plot.line(noPolicyRows, {x: "t", y: "I", stroke: cols.grey,
+        strokeWidth: 3}),
+      Plot.line(run.rows, {x: "t", y: "I", stroke: cols.I, strokeWidth: 4.5})
+    ]
+  });
+  const right = Plot.plot({
+    ...panelBase,
+    title: `the objective: J(${run.t1.toFixed(2)}) = ${run.s.C.toFixed(1)}`,
+    x: axisX("intervention start t₁ (days)", {domain: [0, 25]}),
+    y: axisY("J(t₁) = C(45)", {domain: [600, 800]}),
+    marks: [
+      Plot.ruleY([noPolicy.C], {stroke: cols.grey, strokeDasharray: "6,6"}),
+      Plot.text([{x: 0.5, y: noPolicy.C}], {x: "x", y: "y", dy: -18,
+        fill: cols.grey, fontSize: 22, textAnchor: "start",
+        text: () => `no policy: ${noPolicy.C.toFixed(0)}`}),
+      Plot.line(objectiveRows.slice(0, k + 1), {x: "t1", y: "J",
+        stroke: cols.J, strokeWidth: 4}),
+      Plot.dot([objectiveRows[k]], {x: "t1", y: "J", r: 11, fill: cols.J}),
+      Plot.ruleX([run.t1], {stroke: cols.J, strokeDasharray: "4,6"})
+    ]
+  });
+  return htl.html`<div style="display: flex; gap: 28px; justify-content: center;">${left}${right}</div>`;
+}
+{
+  while (true) {
+    for (let k = 0; k < sweepRuns.length; k++) {
+      yield sweepPanel(k);
+      await Promises.delay(110);
+    }
+    await Promises.delay(3200);
+  }
+}
+```
+
+::: {.notes}
+It is U-shaped, so there is an interior best. 
+Both ends are bad for opposite reasons. And the curve is a hundred and one
+ODE solves — the optimizer does not get the curve, it gets to ask for points on
+it, one at a time, and it pays a full epidemic simulation for each one.
+
+The minimum is at about thirteen point eight, giving six hundred and thirty
+eight.
+:::
+
+## Why not just try a few and pick the best?
+
+- Real decisions have more than one dial: when, how strong, how long.
+- And they come with limits: doses in stock, beds on the ward, etc.
+
+::: {.notes}
+This is the epidemiological case, not the computational one. Nobody needs to care
+how many ODE solves a sweep costs. What matters is that a scenario table encodes
+what the analyst thought was reasonable, and the answer often sits between the
+round numbers somebody would have tried — as it does here, at thirteen point
+eight.
+
+The last bullet is the one that recurs in practice. The interesting problems are
+constrained, and "subject to" is the thing a list of scenarios cannot say.
+:::
+
+## So we let an optimizer choose where to look
+
+:::: {.columns}
+::: {.column width="62%"}
+```{ojs}
+//| echo: false
+incidenceObjective = (t1) => summarise(t1).C
+peakObjective = (t1) => summarise(t1).peak
+
+// A step downhill, with the step shrunk until it actually improves. This is the
+// shape of what Fminbox(LBFGS()) does, not its arithmetic: LBFGS also builds a
+// curvature estimate from previous steps. The parts on show here — a gradient
+// from extra solves, a line search, a box it cannot leave, and a tolerance below
+// which a slope counts as flat — are the parts that determine what the answer
+// costs and where it goes wrong.
+descend = (obj, x0, opts = {}) => {
+  const {h = 0.25, step0 = 5, stepMin = 0.05, iters = 8, gTol = 1e-3,
+    xlo = startMin, xhi = startMax} = opts;
+  const path = [];
+  let x = x0, solves = 0;
+  const f = (z) => { solves += 1; return obj(z); };
+  let fx = f(x);
+  for (let k = 0; k < iters; k++) {
+    const xp = Math.min(xhi, x + h), xm = Math.max(xlo, x - h);
+    const fp = f(xp), fm = f(xm);
+    const g = (fp - fm) / (xp - xm);
+    const dir = Math.abs(g) < gTol ? 0 : -Math.sign(g);
+    const trials = [];
+    let s = step0, xn = x, fn = fx, accepted = false;
+    while (dir !== 0 && s > stepMin) {
+      xn = Math.min(xhi, Math.max(xlo, x + dir * s));
+      fn = f(xn);
+      if (fn < fx) { accepted = true; break; }
+      trials.push({x: xn, f: fn});
+      s /= 2;
+    }
+    path.push({k, x, fx, g, xp, xm, fp, fm, trials, flat: dir === 0,
+      accepted, xnext: accepted ? xn : x, fnext: accepted ? fn : fx,
+      solves});
+    if (!accepted) break;
+    x = xn; fx = fn;
+  }
+  return {path, x, fx, solves};
+}
+
+framesOf = (run) => run.path.flatMap((p) => {
+  const stages = [{...p, stage: "probe"}];
+  if (p.trials.length > 0) stages.push({...p, stage: "trial"});
+  stages.push({...p, stage: p.accepted ? "step" : "stop"});
+  return stages;
+})
+
+descentRun = descend(incidenceObjective, 8)
+descentFrames = framesOf(descentRun)
+
+descentPlot = (frame, rows, yLabel, yDomain, curveKey, extraMarks = []) => {
+  const stageText = frame.stage === "probe"
+    ? `two extra solves at t₁ ± 0.25 → slope ${frame.g.toFixed(2)} per day`
+    : frame.stage === "trial"
+    ? `that step overshot — halve it and try again (${
+        frame.trials.length} rejected)`
+    : frame.stage === "stop"
+    ? `slope is flat to tolerance: stop, and report success`
+    : `accept: t₁ = ${frame.x.toFixed(2)} → ${frame.xnext.toFixed(2)}`;
+  return Plot.plot({
+    ...plotBase,
+    title: `step ${frame.k + 1} · ${stageText} · ${
+      frame.solves} ODE solves so far`,
+    x: axisX("intervention start t₁ (days)", {domain: [0, 25]}),
+    y: axisY(yLabel, {domain: yDomain}),
+    marks: [
+      ...extraMarks,
+      Plot.line(rows, {x: "t1", y: curveKey, stroke: cols.grey,
+        strokeWidth: 3, strokeOpacity: 0.55}),
+      Plot.dot([frame], {x: "x", y: "fx", r: 12, fill: cols.J}),
+      ...(frame.stage === "probe" ? [
+        Plot.line([{x: frame.xm, y: frame.fx + frame.g * (frame.xm - frame.x)},
+          {x: frame.xp, y: frame.fx + frame.g * (frame.xp - frame.x)}],
+          {x: "x", y: "y", stroke: cols.I, strokeWidth: 4}),
+        Plot.dot([{x: frame.xm, y: frame.fm}, {x: frame.xp, y: frame.fp}],
+          {x: "x", y: "y", r: 9, fill: "white", stroke: cols.I,
+            strokeWidth: 3.5})
+      ] : []),
+      ...(frame.stage === "trial" ? [
+        Plot.dot(frame.trials, {x: "x", y: "f", r: 10, symbol: "times",
+          stroke: cols.I, strokeWidth: 3.5}),
+        Plot.arrow([{x1: frame.x, y1: frame.fx,
+          x2: frame.trials[0].x, y2: frame.trials[0].f}],
+          {x1: "x1", y1: "y1", x2: "x2", y2: "y2", stroke: cols.I,
+            strokeWidth: 2.5, strokeDasharray: "6,6"})
+      ] : []),
+      ...(frame.stage === "step" ? [
+        Plot.arrow([{x1: frame.x, y1: frame.fx, x2: frame.xnext,
+          y2: frame.fnext}], {x1: "x1", y1: "y1", x2: "x2", y2: "y2",
+          stroke: cols.ink, strokeWidth: 3.5, headLength: 14}),
+        Plot.dot([{x: frame.xnext, y: frame.fnext}], {x: "x", y: "y", r: 12,
+          fill: cols.ink})
+      ] : [])
+    ]
+  });
+}
+{
+  while (true) {
+    for (const frame of descentFrames) {
+      yield descentPlot(frame, objectiveRows, "J(t₁) = C(45)", [600, 800], "J");
+      await Promises.delay(frame.stage === "step" ? 1100 : 1500);
+    }
+    await Promises.delay(3000);
+  }
+}
+```
+:::
+::: {.column width="38%"}
+1. **Ask what is nearby.** Two extra solves give the slope — that is what
+   `AutoFiniteDiff` means
+2. **Step downhill**, deliberately too far
+3. **Halve the step** until the number actually improves
+4. **Repeat** until the slope is flat
+
+::: {.sub}
+48 solves to find $t_1 = 13.86$ — and we never had to draw the complete curve.
+:::
+:::
+::::
+
+::: {.notes}
+The list is on the slide, so narrate what the animation adds rather than reading
+it out.
+
+The first move is the one that costs. Every slope is two more epidemics
+simulated, so something that looks like one run of the model is really dozens.
+
+The crosses are rejected candidates, each one a full solve. The line search is
+where most of the bill goes.
+
+The grey curve is drawn for us, not for the optimizer. It only ever knows the
+points we paid for.
+:::
+
+## The four pieces we hand to `Optimization.jl` {.tight-code}
+
+:::: {.columns}
+::: {.column width="42%"}
+1. Choose an **objective**: In this case minimizing the `final_incidence`
+2. Selecte a **derivative rule**: To calculate the gradient of the objective
+3. Propose a **starting guess**: Day 8 
+4. Set a lower and upper **bounds**: Tell the optimizer where we may not go
+
+:::
+::: {.column width="58%"}
+```julia
+using Optimization, OptimizationOptimJL
+
+# 1. one decision vector in, one number out
+final_incidence(x, _) = Array(run_scenario(x[1]))[4, end]
+
+# 2. how derivatives are obtained
+objective = OptimizationFunction(final_incidence, AutoFiniteDiff())
+
+# 3. where the search starts;  4. where it may not go
+problem = OptimizationProblem(objective, [8.0], nothing;
+                              lb = [0.0], ub = [25.0])
+
+# the method that walks it
+solution = solve(problem, Fminbox(LBFGS()); maxiters = 30)
+
+solution.u[1]        # 13.84
+solution.objective   # 638.43
+successful_retcode(solution)
+```
+:::
+::::
+
+::: {.notes}
+Read the four pieces aloud in order rather than explaining LBFGS. Assembling
+them is the transferable skill; every optimisation they meet in Julia has this
+shape, model fitting included.
+
+The second argument of the objective is **not time** — expect that question,
+because they have been writing `f!(du, u, p, t)` all week. It is whatever we
+handed to `OptimizationProblem` as `p`: a horizon, a dataset to fit against, a
+cost weight. Here it is `nothing`, so we write an underscore. The objective never
+sees time, because it runs a whole epidemic internally and returns one number.
+
+`Fminbox` is what enforces the bounds; `LBFGS` on its own knows nothing about
+them. Say the word "box" out loud here, because the next slide leans on it.
+
+Do not dwell on the solver name. It is what the worksheet types, and two slides
+on there is a table of when we would choose something else.
+:::
+
+## Which derivative rule? {.smaller}
+
+| Rule | How it gets the slope | Cost of one gradient | Reach for it when |
+|---|---|---|---|
+| `AutoFiniteDiff()` | re-runs the model at nudged values | an extra run or two per parameter, approximate | It is ok for few parameters
+| `AutoForwardDiff()` | carries derivatives alongside the values| grows with the number of parameters, exact | a handful of parameters; most epidemic models |
+| `AutoReverseDiff()` | records the run, then replays it backwards | one backward pass, but many parameters | many parameters, and possibly more complex models |
+| `AutoZygote()` | rewrites our code into derivative code | one backward pass, however many parameters | many parameters — neural networks |
+| `AutoEnzyme()` | differentiates the compiled code | the fastest of the reverse modes | speed matters |
+
+
+::: {.sub}
+Few parameters, go forward. Many parameters, go backward. Anything awkward in
+between, finite differences — and check the answer.
+:::
+
+::: {.notes}
+Do not teach automatic differentiation here; they met dual numbers in the Julia
+essentials, and the sensitivity session used the idea immediately before this
+one. The table is so they can recognise the argument when they meet it in
+someone else's code.
+
+The row that matters today is the first one. Our objective is a whole ODE solve
+with a callback inside it, so the derivative has to come through the solver.
+That is possible — SciMLSensitivity exists for exactly this — but finite
+differences need nothing, cost two extra epidemics per gradient, and were
+accurate enough. Robust beats elegant when the model is cheap.
+
+The second row is where they will end up for model fitting: a handful of
+parameters, forward mode, exact derivatives. The reverse-mode rows only start to
+pay when the parameter count runs to hundreds, which in this field usually means
+a neural network inside the model — the appendix on universal differential
+equations uses `AutoZygote()` for that reason.
+
+The last row is worth saying out loud: some methods never ask for a slope at all.
+That matters on the next slide but one, where a slope of zero is precisely what
+misleads us.
+:::
+
+## And which method? {.smaller}
+
+```julia
+solve(problem, Fminbox(LBFGS()))      # the method is an argument, not a rewrite
+
+unbounded = OptimizationProblem(OptimizationFunction(final_incidence), [8.0], nothing)
+solve(unbounded, NelderMead())        # no bounds, and no derivative rule needed
+```
+
+| Method | What it needs | Reach for it when | 
+|---|---|---|
+| `Fminbox(LBFGS())` | slopes, and bounds | a smooth objective inside a box | 
+| `NelderMead()` | the objective, and no bounds | small problems, awkward or noisy objectives | 
+
+::: {.sub}
+Both are **local**: they find a minimum near where we started, not the best one
+in the box. The problem stays the same object; only the argument to `solve`
+changes.
+:::
+
+::: {.notes}
+One catch worth knowing before someone hits it in the worksheet. Giving `lb` and
+`ub` makes Optimization.jl wrap the method in `Fminbox` for us — bare `LBFGS()`
+on our problem works and returns the same answer. But `Fminbox` needs gradients,
+so `NelderMead()` cannot take a bounded problem at all: it errors rather than
+ignoring the bounds. Gradient-free here means unbounded too.
+
+If anyone asks about Ipopt: it belongs where the constraints are written down as
+equations, which is the optimal-control appendix, not here — our only constraint
+is a box.
+
+Do not let the names carry weight. `Fminbox(LBFGS())` is here because it is what
+the worksheet types and what the chapter uses; it is a sensible default for a
+smooth objective in a box, not a recommendation to memorise. The problem is a
+description, the method is an argument, and swapping one does not make us rewrite
+the other.
+
+Say the word "local" out loud. Every method on this slide answers "is there
+anything better just next to me", never "is this the best policy in the box".
+Global search exists and is a session of its own; our remedy is the cheap one —
+sweep the objective when we can, restart from several guesses when we cannot.
+That is exactly what goes wrong on the next slide.
+
+Next we change the question rather than the method, and it is a smaller edit
+than any of these.
+:::
+
+## What if we care about the peak instead? {.smaller}
+
+```julia
+# minimise total infections by day 45
+final_incidence(x, _) = Array(run_scenario(x[1]))[4, end]
+
+# minimise the most infectious people at any one time
+peak_prevalence(x, _) = maximum(Array(run_scenario(x[1]))[2, :])
+```
+
+| | infections by day 45 | the peak |
+|---|---|---|
+| the run | `run_scenario(x[1])` | the same run |
+| which state we read | row 4, $C$ | row 2, $I$ |
+| how we summarise it | its value at the end | its maximum |
+| problem, bounds, method, derivative rule | — | all unchanged |
+| the answer | $t_1 = 13.84$ | $t_1 = 9.59$ |
+
+::: {.sub}
+Two words of code, four days of difference in the advice.
+:::
+
+::: {.notes}
+Put the two lines side by side and read the diff aloud: `[4, end]` becomes
+`[2, :]`, and the last value becomes a maximum. Nothing else in the four pieces
+moves — same model, same callback, same bounds, same solver, same derivative
+rule.
+
+That is the point worth making before the animation. The cost of asking a
+different question is nearly zero, which is exactly why the question has to be
+chosen deliberately rather than inherited from whoever wrote the code first.
+
+And the answers really do differ: act at day fourteen to minimise infections, at
+day nine and a half to protect the wards. Neither is the epidemic's opinion.
+:::
+
+## What if we care about the peak instead? {.center}
+
+Same model, same box, same solver. Only the number we read off the end has changed 
+
+```{ojs}
+//| echo: false
+objectiveViews = [
+  {key: "J", label: "J(t₁) = C(45), infections by day 45",
+    domain: [600, 800], best: bestIncidence, other: bestPeak.t1,
+    colour: cols.J,
+    caption: "a planner counting infections over six weeks"},
+  {key: "peak", label: "peak infectious people", domain: [0, 175],
+    best: bestPeak, other: bestIncidence.t1,
+    colour: cols.S, caption: "a hospital counting beds"}
+]
+viewPlot = (view) => Plot.plot({
+  ...plotBase,
+  title: `${view.caption}: best start t₁ = ${
+    view.best.t1.toFixed(2)}`,
+  x: axisX("intervention start t₁ (days)", {domain: [0, 25]}),
+  y: axisY(view.label, {domain: view.domain}),
+  marks: [
+    Plot.line(objectiveRows, {x: "t1", y: view.key, stroke: view.colour,
+      strokeWidth: 4.5}),
+    Plot.ruleX([view.other], {stroke: cols.grey, strokeDasharray: "6,6"}),
+    Plot.text([{x: view.other, y: view.domain[1]}], {x: "x", y: "y", dx: 10,
+      dy: 24, fill: cols.grey, fontSize: 22, textAnchor: "start",
+      text: () => "the other objective's answer"}),
+    Plot.dot([view.best], {x: "t1", y: view.key, r: 13, fill: view.colour}),
+    Plot.ruleX([view.best.t1], {stroke: view.colour, strokeDasharray: "4,6"})
+  ]
+})
+{
+  while (true) {
+    for (const view of objectiveViews) {
+      yield viewPlot(view);
+      await Promises.delay(3800);
+    }
+  }
+}
+```
+
+| policy | peak $I$ | $C(45)$ |
+|---|---:|---:|
+| no policy | 158 | 785 |
+| minimise $C(45)$, $t_1 = 13.84$ | 137 | 638 |
+| minimise the peak, $t_1 = 9.59$ | 80 | 673 |
+
+
+::: {.notes}
+The two curves come from identical simulations. Only the number read off the end
+differs, and the answers are more than four days apart on a decision variable
+bounded to twenty-five.
+
+Read the table across. Minimising the peak nearly halves it, a hundred and
+fifty-eight down to eighty, and costs about thirty-five more infections by day
+forty-five. Minimising C(45) saves a hundred and forty-seven infections and
+leaves the peak barely thirteen per cent below doing nothing.
+
+Neither is right, because optimal is not a property of the epidemic. It is a
+property of the objective, and the objective is where the value judgement lives.
+The optimizer returns a number either way and gives no sign that the question
+was contested. Writing the objective down, as the four pieces force you to, is
+what makes that judgement auditable instead of buried.
+:::
+
+## What our "optimal" answer does not consider
+
+- No cost of locking down, no hospital capacity
+- **Other advanced methods**: 
+  - Cost becomes a budget on $\int v$
+  - Capacity becomes a limit on $I(t)$ at every instant
+  - Can allow $v(t)$ to take any shape (not just a rectangle)
+  - Other interventions can be optimised alongside it
+
+
+## Where to read more
+
+- [Optimization.jl](https://docs.sciml.ai/Optimization/stable/) — the solver
+  list, and which packages supply which methods
+- [DiffEqCallbacks.jl](https://docs.sciml.ai/DiffEqCallbacks/stable/) — the
+  scenario layer, beyond `PresetTimeCallback`
+- [Book chapter 15](../../chapters/15-interventions-and-optimization.html) — the
+  same problem with the scenario and optimisation layers separated explicitly
+- [Appendix: advanced optimal control](../../chapters/16-advanced-optimal-control.html)
+  
+  
+## Next
+
+::: {style="margin-top: 3.5em;"}
+- Go to the worksheet folder and open the
+  `chapters/15-interventions-and-optimization.qmd` worksheet.
+- Follow the instructions and complete the exercises.
+- Let us know if you have any questions!
+:::
+
+::: {.notes}
+The worksheet builds the callback, assembles the four pieces, sweeps the
+objective as a check, and then walks into the plateau on purpose from two
+different starting guesses.
+:::
