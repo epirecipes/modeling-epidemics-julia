@@ -249,16 +249,26 @@ fig
 ```
 
 ::: {.notes}
-A corner agent having fewer neighbours than somebody in the middle of the grid is
-*not* automatically a lower risk: the contact rule draws its contacts from the
-same $\operatorname{Poisson}(c\Delta t)$ distribution however many neighbours
-there are, and what matters per contact is the *proportion* infectious nearby,
-not the size of the pool.  A corner person with one infectious neighbour out of
-three faces a higher per-contact risk than a middle person with one out of eight.
+A corner agent having fewer neighbours is *not* automatically a lower risk, and
+under our rule it is a higher one: the contact rule draws from the same
+$\operatorname{Poisson}(c\Delta t)$ distribution however many neighbours there
+are, so a smaller pool leaves the contact rate alone and raises the *proportion*
+infectious nearby.  A corner person with one infectious neighbour out of three
+carries $8/3$ times the hazard of a middle person with one out of eight, which
+puts the highest risk on the boundary.
 
-What edges do change is the number of *distinct* people reachable, and the
-uniformity of the population.  On a bounded grid, where you live becomes part of
-the model.  Wrapping removes that.  On this small grid it
+That is frequency-dependent transmission carried over from the well-mixed model,
+and it is our choice rather than a fact about grids.  Fix the per-neighbour
+hazard instead — each infectious neighbour transmits with probability
+$1-\exp(-\beta c\Delta t/n_0)$ — and the number of transmissions is binomial in
+the infectious neighbour count.  On a full neighbourhood the two agree exactly;
+at an edge the binomial rule scales risk down rather than up.  Mention this if
+somebody asks, because it is the rule most people picture.
+
+What edges do change under either rule is the number of *distinct* people
+reachable, and the uniformity of the population.  On a bounded grid, where you
+live becomes part of the model.  Wrapping removes that, and every grid model we
+run wraps, so the two rules coincide.  On this small grid wrapping
 also stops the front from running out of room, which otherwise may cut the final
 size.
 :::
