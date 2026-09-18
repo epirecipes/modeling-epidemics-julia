@@ -49,6 +49,7 @@ Plain ASCII names work exactly as well if you prefer them.
 ```{julia}
 #| label: ws-ch06-setup
 using Agents
+using Base64
 using CairoMakie
 using Distributions
 using OrdinaryDiffEq
@@ -742,6 +743,64 @@ fig
 - Given that, what does Part D tell you about when an individual-level model is worth its cost?
 
 > *Your answer here.*
+
+------------------------------------------------------------------------
+
+## Optional — watch your own model run
+
+Everything so far has been counts and histograms. This cell plays the model you
+finished in Part C, one frame every five steps, using the same colours as the
+snapshots earlier in Part C.
+
+It runs your `agent_step!` and your `model_step!`, so it is also a check on them:
+if the recovery line is still `< 0.0` nothing ever turns green, and if the commit
+line is missing the ten red squares sit still for the whole clip.
+
+The cell stands on its own beyond Setup, Part A and the two rules in Part C, so
+you can run it without having finished Part B or Part D.
+
+```{julia}
+#| label: ws-ch06-video
+#| error: true
+struct Animation
+    bytes::Vector{UInt8}
+    width::Int
+end
+Base.show(io::IO, ::MIME"text/html", a::Animation) =
+    print(io, "<video controls autoplay loop ",
+        "muted playsinline width=\"$(a.width)\" ",
+        "src=\"data:video/mp4;base64,",
+        base64encode(a.bytes), "\"></video>")
+
+video_colour(p) = p.status === :S ? :steelblue :
+                 p.status === :I ? :firebrick : :seagreen
+
+video_seed = 20250711
+video_steps = 850
+video_path = "abm-run.mp4"
+
+abmvideo(video_path, initialize_model(video_seed);
+    agent_color = video_colour, agent_marker = :rect, agent_size = 20,
+    dt = 5, frames = video_steps ÷ 5, framerate = 15,
+    figure = (; size = (1000, 625)))
+
+Animation(read(video_path), 1000)
+```
+
+`video_seed` is the seed Part C used, so this is the run those three snapshots
+came from, played out. `dt = 5` draws every fifth step, which at $\Delta t = 0.1$
+is one frame every half day: 170 frames for the 850 steps, $t = 85$. This run
+runs out of infectious people at $t = 84.2$, so the clip ends on the final state.
+616 people were infected over the whole epidemic and the 384 still blue at the
+end were never reached.
+
+The video is saved as `abm-run.mp4` next to wherever you are running the
+worksheet from, and read back as bytes so that it also plays inline above. Keep
+the file, send it to somebody, or scrub through it frame by frame in a video
+player. Running the cell again overwrites it.
+
+Change `video_seed` for a different outbreak, or pass `radius = 1` to
+`initialize_model` to watch the slow version from Part D.
 
 ------------------------------------------------------------------------
 
