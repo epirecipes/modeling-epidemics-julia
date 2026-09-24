@@ -126,7 +126,7 @@ function slide_stub(unit)
 end
 
 function notebook_stub(unit)
-    activation_id, imports_id, title_id, control_id, output_id = [string(uuid4()) for _ in 1:5]
+    imports_id, title_id, control_id, output_id = [string(uuid4()) for _ in 1:4]
     course_unit = "$(unit["id"])-$(unit["slug"])"
     title = unit["title"]
     status = unit["status"]
@@ -136,12 +136,6 @@ function notebook_stub(unit)
 
     using Markdown
     using InteractiveUtils
-
-    # ╔═╡ $activation_id
-    begin
-        import Pkg
-        Pkg.activate(normpath(joinpath(@__DIR__, "..", "..")); io = devnull)
-    end
 
     # ╔═╡ $imports_id
     using PlutoUI
@@ -163,12 +157,18 @@ function notebook_stub(unit)
         exploration = exploration,
     )
 
+    # ╔═╡ 00000000-0000-0000-0000-000000000001
+    PLUTO_PROJECT_TOML_CONTENTS = \"\"\"
+    [deps]
+    PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
+    \"\"\"
+
     # ╔═╡ Cell order:
-    # ╠═$activation_id
     # ╠═$imports_id
     # ╟─$title_id
     # ╠═$control_id
     # ╠═$output_id
+    # ╟─00000000-0000-0000-0000-000000000001
     """
 end
 
