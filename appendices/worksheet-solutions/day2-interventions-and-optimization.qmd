@@ -1,6 +1,6 @@
 ## Interventions and optimization — Day 2, Session 4
 
-Worksheet: `worksheets/chapters/15-interventions-and-optimization.qmd`. The
+Worksheet: `worksheets/08-interventions-and-optimization.qmd`. The
 chapter is [Interventions and
 optimization](../chapters/15-interventions-and-optimization.qmd).
 

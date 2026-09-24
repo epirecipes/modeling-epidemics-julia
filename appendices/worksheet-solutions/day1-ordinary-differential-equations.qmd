@@ -1,6 +1,6 @@
 ## Ordinary differential equations — Day 1, Session 3
 
-Worksheet: `worksheets/chapters/03-ordinary-differential-equations.qmd`. The
+Worksheet: `worksheets/03-solving-odes-with-events.qmd`. The
 chapter is [Ordinary differential
 equations](../chapters/03-ordinary-differential-equations.qmd).
 

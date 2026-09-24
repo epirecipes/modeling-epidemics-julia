@@ -223,7 +223,7 @@ You will meet the course material in three forms, and each is run differently.
 To turn a finished worksheet into a PDF or HTML report, you can render it from the command line:
 
 ```bash
-quarto render worksheets/prerequisites/01-julia-essentials.qmd --to html
+quarto render worksheets/01-julia-essentials-for-modelers.qmd --to html
 ```
 
 Or using VScode shortcut: `Ctrl`+`Shift`+`P` → *Quarto: Render*, and select the document type (e.g., `PDF`).

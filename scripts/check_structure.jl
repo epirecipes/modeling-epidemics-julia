@@ -165,7 +165,13 @@ for unit in units
         occursin("$(section)/$(stem).html", resources) || push!(errors, "$id book link is missing from resources.qmd.")
         occursin("slides/$(section)/$(stem).html", resources) || push!(errors, "$id slide link is missing from resources.qmd.")
         occursin("notebook-exports/$(section)/$(stem).html", resources) || push!(errors, "$id notebook preview link is missing from resources.qmd.")
-        occursin("worksheets/$(section)/$(stem).qmd", resources) || push!(errors, "$id worksheet link is missing from resources.qmd.")
+        # Worksheets are named and numbered by the schedule, not the chapter stem.
+        worksheets = get(unit, "worksheets", String[])
+        isempty(worksheets) && push!(errors, "$id is a workshop unit but lists no worksheets in course-units.toml.")
+        for worksheet in worksheets
+            isfile(joinpath(ROOT, "worksheets", worksheet)) || push!(errors, "$id worksheet worksheets/$worksheet is missing.")
+            occursin("worksheets/$worksheet", resources) || push!(errors, "$id worksheet link worksheets/$worksheet is missing from resources.qmd.")
+        end
     end
 
     book_status == "complete" && occursin(r"\bpending\b", lowercase(book)) &&

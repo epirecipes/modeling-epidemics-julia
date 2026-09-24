@@ -754,7 +754,7 @@ what makes that judgement auditable instead of buried.
 
 ::: {style="margin-top: 3.5em;"}
 - Go to the worksheet folder and open the
-  `chapters/15-interventions-and-optimization.qmd` worksheet.
+  `08-interventions-and-optimization.qmd` worksheet.
 - Follow the instructions and complete the exercises.
 - Let us know if you have any questions!
 :::

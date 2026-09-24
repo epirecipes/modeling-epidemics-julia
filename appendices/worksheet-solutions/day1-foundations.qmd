@@ -1,6 +1,6 @@
 ## Foundations: SIR theory and the Julia workflow — Day 1, Session 2
 
-Worksheet: `worksheets/chapters/01-foundations.qmd`. The chapter is
+Worksheet: `worksheets/02-foundations-sir-theory-and-the-julia-workflow.qmd`. The chapter is
 [Foundations](../chapters/01-foundations.qmd).
 
 ```{julia}

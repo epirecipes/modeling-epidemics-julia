@@ -628,7 +628,7 @@ rather than something to try today.
 ## Next:
 
 ::: {style="margin-top: 3.5em;"}
-- Go to the worksheet folder and open the `prerequisites/01-julia-essentials.qmd` worksheet.
+- Go to the worksheet folder and open the `01-julia-essentials-for-modelers.qmd` worksheet.
 - Follow the instructions and complete the exercises.
 - Let us know if you have any questions!
 :::

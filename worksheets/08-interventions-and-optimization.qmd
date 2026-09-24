@@ -9,7 +9,7 @@ status: draft
 
 **~45 minutes**
 
-The [chapter](../../chapters/15-interventions-and-optimization.qmd) separated two
+The [chapter](../chapters/15-interventions-and-optimization.qmd) separated two
 layers: a **scenario**, which simulates a policy you have already chosen, and an
 **optimization**, which searches over policies against an explicit objective.
 Here you build both, and then discover that the second layer has a question
@@ -42,7 +42,7 @@ matters. Entry 4 is the policy.
 `\gamma` followed by `Tab` gives `γ` at a Julia prompt, but that completion
 often does not fire inside a Quarto file like this one. Copy what you need
 from here, or insert it from the command palette with the Unicode Latex
-extension described in [Setting up](../../setup.qmd#optional-extras).
+extension described in [Setting up](../setup.qmd#optional-extras).
 
 | Symbol | Reads as | At a Julia prompt |
 |---|---|---|
@@ -565,7 +565,7 @@ fig
 In a terminal:
 
 ```bash
-quarto render worksheets/chapters/15-interventions-and-optimization.qmd
+quarto render worksheets/08-interventions-and-optimization.qmd
 ```
 
 A clean render means every cell ran top to bottom in a fresh session.
@@ -576,11 +576,11 @@ A clean render means every cell ran top to bottom in a fresh session.
 
 Nothing here is assigned. The whole project stays available to you afterwards.
 
-- [The chapter](../../chapters/15-interventions-and-optimization.qmd): the same
+- [The chapter](../chapters/15-interventions-and-optimization.qmd): the same
   callback and the same four-piece optimisation, with the scenario and
   optimisation layers separated explicitly.
-- [The Pluto notebook](../../notebooks/chapters/15-interventions-and-optimization.pluto.jl):
+- [The Pluto notebook](../notebooks/chapters/15-interventions-and-optimization.pluto.jl):
   sliders over the start time and the reduction.
-- [Advanced optimal control](../../chapters/16-advanced-optimal-control.qmd):
+- [Advanced optimal control](../chapters/16-advanced-optimal-control.qmd):
   what replaces a single start time when the decision variable is a whole
   function of time.

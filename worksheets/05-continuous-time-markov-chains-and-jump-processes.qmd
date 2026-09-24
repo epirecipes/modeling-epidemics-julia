@@ -9,7 +9,7 @@ status: draft
 
 **~45 minutes**
 
-The [chapter](../../chapters/05-jump-processes.qmd) simulated an SIR epidemic as an
+The [chapter](../chapters/05-jump-processes.qmd) simulated an SIR epidemic as an
 exact sequence of events: draw a waiting time, pick which event fires, update the
 state, repeat. Here you keep that process and change the *disease*. Many
 infections have a **latent period**, someone infected but not yet infectious,
@@ -30,9 +30,9 @@ reaching it is fine. Worked solutions are posted at the end of each
 day. Run `git pull` to collect them.
 
 **New to Julia?** The
-[Julia essentials worksheet](../prerequisites/01-julia-essentials.qmd)
+[Julia essentials worksheet](01-julia-essentials-for-modelers.qmd)
 opens with an R-to-Julia table, and the
-[Julia essentials chapter](../../prerequisites/01-julia-essentials.qmd) has the
+[Julia essentials chapter](../prerequisites/01-julia-essentials.qmd) has the
 full one.
 
 ::: {.callout-note}
@@ -48,7 +48,7 @@ today is about simulating the events exactly.
 `\gamma` followed by `Tab` gives `γ` at a Julia prompt, but that completion
 often does not fire inside a Quarto file like this one. Copy what you need
 from here, or insert it from the command palette with the Unicode Latex
-extension described in [Setting up](../../setup.qmd#optional-extras).
+extension described in [Setting up](../setup.qmd#optional-extras).
 
 | Symbol | Reads as | At a Julia prompt |
 |---|---|---|
@@ -413,7 +413,7 @@ people in the starting state.
 In a terminal:
 
 ```bash
-quarto render worksheets/chapters/05-jump-processes.qmd
+quarto render worksheets/05-continuous-time-markov-chains-and-jump-processes.qmd
 ```
 
 A clean render means every cell ran top to bottom in a fresh session.
@@ -424,11 +424,11 @@ A clean render means every cell ran top to bottom in a fresh session.
 
 Nothing here is assigned. The whole project stays available to you afterwards.
 
-- [The chapter](../../chapters/05-jump-processes.qmd) — the direct method derived
+- [The chapter](../chapters/05-jump-processes.qmd) — the direct method derived
   in full, including the hand-written kernel that `JumpSystem` replaces here.
-- [The Pluto notebook](../../notebooks/chapters/05-jump-processes.pluto.jl) — sliders
+- [The Pluto notebook](../notebooks/chapters/05-jump-processes.pluto.jl) — sliders
   over the session's SIR model.
-- [The probability prerequisite](../../prerequisites/02-probability-and-stochastic-processes.qmd)
+- [The probability prerequisite](../prerequisites/02-probability-and-stochastic-processes.qmd)
   — where the exponential waiting time and the competing-events rule come from.
-- [Reaction networks](../../chapters/07-reaction-networks.qmd) — later in the
+- [Reaction networks](../chapters/07-reaction-networks.qmd) — later in the
   course, the same three transitions written as three reactions.

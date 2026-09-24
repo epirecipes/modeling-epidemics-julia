@@ -1,6 +1,6 @@
 ## Discrete-time models — Day 1, Session 4
 
-Worksheet: `worksheets/chapters/02-discrete-time-models.qmd`. The chapter is
+Worksheet: `worksheets/04-discrete-time-models.qmd`. The chapter is
 [Discrete-time models](../chapters/02-discrete-time-models.qmd).
 
 ```{julia}

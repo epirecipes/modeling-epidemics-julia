@@ -124,8 +124,7 @@ The process kernel `sir_cumulative_ode!` and the reproducible data generator
 `synthetic_incidence` are provided by the course package `EpiModelingCourse`.
 The chapter and its slides both integrate the packaged kernel, and the companion
 notebook additionally uses `synthetic_incidence`, which wraps the same solve and
-returns a fixed-schema `DataFrame`; the worksheet deliberately writes its own
-four-line copy so that it can be read without the package. We
+returns a fixed-schema `DataFrame`. We
 solve the process model with [OrdinaryDiffEq.jl](https://docs.sciml.ai/OrdinaryDiffEq/stable/),
 draw observations with [Distributions.jl](https://juliastats.org/Distributions.jl/stable/),
 and keep randomness reproducible with

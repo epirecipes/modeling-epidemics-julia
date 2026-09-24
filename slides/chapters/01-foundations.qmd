@@ -298,7 +298,7 @@ in the chapter.
 ## Next:
 
 ::: {style="margin-top: 3.5em;"}
-- Go to the worksheet folder and open the `chapters/01-foundations.qmd` worksheet.
+- Go to the worksheet folder and open the `02-foundations-sir-theory-and-the-julia-workflow.qmd` worksheet.
 - Follow the instructions and complete the exercises.
 - Let us know if you have any questions!
 :::

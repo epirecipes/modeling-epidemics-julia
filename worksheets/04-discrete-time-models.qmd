@@ -30,7 +30,7 @@ reaching it is completely fine. Worked solutions are posted at the end of each
 day. Run `git pull` to collect them.
 
 **Prefer sliders to typing?** The
-[Pluto notebook](../../notebooks/chapters/02-discrete-time-models.pluto.jl) for this
+[Pluto notebook](../notebooks/chapters/02-discrete-time-models.pluto.jl) for this
 chapter lets you drag $\delta t$ and the ensemble size and watch the map and the
 chain separate.
 
@@ -43,7 +43,7 @@ chain separate.
 | `rbinom(1, n, prob)` | `rand(Binomial(n, prob))` | build the distribution, then draw |
 | `m[2, ]` | `m[2, :]` | row 2 of a matrix, every column |
 
-The [Julia essentials chapter](../../prerequisites/01-julia-essentials.qmd)
+The [Julia essentials chapter](../prerequisites/01-julia-essentials.qmd)
 has the full table.
 
 ::: {.callout-note}
@@ -52,7 +52,7 @@ has the full table.
 `\gamma` followed by `Tab` gives `γ` at a Julia prompt, but that completion
 often does not fire inside a Quarto file like this one. Copy what you need
 from here, or insert it from the command palette with the Unicode Latex
-extension described in [Setting up](../../setup.qmd#optional-extras).
+extension described in [Setting up](../setup.qmd#optional-extras).
 
 | Symbol | Reads as | At a Julia prompt |
 |---|---|---|
@@ -537,7 +537,7 @@ late.
 In a terminal, from the top of the repository:
 
 ```bash
-quarto render worksheets/chapters/02-discrete-time-models.qmd
+quarto render worksheets/04-discrete-time-models.qmd
 ```
 
 A clean render means every cell ran top to bottom in a fresh session: the same
@@ -550,12 +550,12 @@ own.
 
 The whole project stays available to you afterwards.
 
-- [The chapter](../../chapters/02-discrete-time-models.qmd) — the map and the
+- [The chapter](../chapters/02-discrete-time-models.qmd) — the map and the
   binomial chain side by side, and the numerical demonstration that the map
   converges to the ODE at first order.
-- [The Pluto notebook](../../notebooks/chapters/02-discrete-time-models.pluto.jl) —
+- [The Pluto notebook](../notebooks/chapters/02-discrete-time-models.pluto.jl) —
   sliders for the step size and the ensemble.
-- [The probability prerequisite](../../prerequisites/02-probability-and-stochastic-processes.qmd)
+- [The probability prerequisite](../prerequisites/02-probability-and-stochastic-processes.qmd)
   — where $1 - e^{-r\delta t}$ comes from, and what it means for a step to be
   "too long".
 - The chapter's own exercises, with worked solutions, if you want more practice on

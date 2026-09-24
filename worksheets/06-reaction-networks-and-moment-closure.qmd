@@ -9,7 +9,7 @@ status: complete
 
 **~45 minutes**
 
-The [chapter](../../chapters/07-reaction-networks.qmd) made one point: if you
+The [chapter](../chapters/07-reaction-networks.qmd) made one point: if you
 specify the *flows*, every lowering follows. This worksheet tests that claim by
 making you change the network and watching three models change with it. Then it
 pushes the moment closure until it breaks, which is the part worth remembering.

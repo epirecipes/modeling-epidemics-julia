@@ -1,6 +1,6 @@
 ## Sensitivity and identifiability — Day 2, Session 3
 
-Worksheet: `worksheets/chapters/14-sensitivity-and-identifiability.qmd`. The
+Worksheet: `worksheets/07-sensitivity-and-identifiability.qmd`. The
 chapter is [Sensitivity and
 identifiability](../chapters/14-sensitivity-and-identifiability.qmd).
 
