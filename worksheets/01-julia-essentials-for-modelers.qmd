@@ -48,7 +48,7 @@ per session. Later cells will run quickly.
 | `list(a = 1, b = 2)` | `(a = 1, b = 2)` | a named tuple; read fields with `p.a` |
 | `TRUE` / `FALSE` | `true` / `false` | lowercase |
 
-The [Julia essentials chapter](../../prerequisites/01-julia-essentials.qmd)
+The [Julia essentials chapter](../prerequisites/01-julia-essentials.qmd)
 has the full table.
 
 **The REPL is your other window.** Alongside this document you have a Julia
@@ -102,7 +102,7 @@ the one published by *Omer Sheikh*. Then press `Cmd`/`Ctrl`+`Shift`+`P`, type
 `unicode`, choose **Unicode: Insert Math Symbol**, type the name of the symbol
 you want, and press `Enter`. 
 
-[Setting up](../../setup.qmd#optional-extras) has the install steps in full.
+[Setting up](../setup.qmd#optional-extras) has the install steps in full.
 :::
 
 ---
@@ -111,7 +111,7 @@ you want, and press `Enter`.
 
 Run this first. It loads the two packages the worksheet needs and defines the
 `check` helper used by every part. If it fails, a setup step is missing (see
-[Setting up](../../setup.qmd)).
+[Setting up](../setup.qmd)).
 
 ```{julia}
 #| label: ws-p01-setup
@@ -470,7 +470,7 @@ than guessing what you meant.
 In a terminal, from the top of the repository:
 
 ```bash
-quarto render worksheets/prerequisites/01-julia-essentials.qmd --to html
+quarto render worksheets/01-julia-essentials-for-modelers.qmd --to html
 ```
 
 This starts a new Julia session, runs every cell from the top, and writes an HTML
@@ -490,10 +490,10 @@ share.
 
 The whole project stays available to you afterwards.
 
-- [The chapter](../../prerequisites/01-julia-essentials.qmd) — the same material
+- [The chapter](../prerequisites/01-julia-essentials.qmd) — the same material
   worked through in full, plus comprehensions and multiple dispatch, which this
   worksheet leaves out.
-- [The Pluto notebook](../../notebooks/prerequisites/01-julia-essentials.pluto.jl) —
+- [The Pluto notebook](../notebooks/prerequisites/01-julia-essentials.pluto.jl) —
   the same ideas with sliders.
 - The [Julia documentation](https://docs.julialang.org/en/v1/), and its
   [noteworthy differences from R](https://docs.julialang.org/en/v1/manual/noteworthy-differences/#Noteworthy-differences-from-R)

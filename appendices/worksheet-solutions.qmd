@@ -6,20 +6,22 @@ in [Appendix G](solutions.qmd) are reading-and-study material, while the
 worksheets are what participants fill in during a session. Each part below keeps
 the worksheet's code and condenses the written answers to the points that matter.
 
-Days 1 and 2 are covered here; Day 3 will follow.
+{{< include worksheet-solutions/01-julia-essentials-for-modelers.qmd >}}
 
-{{< include worksheet-solutions/day1-julia-essentials.qmd >}}
+{{< include worksheet-solutions/02-foundations-sir-theory-and-the-julia-workflow.qmd >}}
 
-{{< include worksheet-solutions/day1-foundations.qmd >}}
+{{< include worksheet-solutions/03-solving-odes-with-events.qmd >}}
 
-{{< include worksheet-solutions/day1-ordinary-differential-equations.qmd >}}
+{{< include worksheet-solutions/04-discrete-time-models.qmd >}}
 
-{{< include worksheet-solutions/day1-discrete-time-models.qmd >}}
+{{< include worksheet-solutions/05-continuous-time-markov-chains-and-jump-processes.qmd >}}
 
-{{< include worksheet-solutions/day2-jump-processes.qmd >}}
+{{< include worksheet-solutions/06-reaction-networks-and-moment-closure.qmd >}}
 
-{{< include worksheet-solutions/day2-reaction-networks.qmd >}}
+{{< include worksheet-solutions/07-sensitivity-and-identifiability.qmd >}}
 
-{{< include worksheet-solutions/day2-sensitivity-and-identifiability.qmd >}}
+{{< include worksheet-solutions/08-interventions-and-optimization.qmd >}}
 
-{{< include worksheet-solutions/day2-interventions-and-optimization.qmd >}}
+{{< include worksheet-solutions/09-agent-based-models.qmd >}}
+
+{{< include worksheet-solutions/10-agent-based-models-extended-session.qmd >}}

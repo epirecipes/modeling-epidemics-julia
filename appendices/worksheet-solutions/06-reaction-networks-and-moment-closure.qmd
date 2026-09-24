@@ -1,6 +1,6 @@
 ## Reaction networks and moment closure — Day 2, Session 2
 
-Worksheet: `worksheets/chapters/07-reaction-networks.qmd`. The chapter is
+Worksheet: `worksheets/06-reaction-networks-and-moment-closure.qmd`. The chapter is
 [Reaction networks and moment
 closure](../chapters/07-reaction-networks.qmd).
 

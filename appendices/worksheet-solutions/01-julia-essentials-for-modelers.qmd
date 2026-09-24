@@ -1,6 +1,6 @@
 ## Julia essentials for modelers — Day 1, Session 1
 
-Worksheet: `worksheets/prerequisites/01-julia-essentials.qmd`. The chapter is
+Worksheet: `worksheets/01-julia-essentials-for-modelers.qmd`. The chapter is
 [Julia essentials for modelers](../prerequisites/01-julia-essentials.qmd).
 
 ```{julia}

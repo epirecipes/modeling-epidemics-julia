@@ -456,7 +456,7 @@ notebook.
 ## Next:
 
 ::: {style="margin-top: 3.5em;"}
-- Go to the worksheet folder and open the `chapters/03-ordinary-differential-equations.qmd` worksheet.
+- Go to the worksheet folder and open the `03-solving-odes-with-events.qmd` worksheet.
 - Follow the instructions and complete the exercises.
 - Let us know if you have any questions!
 :::

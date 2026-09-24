@@ -25,7 +25,7 @@ not reaching it is completely fine. Worked solutions are posted at the end of
 each day. Run `git pull` to collect them.
 
 **Prefer sliders to typing?** The
-[Pluto notebook](../../notebooks/chapters/03-ordinary-differential-equations.pluto.jl)
+[Pluto notebook](../notebooks/chapters/03-ordinary-differential-equations.pluto.jl)
 for this chapter lets you drag the lockdown parameters and watch the curve
 respond. Some people find it easier to get the intuition there first and then
 come back here. 
@@ -41,7 +41,7 @@ come back here.
 Indexing starts at 1, as in R. A `!` at the end of a name (`sir_ode!`) means the
 function modifies its argument rather than returning a copy.
 
-The [Julia essentials chapter](../../prerequisites/01-julia-essentials.qmd)
+The [Julia essentials chapter](../prerequisites/01-julia-essentials.qmd)
 has the full table.
 
 ::: {.callout-note}
@@ -50,7 +50,7 @@ has the full table.
 `\gamma` followed by `Tab` gives `γ` at a Julia prompt, but that completion
 often does not fire inside a Quarto file like this one. Copy what you need
 from here, or insert it from the command palette with the Unicode Latex
-extension described in [Setting up](../../setup.qmd#optional-extras).
+extension described in [Setting up](../setup.qmd#optional-extras).
 
 | Symbol | Reads as | At a Julia prompt |
 |---|---|---|
@@ -326,7 +326,7 @@ a date and the other did not.
 In a terminal:
 
 ```bash
-quarto render worksheets/chapters/03-ordinary-differential-equations.qmd
+quarto render worksheets/03-solving-odes-with-events.qmd
 ```
 
 A clean render means every cell ran top to bottom in a fresh session: the same
@@ -339,10 +339,10 @@ own.
 
 Nothing here is assigned. The whole project stays available to you afterwards.
 
-- [The chapter](../../chapters/03-ordinary-differential-equations.qmd) — the
+- [The chapter](../chapters/03-ordinary-differential-equations.qmd) — the
   lockdown example in full, plus dense interpolation `sol(t)` and using
   `ContinuousCallback` to locate a smooth epidemic peak by root-finding.
-- [The Pluto notebook](../../notebooks/chapters/03-ordinary-differential-equations.pluto.jl)
+- [The Pluto notebook](../notebooks/chapters/03-ordinary-differential-equations.pluto.jl)
   — sliders for the lockdown's strength, start day, and duration.
 - The chapter's own exercises, with worked solutions, if you want more practice on
   the material rather than these variations.

@@ -1,6 +1,6 @@
 ## Continuous-time Markov chains and jump processes — Day 2, Session 1
 
-Worksheet: `worksheets/chapters/05-jump-processes.qmd`. The chapter is
+Worksheet: `worksheets/05-continuous-time-markov-chains-and-jump-processes.qmd`. The chapter is
 [Continuous-time Markov chains and jump
 processes](../chapters/05-jump-processes.qmd).
 

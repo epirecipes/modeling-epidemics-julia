@@ -662,8 +662,8 @@ variational equations even when a finite difference is available.
 
 The one API not executed here is `assess_identifiability`: it compiles for tens
 of seconds on a cold session, which is not something to do in front of an
-audience. That is why it lives in the worksheet, and why the warm-up cell during
-the break matters. Say that out loud rather than skipping past it.
+audience. That is why it lives in the worksheet. Say that out loud rather than
+skipping past it.
 :::
 
 ## Takeaways and limitations {.smaller}

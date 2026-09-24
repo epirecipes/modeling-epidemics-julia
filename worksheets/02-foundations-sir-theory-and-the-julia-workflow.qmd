@@ -30,7 +30,7 @@ reaching it is completely fine. Worked solutions are posted at the end of each
 day. Run `git pull` to collect them.
 
 **Prefer sliders to typing?** The
-[Pluto notebook](../../notebooks/chapters/01-foundations.pluto.jl) for this chapter
+[Pluto notebook](../notebooks/chapters/01-foundations.pluto.jl) for this chapter
 lets you drag $\beta$, $c$ and $\gamma$ and watch $R_0$ and the curve respond.
 Some people find the intuition easier there first. Either order is fine.
 
@@ -46,7 +46,7 @@ Some people find the intuition easier there first. Either order is fine.
 Indexing starts at 1, as in R. A `!` at the end of a name (`sir_ode!`) means the
 function modifies its argument rather than returning a copy.
 
-The [Julia essentials chapter](../../prerequisites/01-julia-essentials.qmd)
+The [Julia essentials chapter](../prerequisites/01-julia-essentials.qmd)
 has the full table.
 
 ::: {.callout-note}
@@ -55,7 +55,7 @@ has the full table.
 `\gamma` followed by `Tab` gives `γ` at a Julia prompt, but that completion
 often does not fire inside a Quarto file like this one. Copy what you need
 from here, or insert it from the command palette with the Unicode Latex
-extension described in [Setting up](../../setup.qmd#optional-extras).
+extension described in [Setting up](../setup.qmd#optional-extras).
 
 | Symbol | Reads as | At a Julia prompt |
 |---|---|---|
@@ -424,7 +424,7 @@ residual is close to zero.
 In a terminal, from the top of the repository:
 
 ```bash
-quarto render worksheets/chapters/01-foundations.qmd
+quarto render worksheets/02-foundations-sir-theory-and-the-julia-workflow.qmd
 ```
 
 A clean render means every cell ran top to bottom in a fresh session: the same
@@ -437,10 +437,10 @@ your own.
 
 The whole project stays available to you afterwards.
 
-- [The chapter](../../chapters/01-foundations.qmd) — the derivation of the SIR
+- [The chapter](../chapters/01-foundations.qmd) — the derivation of the SIR
   equations from mass-action transmission, the threshold argument in full, and a
   roadmap of how every later chapter relaxes one of the five assumptions.
-- [The Pluto notebook](../../notebooks/chapters/01-foundations.pluto.jl) — sliders for
+- [The Pluto notebook](../notebooks/chapters/01-foundations.pluto.jl) — sliders for
   $\beta$, $c$ and $\gamma$, with $R_0$ and the final size recomputing as you
   drag.
 - The chapter's own exercises, with worked solutions — Exercise 1 computes the
